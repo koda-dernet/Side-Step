@@ -10,6 +10,7 @@ from the TUI training monitor.
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Dict, Generator, Optional
 
@@ -57,6 +58,12 @@ class VanillaTrainer:
             target_modules=getattr(self.lora_config, "target_modules", ["to_q", "to_k", "to_v", "to_out.0"]),
             bias=getattr(self.lora_config, "bias", "none"),
         )
+        # Windows uses spawn-based multiprocessing which breaks DataLoader workers
+        num_workers = getattr(cfg, "num_workers", 4)
+        if sys.platform == "win32" and num_workers > 0:
+            logger.info("[Side-Step] Windows detected -- setting num_workers=0 (spawn incompatible)")
+            num_workers = 0
+
         train_cfg = TrainingConfig(
             learning_rate=getattr(cfg, "learning_rate", 1e-4),
             batch_size=getattr(cfg, "batch_size", 1),
@@ -68,7 +75,7 @@ class VanillaTrainer:
             seed=getattr(cfg, "seed", 42),
             output_dir=getattr(cfg, "output_dir", "./lora_output"),
             save_every_n_epochs=getattr(cfg, "save_every_n_epochs", 10),
-            num_workers=getattr(cfg, "num_workers", 4),
+            num_workers=num_workers,
             pin_memory=getattr(cfg, "pin_memory", True),
         )
 

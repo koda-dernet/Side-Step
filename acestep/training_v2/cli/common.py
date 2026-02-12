@@ -24,6 +24,9 @@ from acestep.training_v2.gpu_utils import detect_gpu
 
 logger = logging.getLogger(__name__)
 
+# Windows uses spawn-based multiprocessing which breaks DataLoader workers
+_DEFAULT_NUM_WORKERS = 0 if sys.platform == "win32" else 4
+
 # ---- Model variant -> checkpoint subdirectory mapping ---------------------
 VARIANT_DIR_MAP = {
     "turbo": "acestep-v15-turbo",
@@ -121,8 +124,8 @@ def build_root_parser() -> argparse.ArgumentParser:
     p_estimate.add_argument(
         "--num-workers",
         type=int,
-        default=4,
-        help="DataLoader workers (default: 4)",
+        default=_DEFAULT_NUM_WORKERS,
+        help=f"DataLoader workers (default: {_DEFAULT_NUM_WORKERS}; 0 on Windows)",
     )
     p_estimate.add_argument(
         "--seed",
@@ -204,8 +207,8 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_data.add_argument(
         "--num-workers",
         type=int,
-        default=4,
-        help="DataLoader workers (default: 4)",
+        default=_DEFAULT_NUM_WORKERS,
+        help=f"DataLoader workers (default: {_DEFAULT_NUM_WORKERS}; 0 on Windows)",
     )
     g_data.add_argument(
         "--pin-memory",

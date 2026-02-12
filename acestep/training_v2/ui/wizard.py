@@ -240,10 +240,11 @@ def _wizard_train(mode: str) -> argparse.Namespace:
     weight_decay = 0.01
     max_grad_norm = 1.0
     bias = "none"
-    num_workers = 4
+    # Windows uses spawn-based multiprocessing which breaks DataLoader workers
+    num_workers = 0 if sys.platform == "win32" else 4
     pin_memory = True
     prefetch_factor = 2
-    persistent_workers = True
+    persistent_workers = num_workers > 0
     log_dir = None
     log_heavy_every = 50
     sample_every_n_epochs = 0
