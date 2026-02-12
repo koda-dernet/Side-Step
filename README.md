@@ -124,6 +124,123 @@ Side-Step is optimized for both heavy Cloud GPUs (H100/A100) and local "underpow
 ```
 
 ---
+## Complete Argument Reference
+
+Every argument, its default, and what it does.
+
+### Global Flags
+
+Available in: all subcommands (placed **before** the subcommand name)
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--plain` | `False` | Disable Rich output; use plain text. Also set automatically when stdout is piped |
+| `--yes` or `-y` | `False` | Skip the confirmation prompt and start training immediately |
+
+### Model and Paths
+
+Available in: vanilla, fixed
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--checkpoint-dir` | **(required)** | Path to the root checkpoints directory (contains `acestep-v15-turbo/`, etc.) |
+| `--model-variant` | `turbo` | Which model to use: `turbo`, `base`, or `sft` |
+| `--dataset-dir` | **(required)** | Directory containing your preprocessed `.pt` tensor files and `manifest.json` |
+
+### Device and Precision
+
+Available in: all subcommands
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--device` | `auto` | Which device to train on. Options: `auto`, `cuda`, `cuda:0`, `cuda:1`, `mps`, `xpu`, `cpu`. Auto-detection priority: CUDA > MPS (Apple Silicon) > XPU (Intel) > CPU |
+| `--precision` | `auto` | Floating point precision. Options: `auto`, `bf16`, `fp16`, `fp32`. Auto picks: bf16 on CUDA/XPU, fp16 on MPS, fp32 on CPU |
+
+### LoRA Settings
+
+Available in: vanilla, fixed
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--rank` or `-r` | `64` | LoRA rank. Higher = more capacity and more VRAM. Recommended: 64 (ACE-Step dev recommendation) |
+| `--alpha` | `128` | LoRA scaling factor. Controls how strongly the adapter affects the model. Usually 2x the rank. Recommended: 128 |
+| `--dropout` | `0.1` | Dropout probability on LoRA layers. Helps prevent overfitting. Range: 0.0 to 0.5 |
+| `--attention-type` | `both` | Which attention layers to target. Options: `both` (self + cross attention, 192 modules), `self` (self-attention only, audio patterns, 96 modules), `cross` (cross-attention only, text conditioning, 96 modules) |
+| `--target-modules` | `q_proj k_proj v_proj o_proj` | Which projection layers get LoRA adapters. Space-separated list. Combined with `--attention-type` to determine final target modules |
+| `--bias` | `none` | Whether to train bias parameters. Options: `none` (no bias training), `all` (train all biases), `lora_only` (only biases in LoRA layers) |
+
+### Training Hyperparameters
+
+Available in: vanilla, fixed
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--lr` or `--learning-rate` | `0.0001` | Initial learning rate. For Prodigy optimizer, set to `1.0` |
+| `--batch-size` | `1` | Number of samples per training step. Usually 1 for music generation (audio tensors are large) |
+| `--gradient-accumulation` | `4` | Number of steps to accumulate gradients before updating weights. Effective batch size = batch-size x gradient-accumulation |
+| `--epochs` | `100` | Maximum number of training epochs (full passes through the dataset) |
+| `--warmup-steps` | `100` | Number of optimizer steps where the learning rate ramps up from 10% to 100% |
+| `--weight-decay` | `0.01` | Weight decay (L2 regularization). Helps prevent overfitting |
+| `--max-grad-norm` | `1.0` | Maximum gradient norm for gradient clipping. Prevents training instability from large gradients |
+| `--seed` | `42` | Random seed for reproducibility. Same seed + same data = same results |
+| `--optimizer-type` | `adamw` | Optimizer: `adamw`, `adamw8bit` (saves VRAM), `adafactor` (minimal state), `prodigy` (auto-tunes LR) |
+| `--scheduler-type` | `cosine` | LR schedule: `cosine`, `linear`, `constant`, `constant_with_warmup`. Prodigy auto-forces `constant` |
+| `--gradient-checkpointing` | `False` | Recompute activations during backward to save VRAM (~40-60% less activation memory, ~30% slower) |
+| `--offload-encoder` | `False` | Move encoder/VAE to CPU after setup. Frees ~2-4GB VRAM with minimal speed impact |
+
+### Corrected Training (fixed mode only)
+
+Available in: fixed
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--cfg-ratio` | `0.15` | Classifier-free guidance dropout rate. With this probability, each sample's condition is replaced with a null embedding during training. This teaches the model to work both with and without text prompts. The model was originally trained with 0.15 |
+
+### Data Loading
+
+Available in: vanilla, fixed
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--num-workers` | `4` | Number of parallel data loading worker processes. Set to 0 on machines with limited RAM |
+| `--pin-memory` / `--no-pin-memory` | `True` | Pin loaded tensors in CPU memory for faster GPU transfer. Disable if you're low on RAM |
+| `--prefetch-factor` | `2` | Number of batches each worker prefetches in advance |
+| `--persistent-workers` / `--no-persistent-workers` | `True` | Keep data loading workers alive between epochs instead of respawning them |
+
+### Checkpointing
+
+Available in: vanilla, fixed
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--output-dir` | **(required)** | Directory where LoRA weights, checkpoints, and TensorBoard logs are saved |
+| `--save-every` | `10` | Save a full checkpoint (LoRA weights + optimizer + scheduler state) every N epochs |
+| `--resume-from` | *(none)* | Path to a checkpoint directory to resume training from. Restores LoRA weights, optimizer state, and scheduler state |
+
+### Logging and Monitoring
+
+Available in: vanilla, fixed
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--log-dir` | `{output-dir}/runs` | Directory for TensorBoard log files. View with `tensorboard --logdir <path>` |
+| `--log-every` | `10` | Log loss and learning rate every N optimizer steps |
+| `--log-heavy-every` | `50` | Log per-layer gradient norms every N optimizer steps. These are more expensive to compute but useful for debugging |
+| `--sample-every-n-epochs` | `0` | Generate an audio sample every N epochs during training. 0 = disabled. (Not yet implemented) |
+
+### Preprocessing (optional)
+
+Available in: vanilla, fixed
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--preprocess` | `False` (flag) | If set, run audio preprocessing before training |
+| `--audio-dir` | *(none)* | Source directory containing audio files (for preprocessing) |
+| `--dataset-json` | *(none)* | Path to labeled dataset JSON file (for preprocessing) |
+| `--tensor-output` | *(none)* | Output directory where preprocessed .pt tensor files will be saved |
+| `--max-duration` | `240` | Maximum audio duration in seconds. Longer files are truncated |
+
+---
 
 ## 🤝 Contributing
 Contributions are welcome! Specifically looking for help fixing the **Textual TUI** and completing the **CLI Preprocessing** module.
