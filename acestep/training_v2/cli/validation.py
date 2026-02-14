@@ -31,16 +31,17 @@ def validate_paths(args: argparse.Namespace) -> bool:
         print(f"[FAIL] Checkpoint directory not found: {ckpt_root}", file=sys.stderr)
         return False
 
+    # Resolve model directory: try known alias first, then literal folder name
     variant_dir = VARIANT_DIR_MAP.get(args.model_variant)
-    if variant_dir is None:
-        print(f"[FAIL] Unknown model variant: {args.model_variant}", file=sys.stderr)
-        return False
-
-    model_dir = ckpt_root / variant_dir
-    if not model_dir.is_dir():
+    if variant_dir and (ckpt_root / variant_dir).is_dir():
+        model_dir = ckpt_root / variant_dir
+    elif (ckpt_root / args.model_variant).is_dir():
+        model_dir = ckpt_root / args.model_variant
+    else:
+        tried = variant_dir or args.model_variant
         print(
-            f"[FAIL] Model directory not found: {model_dir}\n"
-            f"       Expected subdirectory '{variant_dir}' under {ckpt_root}",
+            f"[FAIL] Model directory not found: {ckpt_root / tried}\n"
+            f"       Looked for '{tried}' under {ckpt_root}",
             file=sys.stderr,
         )
         return False

@@ -292,7 +292,7 @@ class TrainingMonitorScreen(Screen):
                 optimizer_type=self.config.get("optimizer_type", "adamw"),
                 scheduler_type=self.config.get("scheduler_type", "cosine"),
                 gradient_checkpointing=self.config.get(
-                    "gradient_checkpointing", False
+                    "gradient_checkpointing", True
                 ),
                 offload_encoder=self.config.get("offload_encoder", False),
             )

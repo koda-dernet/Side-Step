@@ -1,7 +1,76 @@
 [project]
 name = "side-step"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.8.0-beta"
+description = "Standalone training toolkit for ACE-Step 1.5 models -- corrected LoRA & LoKR fine-tuning"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+license = {text = "MIT"}
+dependencies = [
+    # ── PyTorch (CUDA 12.8 wheels for Windows and Linux) ─────────────
+    "torch==2.7.1+cu128; sys_platform == 'win32'",
+    "torchaudio==2.7.1+cu128; sys_platform == 'win32'",
+    "torch==2.10.0+cu128; sys_platform == 'linux'",
+    "torchaudio==2.10.0+cu128; sys_platform == 'linux'",
+    # macOS (CPU / MPS)
+    "torch>=2.9.1; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "torchaudio>=2.9.1; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # ── Core ML dependencies ─────────────────────────────────────────
+    "transformers>=4.51.0,<4.58.0",
+    "diffusers",
+    "lightning>=2.0.0",
+    "peft>=0.18.0",
+    "accelerate>=1.12.0",
+    "safetensors",
+    "einops>=0.8.1",
+    # ── Audio loading (needed for preprocessing) ─────────────────────
+    "torchcodec>=0.9.1",
+    "soundfile>=0.13.1",
+    # ── Model runtime (needed by the checkpoint's modeling.py) ────────
+    "vector-quantize-pytorch>=1.27.15",
+    "torchao>=0.14.1,<0.16.0",
+    # ── Logging / monitoring ─────────────────────────────────────────
+    "loguru>=0.7.3",
+    "tensorboard>=2.20.0",
+    # ── CLI / TUI ────────────────────────────────────────────────────
+    "rich>=13.0.0",
+    # ── Adapter libraries ─────────────────────────────────────────
+    "lycoris-lora>=2.0.0",           # LoKR adapter support
+    "bitsandbytes>=0.45.0",          # 8-bit optimizers (AdamW8bit)
+    "prodigyopt>=1.1.2",             # Prodigy adaptive optimizer
+    # ── Flash Attention (prebuilt wheels -- no compilation) ────────
+    # Auto-installed on supported platforms; runtime falls back to
+    # SDPA silently when flash-attn is absent (macOS, Python != 3.11).
+    "flash-attn; sys_platform != 'darwin' and python_version == '3.11'",
+]
+
+[project.optional-dependencies]
+tui = ["textual>=0.47.0"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+torchaudio = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+# Prebuilt flash-attn wheels -- same repos ACE-Step uses.
+# No CUDA toolkit needed, no 20-min compile.  Just a wheel download.
+flash-attn = [
+    { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.12/flash_attn-2.8.3+cu128torch2.10-cp311-cp311-linux_x86_64.whl", marker = "sys_platform == 'linux'" },
+    { url = "https://github.com/sdbds/flash-attention-for-windows/releases/download/2.8.2/flash_attn-2.8.2+cu128torch2.7.1cxx11abiFALSEfullbackward-cp311-cp311-win_amd64.whl", marker = "sys_platform == 'win32'" },
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["acestep"]

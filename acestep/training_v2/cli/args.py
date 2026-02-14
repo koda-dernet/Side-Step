@@ -140,7 +140,7 @@ def build_root_parser() -> argparse.ArgumentParser:
 # ===========================================================================
 
 def _add_model_args(parser: argparse.ArgumentParser) -> None:
-    """Add --checkpoint-dir and --model-variant."""
+    """Add --checkpoint-dir, --model-variant, and --base-model."""
     g = parser.add_argument_group("Model / paths")
     g.add_argument(
         "--checkpoint-dir",
@@ -152,8 +152,21 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
         "--model-variant",
         type=str,
         default="turbo",
+        help=(
+            "Model variant or subfolder name (default: turbo). "
+            "Official: turbo, base, sft. "
+            "For fine-tunes: use the exact folder name under checkpoint-dir."
+        ),
+    )
+    g.add_argument(
+        "--base-model",
+        type=str,
+        default=None,
         choices=["turbo", "base", "sft"],
-        help="Model variant (default: turbo)",
+        help=(
+            "Base model a fine-tune was trained from (turbo/base/sft). "
+            "Used to condition timestep sampling. Auto-detected for official models."
+        ),
     )
 
 
@@ -223,19 +236,35 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_train.add_argument("--weight-decay", type=float, default=0.01, help="AdamW weight decay (default: 0.01)")
     g_train.add_argument("--max-grad-norm", type=float, default=1.0, help="Gradient clipping norm (default: 1.0)")
     g_train.add_argument("--seed", type=int, default=42, help="Random seed (default: 42)")
+    g_train.add_argument("--shift", type=float, default=3.0, help="Noise schedule shift (turbo=3.0, base/sft=1.0)")
+    g_train.add_argument("--num-inference-steps", type=int, default=8, help="Inference steps for timestep schedule (turbo=8, base/sft=50)")
     g_train.add_argument("--optimizer-type", type=str, default="adamw", choices=["adamw", "adamw8bit", "adafactor", "prodigy"], help="Optimizer (default: adamw)")
-    g_train.add_argument("--scheduler-type", type=str, default="cosine", choices=["cosine", "linear", "constant", "constant_with_warmup"], help="LR scheduler (default: cosine)")
-    g_train.add_argument("--gradient-checkpointing", action="store_true", default=False, help="Recompute activations to save VRAM (~40-60%% less, ~30%% slower)")
-    g_train.add_argument("--offload-encoder", action="store_true", default=False, help="Move encoder/VAE to CPU after setup (saves ~2-4GB VRAM)")
+    g_train.add_argument("--scheduler-type", type=str, default="cosine", choices=["cosine", "cosine_restarts", "linear", "constant", "constant_with_warmup"], help="LR scheduler (default: cosine)")
+    g_train.add_argument("--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=True, help="Recompute activations to save VRAM (~40-60%% less, ~10-30%% slower). On by default; use --no-gradient-checkpointing to disable")
+    g_train.add_argument("--offload-encoder", action=argparse.BooleanOptionalAction, default=False, help="Move encoder/VAE to CPU after setup (saves ~2-4GB VRAM)")
+
+    # -- Adapter selection ---------------------------------------------------
+    g_adapter = parser.add_argument_group("Adapter")
+    g_adapter.add_argument("--adapter-type", type=str, default="lora", choices=["lora", "lokr"], help="Adapter type: lora (PEFT) or lokr (LyCORIS) (default: lora)")
 
     # -- LoRA hyperparams ---------------------------------------------------
-    g_lora = parser.add_argument_group("LoRA")
+    g_lora = parser.add_argument_group("LoRA (used when --adapter-type=lora)")
     g_lora.add_argument("--rank", "-r", type=int, default=64, help="LoRA rank (default: 64)")
     g_lora.add_argument("--alpha", type=int, default=128, help="LoRA alpha (default: 128)")
     g_lora.add_argument("--dropout", type=float, default=0.1, help="LoRA dropout (default: 0.1)")
-    g_lora.add_argument("--target-modules", nargs="+", default=["q_proj", "k_proj", "v_proj", "o_proj"], help="Modules to apply LoRA to")
+    g_lora.add_argument("--target-modules", nargs="+", default=["q_proj", "k_proj", "v_proj", "o_proj"], help="Modules to apply adapter to")
     g_lora.add_argument("--bias", type=str, default="none", choices=["none", "all", "lora_only"], help="Bias training mode (default: none)")
     g_lora.add_argument("--attention-type", type=str, default="both", choices=["self", "cross", "both"], help="Attention layers to target (default: both)")
+
+    # -- LoKR hyperparams ---------------------------------------------------
+    g_lokr = parser.add_argument_group("LoKR (used when --adapter-type=lokr)")
+    g_lokr.add_argument("--lokr-linear-dim", type=int, default=64, help="LoKR linear dimension (default: 64)")
+    g_lokr.add_argument("--lokr-linear-alpha", type=int, default=128, help="LoKR linear alpha (default: 128)")
+    g_lokr.add_argument("--lokr-factor", type=int, default=-1, help="LoKR factor; -1 for auto (default: -1)")
+    g_lokr.add_argument("--lokr-decompose-both", action="store_true", default=False, help="Decompose both Kronecker factors")
+    g_lokr.add_argument("--lokr-use-tucker", action="store_true", default=False, help="Use Tucker decomposition")
+    g_lokr.add_argument("--lokr-use-scalar", action="store_true", default=False, help="Use scalar scaling")
+    g_lokr.add_argument("--lokr-weight-decompose", action="store_true", default=False, help="Enable DoRA-style weight decomposition")
 
     # -- Checkpointing -------------------------------------------------------
     g_ckpt = parser.add_argument_group("Checkpointing")

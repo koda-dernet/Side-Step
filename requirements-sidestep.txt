@@ -21,3 +21,14 @@ textual>=0.47.0
 # Uncomment to enable the Prodigy optimizer.
 # Great if you don't want to manually tune learning rate.
 # prodigyopt>=1.1.2
+
+# ── Optional: LoKR adapter support (LyCORIS) ────────────────
+# Uncomment to enable LoKR (Kronecker) adapters alongside LoRA.
+# Uses LyCORIS library for adapter injection.
+# lycoris-lora>=2.0.0
+
+# ── Optional: Flash Attention 2 (faster training on Ampere+) ─
+# Requires CUDA GPU with compute capability >= 8.0 (RTX 3090+).
+# Linux: builds from source (needs CUDA toolkit, ~10-20 min).
+# Windows: use pre-built wheel from ACE-Step-1.5 requirements.
+# flash-attn

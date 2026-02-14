@@ -58,7 +58,7 @@ def run_estimation(
     )
     from acestep.training_v2.gpu_utils import detect_gpu
     from acestep.training_v2.timestep_sampling import sample_timesteps
-    from acestep.training.data_module import PreprocessedDataModule
+    from acestep.training_v2._vendor.data_module import PreprocessedDataModule
 
     gpu = detect_gpu()
     device = gpu.device

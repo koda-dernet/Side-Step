@@ -1,0 +1,205 @@
+{
+  "main": {
+    "id": "b5bd212af2aa8f9c",
+    "type": "split",
+    "children": [
+      {
+        "id": "bc401a616e0acf3f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "7e61d8088bf7500e",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Model Management.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Model Management"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "f597214c6a5a5e17",
+    "type": "split",
+    "children": [
+      {
+        "id": "880472077035c7f5",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "4f6215dd225322f7",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "48463eb8e660ff25",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "0db3d37cd8c1973e",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "52b5305daba64174",
+    "type": "split",
+    "children": [
+      {
+        "id": "c73659ed4638ab2d",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a48ffb560dfcb5f2",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "RepositoryREADME.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for RepositoryREADME"
+            }
+          },
+          {
+            "id": "9c364814ec20d9aa",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "RepositoryREADME.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from RepositoryREADME"
+            }
+          },
+          {
+            "id": "55eb23c6aa1f82e9",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "07988abd4744b557",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "fa2206342d15e1ec",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "RepositoryREADME.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of RepositoryREADME"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "7e61d8088bf7500e",
+  "lastOpenFiles": [
+    "VRAM Optimization Guide.md",
+    "End-to-End Tutorial.md",
+    "Using Your Adapter.md",
+    "Training Guide.md",
+    "Dataset Preparation.md",
+    "Getting Started.md",
+    "Shift and Timestep Sampling.md",
+    "Windows Notes.md",
+    "Preset Management.md",
+    "Model Management.md",
+    "RepositoryREADME.md",
+    "Estimation Guide.md",
+    "The Settings Wizard.md",
+    "README.md",
+    "ObsidianREADME.md",
+    "Welcome.md"
+  ]
+}

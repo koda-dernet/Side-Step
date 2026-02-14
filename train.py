@@ -21,6 +21,7 @@ Examples:
 
 from __future__ import annotations
 
+import gc
 import logging
 import sys
 
@@ -39,11 +40,16 @@ _console_handler.setLevel(logging.INFO)
 _console_handler.setFormatter(_log_formatter)
 
 # File (captures DEBUG+ including tracebacks)
-_file_handler = logging.FileHandler("sidestep.log", mode="a", encoding="utf-8")
-_file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(_log_formatter)
+# Guard against read-only working directories (e.g. some Windows setups)
+try:
+    _file_handler = logging.FileHandler("sidestep.log", mode="a", encoding="utf-8")
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(_log_formatter)
+    _log_handlers = [_console_handler, _file_handler]
+except OSError:
+    _log_handlers = [_console_handler]
 
-logging.basicConfig(level=logging.DEBUG, handlers=[_console_handler, _file_handler])
+logging.basicConfig(level=logging.DEBUG, handlers=_log_handlers)
 logger = logging.getLogger("train")
 
 
@@ -56,33 +62,28 @@ def _has_subcommand() -> bool:
     return bool(known & set(args))
 
 
-def main() -> int:
-    # -- Compatibility check (non-fatal) ------------------------------------
+def _cleanup_gpu() -> None:
+    """Release GPU memory between session-loop iterations."""
+    gc.collect()
     try:
-        from acestep.training_v2._compat import check_compatibility
-        check_compatibility()
-    except Exception:
-        pass  # never let the compat check itself crash the CLI
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
 
-    # -- Interactive wizard when no subcommand is given -----------------------
-    if not _has_subcommand():
-        from acestep.training_v2.ui.wizard import run_wizard
 
-        args = run_wizard()
-        if args is None:
-            return 0
-    else:
-        from acestep.training_v2.cli.common import build_root_parser
-        parser = build_root_parser()
-        args = parser.parse_args()
+def _dispatch(args) -> int:
+    """Route a parsed argparse.Namespace to the correct subcommand runner.
 
+    Returns an int exit code (0 = success).
+    """
     from acestep.training_v2.cli.common import validate_paths
 
-    # -- Preprocessing (wizard flow) ------------------------------------------
+    # -- Preprocessing (wizard flow) ----------------------------------------
     if getattr(args, "preprocess", False):
         return _run_preprocess(args)
 
-    # -- Dispatch -----------------------------------------------------------
     sub = args.subcommand
 
     # compare-configs has its own validation
@@ -112,6 +113,81 @@ def main() -> int:
         return 1
 
 
+def _extend_acestep_path() -> None:
+    """Extend ``acestep.__path__`` with the base ACE-Step package location.
+
+    When Side-Step is installed standalone (not as an overlay), vanilla
+    mode still needs ``acestep.training.*`` from the base repo.  By
+    appending the base repo's ``acestep/`` to our package path, those
+    imports become reachable without modifying ``sys.path`` globally.
+
+    This MUST run before any ``acestep.training.*`` import.
+    """
+    import os
+    try:
+        from acestep.training_v2.settings import load_settings
+        data = load_settings()
+        if data and data.get("ace_step_dir"):
+            import acestep
+            ace_acestep = os.path.join(data["ace_step_dir"], "acestep")
+            if os.path.isdir(ace_acestep) and ace_acestep not in acestep.__path__:
+                acestep.__path__.append(ace_acestep)
+                logger.debug(
+                    "[Side-Step] Extended acestep.__path__ with %s",
+                    ace_acestep,
+                )
+    except Exception as exc:
+        logger.debug("[Side-Step] Could not extend acestep path: %s", exc)
+
+
+def main() -> int:
+    """Entry point for Side-Step training CLI.
+
+    When invoked with a subcommand (``python train.py fixed ...``), runs
+    that subcommand once and exits.  When invoked without arguments,
+    launches the interactive wizard in a session loop so the user can
+    preprocess, train, and manage presets without restarting.
+    """
+    # -- Extend package path for vanilla mode (must be first) ---------------
+    _extend_acestep_path()
+
+    # -- Compatibility check (non-fatal) ------------------------------------
+    try:
+        from acestep.training_v2._compat import check_compatibility
+        check_compatibility()
+    except Exception:
+        pass  # never let the compat check itself crash the CLI
+
+    # -- Direct CLI mode (subcommand given) ---------------------------------
+    if _has_subcommand():
+        from acestep.training_v2.settings import is_first_run
+        if is_first_run():
+            print(
+                "[INFO] First-time setup not complete. "
+                "Run 'python train.py' without arguments for the interactive setup wizard."
+            )
+        from acestep.training_v2.cli.common import build_root_parser
+        parser = build_root_parser()
+        args = parser.parse_args()
+        return _dispatch(args)
+
+    # -- Interactive wizard session loop ------------------------------------
+    from acestep.training_v2.ui.wizard import run_wizard_session
+
+    last_code = 0
+    for args in run_wizard_session():
+        try:
+            last_code = _dispatch(args)
+        except Exception as exc:
+            logger.exception("Unhandled error in session loop")
+            print(f"[FAIL] {exc}", file=sys.stderr)
+            last_code = 1
+        finally:
+            _cleanup_gpu()
+
+    return last_code
+
+
 # ===========================================================================
 # Subcommand implementations
 # ===========================================================================
@@ -132,7 +208,17 @@ def _run_preprocess(args) -> int:
         return 1
 
     source_label = dataset_json if dataset_json else audio_dir
-    print(f"[INFO] Preprocessing: {source_label} -> {tensor_output}")
+
+    # Show summary and confirm before starting
+    print(f"\n{'='*60}")
+    print(f"  Preprocessing Summary")
+    print(f"{'='*60}")
+    print(f"  Source:        {source_label}")
+    print(f"  Output:        {tensor_output}")
+    print(f"  Checkpoint:    {args.checkpoint_dir}")
+    print(f"  Model variant: {args.model_variant}")
+    print(f"  Max duration:  {getattr(args, 'max_duration', 240.0)}s")
+    print(f"{'='*60}")
     print(f"[INFO] Two-pass pipeline (sequential model loading for low VRAM)")
 
     try:
@@ -150,6 +236,8 @@ def _run_preprocess(args) -> int:
         print(f"[FAIL] Preprocessing failed: {exc}", file=sys.stderr)
         logger.exception("Preprocessing error")
         return 1
+    finally:
+        _cleanup_gpu()
 
     print(f"\n[OK] Preprocessing complete:")
     print(f"     Processed: {result['processed']}/{result['total']}")
@@ -175,6 +263,17 @@ def _run_estimate(args) -> int:
 
     num_batches = getattr(args, "estimate_batches", 5) or 5
 
+    # Show summary before starting
+    print(f"\n{'='*60}")
+    print(f"  Gradient Estimation Summary")
+    print(f"{'='*60}")
+    print(f"  Checkpoint:    {args.checkpoint_dir}")
+    print(f"  Model variant: {args.model_variant}")
+    print(f"  Dataset:       {args.dataset_dir}")
+    print(f"  Batches:       {num_batches}")
+    print(f"  Top-K:         {getattr(args, 'top_k', 16)}")
+    print(f"  Granularity:   {getattr(args, 'granularity', 'module')}")
+    print(f"{'='*60}")
     print(f"[INFO] Running gradient estimation ({num_batches} batches) ...")
     try:
         results = run_estimation(
@@ -190,6 +289,8 @@ def _run_estimate(args) -> int:
         print(f"[FAIL] Estimation failed: {exc}", file=sys.stderr)
         logger.exception("Estimation error")
         return 1
+    finally:
+        _cleanup_gpu()
 
     if not results:
         print("[WARN] No results -- dataset may be empty or model incompatible.")
@@ -220,8 +321,8 @@ def _run_compare_configs(args) -> int:
     from acestep.training_v2.cli.common import validate_paths
     if not validate_paths(args):
         return 1
-    print("[INFO] compare-configs is not yet implemented.")
-    return 0
+    print("[INFO] compare-configs is not yet implemented.", file=sys.stderr)
+    return 1
 
 
 # ===========================================================================

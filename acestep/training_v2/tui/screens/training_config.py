@@ -952,7 +952,7 @@ class TrainingConfigScreen(Screen):
             "num_workers": self._safe_int(self.query_one("#input-num-workers", Input).value, 4),
             "pin_memory": self.query_one("#switch-pin-memory", Switch).value,
             "optimizer_type": self.query_one("#select-optimizer", Select).value if self._has_widget("#select-optimizer") else "adamw",
-            "gradient_checkpointing": self.query_one("#switch-grad-ckpt", Switch).value if self._has_widget("#switch-grad-ckpt") else False,
+            "gradient_checkpointing": self.query_one("#switch-grad-ckpt", Switch).value if self._has_widget("#switch-grad-ckpt") else True,
             "offload_encoder": self.query_one("#switch-offload-encoder", Switch).value if self._has_widget("#switch-offload-encoder") else False,
             
             # Logging

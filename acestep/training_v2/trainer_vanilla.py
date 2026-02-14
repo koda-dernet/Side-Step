@@ -16,8 +16,16 @@ from typing import Any, Callable, Dict, Generator, Optional, Tuple
 
 import torch
 
-from acestep.training.configs import LoRAConfig, TrainingConfig
-from acestep.training.trainer import LoRATrainer
+try:
+    from acestep.training.configs import LoRAConfig, TrainingConfig
+    from acestep.training.trainer import LoRATrainer
+    _VANILLA_AVAILABLE = True
+except ImportError:
+    _VANILLA_AVAILABLE = False
+    # Use vendored configs so the module can at least be imported for
+    # type checking, even though the trainer itself won't work.
+    from acestep.training_v2._vendor.configs import LoRAConfig, TrainingConfig  # type: ignore[no-redef]
+    LoRATrainer = None  # type: ignore[assignment,misc]
 from acestep.training_v2.model_loader import load_decoder_for_training
 
 logger = logging.getLogger(__name__)
@@ -166,7 +174,17 @@ class VanillaTrainer:
     # -- Public API --------------------------------------------------------
 
     def train(self) -> None:
-        """Run vanilla training, calling *progress_callback* for each update."""
+        """Run vanilla training, calling *progress_callback* for each update.
+
+        Raises:
+            RuntimeError: If base ACE-Step is not installed.
+        """
+        if not _VANILLA_AVAILABLE:
+            raise RuntimeError(
+                "Vanilla training requires a full ACE-Step 1.5 installation.\n"
+                "Install it with:  pip install -e /path/to/ACE-Step-1.5\n"
+                "Or use the 'Corrected (fixed)' training mode which is standalone."
+            )
         cfg = self.training_config
 
         lora_cfg, train_cfg, _num_workers = self._build_configs()
