@@ -95,11 +95,13 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
 
     # -- Adapter config (LoRA or LoKR) --------------------------------------
     attention_type = getattr(args, "attention_type", "both")
+    target_mlp = getattr(args, "target_mlp", False)
     resolved_modules = resolve_target_modules(
         args.target_modules,
         attention_type,
         self_target_modules=getattr(args, "self_target_modules", None),
         cross_target_modules=getattr(args, "cross_target_modules", None),
+        target_mlp=target_mlp,
     )
 
     adapter_cfg: AdapterConfig
@@ -114,6 +116,7 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
             weight_decompose=getattr(args, "lokr_weight_decompose", False),
             target_modules=resolved_modules,
             attention_type=attention_type,
+            target_mlp=target_mlp,
         )
     else:
         adapter_cfg = LoRAConfigV2(
@@ -123,6 +126,7 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
             target_modules=resolved_modules,
             bias=args.bias,
             attention_type=attention_type,
+            target_mlp=target_mlp,
         )
 
     # -- Clamp DataLoader flags when num_workers <= 0 -----------------------

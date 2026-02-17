@@ -305,6 +305,7 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_lora.add_argument("--attention-type", type=str, default="both", choices=["self", "cross", "both"], help="Attention layers to target (default: both)")
     g_lora.add_argument("--self-target-modules", nargs="+", default=None, help="Projections for self-attention only (used when --attention-type=both)")
     g_lora.add_argument("--cross-target-modules", nargs="+", default=None, help="Projections for cross-attention only (used when --attention-type=both)")
+    g_lora.add_argument("--target-mlp", action=argparse.BooleanOptionalAction, default=False, help="Also target MLP/FFN layers (gate_proj, up_proj, down_proj)")
 
     # -- LoKR hyperparams ---------------------------------------------------
     g_lokr = parser.add_argument_group("LoKR (used when --adapter-type=lokr)")

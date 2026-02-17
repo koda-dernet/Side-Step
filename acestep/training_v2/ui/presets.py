@@ -110,6 +110,7 @@ PRESET_FIELDS = frozenset([
     "adapter_type",
     # LoRA settings
     "rank", "alpha", "dropout", "target_modules_str", "attention_type", "bias",
+    "self_target_modules_str", "cross_target_modules_str", "target_mlp",
     # LoKR settings
     "lokr_linear_dim", "lokr_linear_alpha", "lokr_factor",
     "lokr_decompose_both", "lokr_use_tucker", "lokr_use_scalar",
