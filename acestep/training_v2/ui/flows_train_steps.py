@@ -139,6 +139,11 @@ def step_lora(a: dict) -> None:
 
     _ask_attention_type(a)
     _ask_projections(a)
+    a["target_mlp"] = ask_bool(
+        "Also target MLP/FFN layers (gate_proj, up_proj, down_proj)?",
+        default=a.get("target_mlp", False),
+        allow_back=True,
+    )
 
 
 def step_lokr(a: dict) -> None:
@@ -171,6 +176,11 @@ def step_lokr(a: dict) -> None:
 
     _ask_attention_type(a)
     _ask_projections(a)
+    a["target_mlp"] = ask_bool(
+        "Also target MLP/FFN layers (gate_proj, up_proj, down_proj)?",
+        default=a.get("target_mlp", False),
+        allow_back=True,
+    )
 
 
 def _default_shift(a: dict) -> float:

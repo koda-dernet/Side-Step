@@ -258,8 +258,10 @@ class TrainingMonitorScreen(Screen):
                 target_modules=resolve_target_modules(
                     target_mods_raw,
                     self.config.get("attention_type", "both"),
+                    target_mlp=self.config.get("target_mlp", False),
                 ),
                 attention_type=self.config.get("attention_type", "both"),
+                target_mlp=self.config.get("target_mlp", False),
             )
 
             # ---- build training config ------------------------------------

@@ -37,6 +37,9 @@ def _resolve_wizard_projections(a: dict) -> list:
     path, or backward-compatible answers), it is split and returned as-is;
     the downstream ``resolve_target_modules`` call in ``config_builder``
     will add the appropriate prefix.
+
+    When ``target_mlp`` is True, MLP module names (gate_proj, up_proj,
+    down_proj) are appended (deduplicated).
     """
     attention_type = a.get("attention_type", "both")
     has_split = "self_target_modules_str" in a or "cross_target_modules_str" in a
@@ -49,9 +52,17 @@ def _resolve_wizard_projections(a: dict) -> list:
             resolved.append(m if "." in m else f"self_attn.{m}")
         for m in cross_mods:
             resolved.append(m if "." in m else f"cross_attn.{m}")
-        return resolved
+    else:
+        resolved = a.get("target_modules_str", _DEFAULT_PROJECTIONS).split()
 
-    return a.get("target_modules_str", _DEFAULT_PROJECTIONS).split()
+    if a.get("target_mlp", False):
+        mlp_modules = ["gate_proj", "up_proj", "down_proj"]
+        existing = set(resolved)
+        for m in mlp_modules:
+            if m not in existing:
+                resolved.append(m)
+
+    return resolved
 
 
 def build_train_namespace(a: dict, mode: str = "fixed") -> argparse.Namespace:
@@ -98,6 +109,7 @@ def build_train_namespace(a: dict, mode: str = "fixed") -> argparse.Namespace:
         dropout=a.get("dropout", 0.1),
         target_modules=target_modules,
         attention_type=a.get("attention_type", "both"),
+        target_mlp=a.get("target_mlp", False),
         bias=a.get("bias", "none"),
         # LoKR args
         lokr_linear_dim=a.get("lokr_linear_dim", 64),

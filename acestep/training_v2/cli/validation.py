@@ -76,6 +76,7 @@ def resolve_target_modules(
     *,
     self_target_modules: list | None = None,
     cross_target_modules: list | None = None,
+    target_mlp: bool = False,
 ) -> list:
     """Resolve target modules based on attention type selection.
 
@@ -86,6 +87,8 @@ def resolve_target_modules(
             (only used when *attention_type* is "both").
         cross_target_modules: Per-type projections for cross-attention
             (only used when *attention_type* is "both").
+        target_mlp: When True, append MLP/FFN module names
+            (gate_proj, up_proj, down_proj) to the resolved list.
 
     Returns:
         Resolved list of module patterns with appropriate prefixes.
@@ -109,20 +112,34 @@ def resolve_target_modules(
 
         resolve_target_modules(["q_proj", "v_proj"], "cross")
         -> ["cross_attn.q_proj", "cross_attn.v_proj"]
+
+        resolve_target_modules(["q_proj"], "self", target_mlp=True)
+        -> ["self_attn.q_proj", "gate_proj", "up_proj", "down_proj"]
     """
     if attention_type == "both":
         if self_target_modules is not None or cross_target_modules is not None:
             s_mods = self_target_modules if self_target_modules is not None else target_modules
             c_mods = cross_target_modules if cross_target_modules is not None else target_modules
-            return _prefix_modules(s_mods, "self_attn") + _prefix_modules(c_mods, "cross_attn")
-        return target_modules
+            resolved = _prefix_modules(s_mods, "self_attn") + _prefix_modules(c_mods, "cross_attn")
+        else:
+            resolved = list(target_modules)
+    else:
+        prefix_map = {
+            "self": "self_attn",
+            "cross": "cross_attn",
+        }
+        prefix = prefix_map.get(attention_type)
+        if prefix is None:
+            resolved = list(target_modules)
+        else:
+            resolved = _prefix_modules(target_modules, prefix)
 
-    prefix_map = {
-        "self": "self_attn",
-        "cross": "cross_attn",
-    }
-    prefix = prefix_map.get(attention_type)
-    if prefix is None:
-        return target_modules
+    if target_mlp:
+        mlp_modules = ["gate_proj", "up_proj", "down_proj"]
+        existing = set(resolved)
+        for m in mlp_modules:
+            if m not in existing:
+                resolved.append(m)
 
-    return _prefix_modules(target_modules, prefix)
+    return resolved
+

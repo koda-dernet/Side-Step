@@ -37,9 +37,13 @@ class LoRAConfigV2(LoRAConfig):
     attention_type: str = "both"
     """Which attention layers to target: 'self', 'cross', or 'both'."""
 
+    target_mlp: bool = False
+    """Also target MLP/FFN layers (gate_proj, up_proj, down_proj)."""
+
     def to_dict(self) -> dict:
         base = super().to_dict()
         base["attention_type"] = self.attention_type
+        base["target_mlp"] = self.target_mlp
         return base
 
     # --- Data loading (declared here for compatibility with base packages
@@ -75,9 +79,13 @@ class LoKRConfigV2(LoKRConfig):
     attention_type: str = "both"
     """Which attention layers to target: 'self', 'cross', or 'both'."""
 
+    target_mlp: bool = False
+    """Also target MLP/FFN layers (gate_proj, up_proj, down_proj)."""
+
     def to_dict(self) -> dict:
         base = super().to_dict()
         base["attention_type"] = self.attention_type
+        base["target_mlp"] = self.target_mlp
         return base
 
 

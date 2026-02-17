@@ -260,5 +260,161 @@ class TestResolveTargetModulesCLI(unittest.TestCase):
         self.assertEqual(result, ["self_attn.q_proj", "self_attn.custom"])
 
 
+class TestMLPTargetingWizard(unittest.TestCase):
+    """Tests for MLP targeting in the wizard flow."""
+
+    def _resolve(self, answers: dict) -> list:
+        from acestep.training_v2.ui.flows_common import _resolve_wizard_projections
+        return _resolve_wizard_projections(answers)
+
+    def test_mlp_appended_when_enabled(self):
+        """MLP modules appended when target_mlp is True."""
+        a = {
+            "attention_type": "self",
+            "target_modules_str": "q_proj v_proj",
+            "target_mlp": True,
+        }
+        result = self._resolve(a)
+        self.assertEqual(result, [
+            "q_proj", "v_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ])
+
+    def test_mlp_not_appended_by_default(self):
+        """MLP modules NOT appended when target_mlp is absent/False."""
+        a = {
+            "attention_type": "self",
+            "target_modules_str": "q_proj v_proj",
+        }
+        result = self._resolve(a)
+        self.assertEqual(result, ["q_proj", "v_proj"])
+
+    def test_mlp_with_both_split(self):
+        """MLP modules appended to split self/cross projections."""
+        a = {
+            "attention_type": "both",
+            "self_target_modules_str": "q_proj",
+            "cross_target_modules_str": "v_proj",
+            "target_mlp": True,
+        }
+        result = self._resolve(a)
+        self.assertEqual(result, [
+            "self_attn.q_proj",
+            "cross_attn.v_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ])
+
+    def test_mlp_deduplication(self):
+        """MLP modules not duplicated if already present."""
+        a = {
+            "attention_type": "self",
+            "target_modules_str": "q_proj gate_proj",
+            "target_mlp": True,
+        }
+        result = self._resolve(a)
+        # gate_proj should not appear twice
+        self.assertEqual(result, [
+            "q_proj", "gate_proj",
+            "up_proj", "down_proj",
+        ])
+
+
+class TestMLPTargetingCLI(unittest.TestCase):
+    """Tests for MLP targeting via CLI resolve_target_modules."""
+
+    def _resolve(self, target_modules, attention_type, **kwargs):
+        from acestep.training_v2.cli.validation import resolve_target_modules
+        return resolve_target_modules(target_modules, attention_type, **kwargs)
+
+    def test_mlp_appended_when_enabled(self):
+        """MLP modules appended when target_mlp=True."""
+        result = self._resolve(["q_proj", "v_proj"], "both", target_mlp=True)
+        self.assertEqual(result, [
+            "q_proj", "v_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ])
+
+    def test_mlp_not_appended_by_default(self):
+        """MLP modules NOT appended when target_mlp is default (False)."""
+        result = self._resolve(["q_proj", "v_proj"], "both")
+        self.assertEqual(result, ["q_proj", "v_proj"])
+
+    def test_mlp_with_self_attention(self):
+        """MLP + self-only attention combines correctly."""
+        result = self._resolve(["q_proj"], "self", target_mlp=True)
+        self.assertEqual(result, [
+            "self_attn.q_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ])
+
+    def test_mlp_with_split_projections(self):
+        """MLP + split self/cross projections."""
+        result = self._resolve(
+            ["q_proj"], "both",
+            self_target_modules=["q_proj"],
+            cross_target_modules=["v_proj"],
+            target_mlp=True,
+        )
+        self.assertEqual(result, [
+            "self_attn.q_proj",
+            "cross_attn.v_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ])
+
+    def test_mlp_deduplication(self):
+        """MLP modules not duplicated if already in target_modules."""
+        result = self._resolve(
+            ["q_proj", "gate_proj"], "both", target_mlp=True,
+        )
+        self.assertEqual(result, [
+            "q_proj", "gate_proj",
+            "up_proj", "down_proj",
+        ])
+
+
+class TestNamespaceMLPTargeting(unittest.TestCase):
+    """Verify that build_train_namespace passes target_mlp through."""
+
+    def _minimal_answers(self, **overrides) -> dict:
+        base = {
+            "checkpoint_dir": "/tmp/ckpt",
+            "model_variant": "turbo",
+            "dataset_dir": "/tmp/ds",
+            "output_dir": "/tmp/out",
+        }
+        base.update(overrides)
+        return base
+
+    def test_target_mlp_in_namespace(self):
+        """target_mlp flag lands in namespace."""
+        from acestep.training_v2.ui.flows_common import build_train_namespace
+
+        a = self._minimal_answers(target_mlp=True)
+        ns = build_train_namespace(a)
+        self.assertTrue(ns.target_mlp)
+
+    def test_target_mlp_default_false(self):
+        """target_mlp defaults to False in namespace."""
+        from acestep.training_v2.ui.flows_common import build_train_namespace
+
+        a = self._minimal_answers()
+        ns = build_train_namespace(a)
+        self.assertFalse(ns.target_mlp)
+
+    def test_mlp_modules_in_target_modules(self):
+        """When target_mlp=True, MLP modules are in target_modules."""
+        from acestep.training_v2.ui.flows_common import build_train_namespace
+
+        a = self._minimal_answers(
+            attention_type="self",
+            target_modules_str="q_proj",
+            target_mlp=True,
+        )
+        ns = build_train_namespace(a)
+        self.assertIn("gate_proj", ns.target_modules)
+        self.assertIn("up_proj", ns.target_modules)
+        self.assertIn("down_proj", ns.target_modules)
+
+
 if __name__ == "__main__":
     unittest.main()
