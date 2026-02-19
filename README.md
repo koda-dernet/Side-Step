@@ -15,7 +15,7 @@ It takes you from **raw audio files** to a **working LoRA/LoKR adapter** without
 
 ## Why Side-Step?
 
-It is a complete toolkit for either fine grained, advanced an to a point, novel approaches of diffusion transformer fine-tuning. Runs on cloud due to its terminal nature, and fixes some problems the original trainer has.
+It is a complete toolkit for either fine grained, advanced and up to a point, novel approaches of diffusion transformer fine-tuning. Runs on cloud due to its terminal nature, and fixes some problems the original trainer has.
 
 -   **Auto-Configured Training**: Training Turbo? You should stay on the discrete 8-steps sampling. What about Base or SFT? Continuous Logit Normal Sampling is your friend. Side-Step detects your model and automatically applies the correct math.
 -   **Preprocessing++**: The latest implementation of something uncommon yet incredibly powerful on your hands. Gradient estimation and auto-ranking. Don't believe me? Try it!
