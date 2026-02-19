@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-SIDESTEP_VERSION = "0.2.0"
+SIDESTEP_VERSION = "0.9.0-beta"
 
 _BANNER = r"""
   ███████ ██ ██████  ███████       ███████ ████████ ███████ ██████

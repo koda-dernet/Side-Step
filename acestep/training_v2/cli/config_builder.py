@@ -66,13 +66,15 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
     timestep_mu = -0.4
     timestep_sigma = 1.0
     data_proportion = 0.5
+    num_hidden_layers: int | None = None
 
     if model_config_path.is_file():
         try:
-            mcfg = _json.loads(model_config_path.read_text())
+            mcfg = _json.loads(model_config_path.read_text(encoding="utf-8"))
             timestep_mu = mcfg.get("timestep_mu", timestep_mu)
             timestep_sigma = mcfg.get("timestep_sigma", timestep_sigma)
             data_proportion = mcfg.get("data_proportion", data_proportion)
+            num_hidden_layers = mcfg.get("num_hidden_layers")
         except (_json.JSONDecodeError, OSError) as exc:
             logger.warning(
                 "[Side-Step] Failed to parse %s: %s -- using default timestep parameters",
@@ -129,6 +131,33 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
             target_mlp=target_mlp,
         )
 
+    # -- Fisher map auto-detection (LoRA only) --------------------------------
+    ignore_fisher = getattr(args, "ignore_fisher_map", False)
+    fisher_map_path = Path(args.dataset_dir) / "fisher_map.json"
+
+    if adapter_type == "lora" and not ignore_fisher and fisher_map_path.is_file():
+        from acestep.training_v2.fisher.io import load_fisher_map
+        fisher_data = load_fisher_map(
+            fisher_map_path,
+            expected_variant=args.model_variant,
+            dataset_dir=args.dataset_dir,
+            expected_num_layers=num_hidden_layers,
+        )
+        if fisher_data:
+            adapter_cfg.target_modules = fisher_data["target_modules"]
+            adapter_cfg.rank_pattern = fisher_data["rank_pattern"]
+            adapter_cfg.alpha_pattern = fisher_data["alpha_pattern"]
+            budget = fisher_data.get("rank_budget", {})
+            adapter_cfg.rank_min = budget.get("min", 16)
+            adapter_cfg.r = adapter_cfg.rank_min
+            adapter_cfg.alpha = adapter_cfg.rank_min * 2
+            logger.info(
+                "[Side-Step] Fisher map loaded: %d modules, adaptive ranks %d-%d",
+                len(fisher_data["rank_pattern"]),
+                budget.get("min", 16),
+                budget.get("max", 128),
+            )
+
     # -- Clamp DataLoader flags when num_workers <= 0 -----------------------
     num_workers = args.num_workers
     prefetch_factor = args.prefetch_factor
@@ -142,7 +171,9 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
             logger.info("[Side-Step] num_workers=0 -- forcing prefetch_factor=0")
             prefetch_factor = 0
 
-    # -- Turbo auto-detection (name-based only) -----------------------------
+    # -- Turbo auto-detection ------------------------------------------------
+    infer_steps = getattr(args, "num_inference_steps", 8)
+    shift = getattr(args, "shift", 3.0)
     base_model_label = getattr(args, "base_model", None) or args.model_variant
     label_lower = base_model_label.lower() if isinstance(base_model_label, str) else ""
 
@@ -151,17 +182,19 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
     elif "base" in label_lower or "sft" in label_lower:
         is_turbo = False
     else:
-        is_turbo = True
+        # Unknown custom model names: infer from inference-step metadata.
+        # 8-step schedules are turbo-style; anything else defaults to base/SFT.
+        is_turbo = int(infer_steps) == 8
         logger.info(
-            "[Side-Step] Could not determine variant from '%s'"
-            " -- assuming turbo.  Use --base-model to override.",
+            "[Side-Step] Could not determine variant from '%s' -- "
+            "inferring %s from num_inference_steps=%s. Use --base-model to override.",
             base_model_label,
+            "turbo" if is_turbo else "base/sft",
+            infer_steps,
         )
 
     # Auto-correct shift / inference-steps metadata when the CLI default
     # (turbo-oriented) doesn't match the detected variant.
-    infer_steps = getattr(args, "num_inference_steps", 8)
-    shift = getattr(args, "shift", 3.0)
     if not is_turbo:
         if infer_steps == 8:
             infer_steps = 50
@@ -210,8 +243,7 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
         resume_from=args.resume_from,
         log_dir=args.log_dir,
         log_every=args.log_every,
-        log_heavy_every=args.log_heavy_every,
-        sample_every_n_epochs=args.sample_every_n_epochs,
+        log_heavy_every=max(0, getattr(args, "log_heavy_every", 50)),
         # Estimation / selective (may not exist on all subcommands)
         estimate_batches=getattr(args, "estimate_batches", None),
         top_k=getattr(args, "top_k", 16),

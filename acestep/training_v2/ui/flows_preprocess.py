@@ -30,6 +30,7 @@ def _step_model(a: dict) -> None:
     """Checkpoint directory and model selection."""
     from acestep.training_v2.settings import get_checkpoint_dir
     from acestep.training_v2.model_discovery import pick_model, prompt_base_model
+    from acestep.training_v2.ui.flows_common import show_model_picker_fallback_hint
 
     section("Preprocessing Settings")
 
@@ -42,10 +43,7 @@ def _step_model(a: dict) -> None:
     # Model picker (replaces hardcoded turbo/base/sft choices)
     result = pick_model(a["checkpoint_dir"])
     if result is None:
-        if is_rich_active() and console is not None:
-            console.print("  [yellow]No model directories found. Enter variant name manually.[/]")
-        else:
-            print("  No model directories found. Enter variant name manually.")
+        show_model_picker_fallback_hint()
         a["model_variant"] = ask(
             "Model variant or folder name", default=a.get("model_variant", "turbo"),
             allow_back=True,
@@ -165,12 +163,24 @@ def _print_found_nearby(original: str, found: Path) -> None:
 
 def _print_not_found(path: str) -> None:
     """Tell the user the file was not found anywhere."""
+    searched = [
+        str(Path.cwd()),
+        str(Path.cwd() / "datasets"),
+        str(Path.cwd() / "data"),
+        f"{Path.cwd()}/*/",
+    ]
     if is_rich_active() and console is not None:
         console.print(f"  [red]Not found: {_esc(path)}[/]")
-        console.print("  [dim]Searched CWD, datasets/, data/, and one level deep.[/]")
+        console.print("  [dim]Searched:[/]")
+        for s in searched:
+            console.print(f"    [dim]- {_esc(s)}[/]")
+        console.print("  [dim]Tip: paste an absolute path if you're unsure.[/]")
     else:
         print(f"  Not found: {path}")
-        print("  Searched CWD, datasets/, data/, and one level deep.")
+        print("  Searched:")
+        for s in searched:
+            print(f"    - {s}")
+        print("  Tip: paste an absolute path if you're unsure.")
 
 
 def _step_output(a: dict) -> None:
@@ -213,6 +223,25 @@ def _step_normalize(a: dict) -> None:
         )
     else:
         a["normalize"] = "none"
+
+    if a.get("normalize") == "lufs":
+        from acestep.training_v2.ui.dependency_check import (
+            ensure_optional_dependencies,
+            required_preprocess_optionals,
+        )
+
+        unresolved = ensure_optional_dependencies(
+            required_preprocess_optionals("lufs"),
+            interactive=True,
+            allow_install_prompt=True,
+        )
+        if unresolved:
+            if ask_bool(
+                "LUFS dependency still missing. Switch normalization to peak so preprocessing can continue?",
+                default=True,
+                allow_back=True,
+            ):
+                a["normalize"] = "peak"
 
 
 def _step_scan_durations(a: dict) -> None:
@@ -271,8 +300,11 @@ _STEPS: list[tuple[str, Callable[..., Any]]] = [
 ]
 
 
-def wizard_preprocess() -> argparse.Namespace:
+def wizard_preprocess(preset: dict | None = None) -> argparse.Namespace:
     """Interactive wizard for preprocessing.
+
+    Args:
+        preset: Optional pre-filled defaults (session carry-over).
 
     Returns:
         A populated ``argparse.Namespace`` with ``preprocess=True``.
@@ -280,7 +312,7 @@ def wizard_preprocess() -> argparse.Namespace:
     Raises:
         GoBack: If the user backs out of the first step.
     """
-    answers: dict = {}
+    answers: dict = dict(preset) if preset else {}
     total = len(_STEPS)
     i = 0
 
@@ -331,7 +363,6 @@ def wizard_preprocess() -> argparse.Namespace:
         log_dir=None,
         log_every=10,
         log_heavy_every=50,
-        sample_every_n_epochs=0,
         optimizer_type="adamw",
         scheduler_type="cosine",
         gradient_checkpointing=True,

@@ -94,11 +94,3 @@ class RichHelpFormatter(argparse.HelpFormatter):
         return output
 
 
-def install_rich_help(parser: argparse.ArgumentParser) -> None:
-    """Replace the formatter class on an existing parser and all subparsers."""
-    parser.formatter_class = RichHelpFormatter
-    # Walk subparsers
-    for action in parser._actions:
-        if isinstance(action, argparse._SubParsersAction):
-            for sub_parser in action.choices.values():
-                sub_parser.formatter_class = RichHelpFormatter

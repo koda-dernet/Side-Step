@@ -22,7 +22,7 @@ This means presets are portable between machines and projects. When you load a p
 | LoRA | `rank`, `alpha`, `dropout`, `target_modules_str`, `attention_type`, `bias` |
 | LoKR | `lokr_linear_dim`, `lokr_linear_alpha`, `lokr_factor`, `lokr_decompose_both`, `lokr_use_tucker`, `lokr_use_scalar`, `lokr_weight_decompose` |
 | Training | `learning_rate`, `batch_size`, `gradient_accumulation`, `epochs`, `warmup_steps`, `weight_decay`, `max_grad_norm`, `seed`, `shift`, `num_inference_steps`, `optimizer_type`, `scheduler_type`, `cfg_ratio` |
-| Checkpointing / Logging | `save_every`, `log_every`, `log_heavy_every`, `sample_every_n_epochs` |
+| Checkpointing / Logging | `save_every`, `log_every`, `log_heavy_every` |
 | VRAM | `gradient_checkpointing`, `offload_encoder` |
 
 ---
@@ -72,6 +72,8 @@ All built-in presets are configured for **turbo** models (`shift=3.0`, `num_infe
 ### Loading a Preset
 
 When starting a training flow in the wizard, Side-Step offers to load a preset before asking configuration questions. The preset values pre-fill the wizard prompts so you can accept defaults or modify individual settings.
+
+For estimation-style flows (Preprocessing++ / gradient estimation), the wizard can also load overlapping preset fields (for example rank/alpha/dropout/rank budget) as a lightweight defaulting step.
 
 ### Saving a Preset
 
@@ -146,8 +148,7 @@ If you want to create a preset by hand, here is the format:
   "log_every": 10,
   "log_heavy_every": 50,
   "gradient_checkpointing": true,
-  "offload_encoder": false,
-  "sample_every_n_epochs": 0
+  "offload_encoder": false
 }
 ```
 

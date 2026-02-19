@@ -21,6 +21,25 @@ from acestep.training_v2.ui.prompt_helpers import (
 )
 
 
+# ---- Helpers ----------------------------------------------------------------
+
+def _has_fisher_map(a: dict) -> bool:
+    """Return True if a valid Preprocessing++ map exists in dataset dir."""
+    from pathlib import Path
+    ds = a.get("dataset_dir")
+    if not ds:
+        return False
+    p = Path(ds) / "fisher_map.json"
+    if not p.is_file():
+        return False
+    try:
+        import json
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return bool(data.get("rank_pattern"))
+    except Exception:
+        return False
+
+
 # ---- Basic steps ------------------------------------------------------------
 
 def step_config_mode(a: dict) -> None:
@@ -43,6 +62,11 @@ def step_required(a: dict) -> None:
         pick_model,
         prompt_base_model,
     )
+    from acestep.training_v2.ui.flows_common import (
+        describe_preprocessed_dataset_issue,
+        show_dataset_issue,
+        show_model_picker_fallback_hint,
+    )
 
     section("Required Settings")
 
@@ -57,10 +81,7 @@ def step_required(a: dict) -> None:
     result = pick_model(a["checkpoint_dir"])
     if result is None:
         # No models found -- fall back to manual entry
-        if is_rich_active() and console is not None:
-            console.print("  [yellow]No model directories found. Enter variant name manually.[/]")
-        else:
-            print("  No model directories found. Enter variant name manually.")
+        show_model_picker_fallback_hint()
         a["model_variant"] = ask(
             "Model variant or folder name", default=a.get("model_variant", "turbo"),
             allow_back=True,
@@ -75,11 +96,16 @@ def step_required(a: dict) -> None:
         if not info.is_official and info.base_model == "unknown":
             a["base_model"] = prompt_base_model(name)
 
-    a["dataset_dir"] = ask_path(
-        "Dataset directory (preprocessed .pt files)",
-        default=a.get("dataset_dir"),
-        must_exist=True, allow_back=True,
-    )
+    while True:
+        a["dataset_dir"] = ask_path(
+            "Dataset directory (preprocessed .pt files)",
+            default=a.get("dataset_dir"),
+            must_exist=True, allow_back=True,
+        )
+        issue = describe_preprocessed_dataset_issue(a["dataset_dir"])
+        if issue is None:
+            break
+        show_dataset_issue(issue)
     a["output_dir"] = ask(
         "Output directory for adapter weights",
         default=a.get("output_dir"),
@@ -131,7 +157,20 @@ def _ask_projections(a: dict) -> None:
 
 
 def step_lora(a: dict) -> None:
-    """LoRA hyperparameters."""
+    """LoRA hyperparameters.
+
+    When a Preprocessing++ map is detected in the dataset directory, rank / alpha /
+    target-module questions are skipped because the map will
+    override them in ``build_configs``.
+    """
+    if _has_fisher_map(a):
+        section("LoRA Settings (Preprocessing++ guided -- rank & targets locked)")
+        a["dropout"] = ask(
+            "Dropout", default=a.get("dropout", 0.1),
+            type_fn=float, allow_back=True,
+        )
+        return
+
     section("LoRA Settings (press Enter for defaults)")
     a["rank"] = ask("Rank", default=a.get("rank", 64), type_fn=int, allow_back=True)
     a["alpha"] = ask("Alpha", default=a.get("alpha", 128), type_fn=int, allow_back=True)
@@ -248,6 +287,14 @@ def step_logging(a: dict) -> None:
         a["save_best_after"] = a.get("save_best_after", 200)
         a["early_stop_patience"] = 0
     a["log_every"] = ask("Log metrics every N steps", default=a.get("log_every", 10), type_fn=int, allow_back=True)
+    a["log_heavy_every"] = ask(
+        "Log gradient norms every N steps (0=disabled)",
+        default=a.get("log_heavy_every", 50),
+        type_fn=int,
+        allow_back=True,
+    )
+    if a["log_heavy_every"] < 0:
+        a["log_heavy_every"] = 0
     resume_raw = ask("Resume from checkpoint path (leave empty to skip)", default=a.get("resume_from"), allow_back=True)
     if resume_raw in (None, "None", ""):
         a["resume_from"] = None
@@ -262,7 +309,15 @@ def step_logging(a: dict) -> None:
                 )
             else:
                 print(f"  That's a file -- using checkpoint directory: {parent}")
-            resume_raw = parent
+            if ask_bool("Use this directory for resume?", default=True, allow_back=True):
+                resume_raw = parent
+            else:
+                resume_raw = ask_path(
+                    "Resume checkpoint directory",
+                    default=parent,
+                    must_exist=True,
+                    allow_back=True,
+                )
         a["resume_from"] = resume_raw
 
 
@@ -284,13 +339,18 @@ def step_advanced_optimizer(a: dict) -> None:
             ("adamw", "AdamW (default, reliable)"),
             ("adamw8bit", "AdamW 8-bit (saves ~30% optimizer VRAM, needs bitsandbytes)"),
             ("adafactor", "Adafactor (minimal state memory)"),
-            ("prodigy", "Prodigy (auto-tunes LR -- set LR to 1.0, needs prodigyopt)"),
+            ("prodigy", "Prodigy (auto-tunes LR -- start around 0.1, needs prodigyopt)"),
         ],
         default=1,
         allow_back=True,
     )
     if a["optimizer_type"] == "prodigy":
-        a["learning_rate"] = ask("Learning rate (Prodigy: use 1.0)", default=1.0, type_fn=float, allow_back=True)
+        a["learning_rate"] = ask(
+            "Learning rate (Prodigy: start around 0.1, lower if unstable)",
+            default=0.1,
+            type_fn=float,
+            allow_back=True,
+        )
 
     a["scheduler_type"] = menu(
         "LR scheduler?",
@@ -349,8 +409,6 @@ def step_advanced_logging(a: dict) -> None:
     section("Advanced Logging (press Enter for defaults)")
     log_dir_raw = ask("TensorBoard log directory (leave empty for default)", default=a.get("log_dir"), allow_back=True)
     a["log_dir"] = None if log_dir_raw in (None, "None", "") else log_dir_raw
-    a["log_heavy_every"] = ask("Log gradient norms every N steps", default=a.get("log_heavy_every", 50), type_fn=int, allow_back=True)
-    a["sample_every_n_epochs"] = ask("Generate sample every N epochs (0=disabled)", default=a.get("sample_every_n_epochs", 0), type_fn=int, allow_back=True)
 
 
 def step_chunk_duration(a: dict) -> None:
@@ -382,24 +440,32 @@ def step_chunk_duration(a: dict) -> None:
             "  enough VRAM."
         )
 
-    chunk = ask(
-        "Chunk duration in seconds (0 = disabled, recommended: 60)",
-        default=a.get("chunk_duration", 0),
-        type_fn=int, allow_back=True,
-    )
+    while True:
+        chunk = ask(
+            "Chunk duration in seconds (0 = disabled, recommended: 60)",
+            default=a.get("chunk_duration", 0),
+            type_fn=int, allow_back=True,
+        )
 
-    if chunk > 0 and chunk < 60:
-        if is_rich_active() and console is not None:
-            console.print(
-                f"  [bold yellow]Caution:[/] {chunk}s chunks are below the recommended\n"
-                "  60s minimum. This may reduce training quality, especially for\n"
-                "  full-length inference. Consider using 60s or higher."
-            )
-        else:
-            print(
-                f"  Caution: {chunk}s chunks are below the recommended 60s minimum.\n"
-                "  This may reduce training quality, especially for full-length\n"
-                "  inference. Consider using 60s or higher."
-            )
+        if chunk <= 0:
+            a["chunk_duration"] = None
+            return
 
-    a["chunk_duration"] = chunk if chunk > 0 else None
+        if chunk < 60:
+            if is_rich_active() and console is not None:
+                console.print(
+                    f"  [bold yellow]Caution:[/] {chunk}s chunks are below the recommended\n"
+                    "  60s minimum. This may reduce training quality, especially for\n"
+                    "  full-length inference. Consider using 60s or higher."
+                )
+            else:
+                print(
+                    f"  Caution: {chunk}s chunks are below the recommended 60s minimum.\n"
+                    "  This may reduce training quality, especially for full-length\n"
+                    "  inference. Consider using 60s or higher."
+                )
+            if not ask_bool("Use this chunk size anyway?", default=False, allow_back=True):
+                continue
+
+        a["chunk_duration"] = chunk
+        return

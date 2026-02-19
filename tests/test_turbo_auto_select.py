@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
 import torch
+
+_TMP = tempfile.gettempdir()
 
 
 class TestDiscreteTimestepSampling(unittest.TestCase):
@@ -76,7 +79,7 @@ class TestIsTurboDetection(unittest.TestCase):
     def _build_args(self, **overrides):
         """Build a minimal argparse.Namespace for config_builder.build_configs."""
         defaults = dict(
-            checkpoint_dir="/tmp/fake_checkpoints",
+            checkpoint_dir=f"{_TMP}/fake_checkpoints",
             model_variant="turbo",
             base_model="turbo",
             device="cpu",
@@ -100,13 +103,12 @@ class TestIsTurboDetection(unittest.TestCase):
             weight_decay=0.01,
             max_grad_norm=1.0,
             seed=42,
-            output_dir="/tmp/fake_output",
+            output_dir=f"{_TMP}/fake_output",
             save_every=10,
             resume_from=None,
             log_dir=None,
             log_every=10,
             log_heavy_every=50,
-            sample_every_n_epochs=0,
             shift=3.0,
             num_inference_steps=8,
             optimizer_type="adamw",
@@ -122,7 +124,7 @@ class TestIsTurboDetection(unittest.TestCase):
             estimate_output=None,
             preprocess=False,
             audio_dir=None,
-            dataset_dir="/tmp/fake_dataset",
+            dataset_dir=f"{_TMP}/fake_dataset",
             dataset_json=None,
             tensor_output=None,
             max_duration=240.0,
@@ -178,6 +180,23 @@ class TestIsTurboDetection(unittest.TestCase):
         _, train_cfg = build_configs(args)
         self.assertTrue(train_cfg.is_turbo)
 
+    @patch("acestep.training_v2.cli.config_builder._resolve_model_config_path")
+    @patch("acestep.training_v2.cli.config_builder.detect_gpu")
+    def test_non_turbo_finetune_detected_by_steps(self, mock_gpu, mock_config_path):
+        """A custom fine-tune with non-8 steps should be treated as base/SFT."""
+        from acestep.training_v2.cli.config_builder import build_configs
+        from pathlib import Path
+
+        mock_gpu.return_value = MagicMock(device="cpu", precision="fp32")
+        mock_config_path.return_value = Path("/nonexistent/config.json")
+
+        args = self._build_args(
+            base_model="my-custom-finetune", model_variant="my-custom-finetune",
+            num_inference_steps=50, shift=1.0,
+        )
+        _, train_cfg = build_configs(args)
+        self.assertFalse(train_cfg.is_turbo)
+
 
 class TestTrainingStepBranching(unittest.TestCase):
     """Verify FixedLoRAModule branches between discrete and continuous sampling."""
@@ -206,7 +225,7 @@ class TestTrainingStepBranching(unittest.TestCase):
 
         lora_cfg = LoRAConfigV2(r=8, alpha=16)
         train_cfg = TrainingConfigV2(
-            is_turbo=True, output_dir="/tmp/test",
+            is_turbo=True, output_dir=f"{_TMP}/test",
         )
 
         with patch.object(FixedLoRAModule, "_inject_lora"):
@@ -249,7 +268,7 @@ class TestTrainingStepBranching(unittest.TestCase):
 
         lora_cfg = LoRAConfigV2(r=8, alpha=16)
         train_cfg = TrainingConfigV2(
-            is_turbo=False, output_dir="/tmp/test",
+            is_turbo=False, output_dir=f"{_TMP}/test",
         )
 
         with patch.object(FixedLoRAModule, "_inject_lora"):
@@ -290,11 +309,35 @@ class TestWizardTurboDetection(unittest.TestCase):
 
         self.assertTrue(_is_turbo_variant({"base_model": "my-finetune", "num_inference_steps": 8}))
 
+    def test_non_turbo_finetune_by_steps(self):
+        from acestep.training_v2.ui.flows_train import _is_turbo_variant
+
+        self.assertFalse(_is_turbo_variant({"base_model": "my-finetune", "num_inference_steps": 50}))
+
     def test_unknown_base_defaults_turbo(self):
         """When base_model is not set and default inference steps is 8, treat as turbo."""
         from acestep.training_v2.ui.flows_train import _is_turbo_variant
 
         self.assertTrue(_is_turbo_variant({}))
+
+
+class TestWizardLossWeightingGuard(unittest.TestCase):
+    """Ensure turbo namespace never carries stale min_snr loss weighting."""
+
+    def test_turbo_forces_loss_weighting_none(self):
+        from acestep.training_v2.ui.flows_common import build_train_namespace
+
+        answers = {
+            "checkpoint_dir": f"{_TMP}/ckpt",
+            "model_variant": "turbo",
+            "base_model": "turbo",
+            "dataset_dir": f"{_TMP}/data",
+            "output_dir": f"{_TMP}/out",
+            "loss_weighting": "min_snr",
+            "snr_gamma": 5.0,
+        }
+        ns = build_train_namespace(answers)
+        self.assertEqual(ns.loss_weighting, "none")
 
 
 if __name__ == "__main__":

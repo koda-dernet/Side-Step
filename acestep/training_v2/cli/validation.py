@@ -41,9 +41,13 @@ def validate_paths(args: argparse.Namespace) -> bool:
         model_dir = ckpt_root / args.model_variant
     else:
         tried = variant_dir or args.model_variant
+        available = sorted([p.name for p in ckpt_root.iterdir() if p.is_dir()]) if ckpt_root.is_dir() else []
+        sample = ", ".join(available[:8]) if available else "(none found)"
         print(
             f"[FAIL] Model directory not found: {ckpt_root / tried}\n"
-            f"       Looked for '{tried}' under {ckpt_root}",
+            f"       Looked for '{tried}' under {ckpt_root}\n"
+            f"       Available folders: {sample}\n"
+            f"       Tip: use --model-variant with the exact folder name (e.g. turbo/base/sft or your fine-tune folder).",
             file=sys.stderr,
         )
         return False
@@ -54,7 +58,11 @@ def validate_paths(args: argparse.Namespace) -> bool:
     # Dataset dir
     ds_dir = getattr(args, "dataset_dir", None)
     if ds_dir is not None and not Path(ds_dir).is_dir():
-        print(f"[FAIL] Dataset directory not found: {ds_dir}", file=sys.stderr)
+        print(
+            f"[FAIL] Dataset directory not found: {ds_dir}\n"
+            f"       Tip: it must contain preprocessed .pt files (or a valid manifest.json).",
+            file=sys.stderr,
+        )
         return False
 
     # Resume path

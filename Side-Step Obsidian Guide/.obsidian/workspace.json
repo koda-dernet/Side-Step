@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Shift and Timestep Sampling.md",
+                "file": "CLI Argument Reference.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Shift and Timestep Sampling"
+              "title": "CLI Argument Reference"
             }
           }
         ]
@@ -186,6 +186,7 @@
   "active": "7e61d8088bf7500e",
   "lastOpenFiles": [
     "Loss Weighting and CFG Dropout.md",
+    "Shift and Timestep Sampling.md",
     "RepositoryREADME.md",
     "Training Guide.md",
     "Estimation Guide.md",
@@ -195,7 +196,6 @@
     "VRAM Optimization Guide.md",
     "Using Your Adapter.md",
     "Getting Started.md",
-    "Shift and Timestep Sampling.md",
     "Windows Notes.md",
     "Preset Management.md",
     "The Settings Wizard.md",

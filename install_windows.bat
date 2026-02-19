@@ -10,7 +10,7 @@ echo   ███████ ██ ██   ██ █████   ███�
 echo        ██ ██ ██   ██ ██                 ██    ██    ██      ██
 echo   ███████ ██ ██████  ███████       ███████    ██    ███████ ██
 echo.
-echo   Standalone Installer (v0.8.0-beta)
+echo   Standalone Installer (v0.9.0-beta)
 echo.
 
 REM Check if PowerShell is available
@@ -23,11 +23,16 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 REM Run the PowerShell installer with execution policy bypass
-powershell -ExecutionPolicy Bypass -File "%~dp0install_windows.ps1" %*
+REM Quote %~dp0 to handle spaces in the install directory
+powershell -ExecutionPolicy Bypass -File "%~dp0install_windows.ps1" %~1
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [FAIL] Installation encountered errors. Check the output above.
+    echo        Common fixes:
+    echo          - Re-open PowerShell and run installer again
+    echo          - Ensure Git is installed and reachable in PATH
+    echo          - If uv is missing, run install_windows.ps1 manually
     pause
     exit /b %ERRORLEVEL%
 )

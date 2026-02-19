@@ -22,32 +22,77 @@ import torch
 logger = logging.getLogger(__name__)
 
 
-def _is_flash_attention_available(device: str) -> bool:
-    """Check if flash_attn is usable on the target device.
+def _flash_attention_unavailable_reason(device: str, precision: str) -> Optional[str]:
+    """Return None when flash-attn can be used, otherwise a reason string.
 
-    Requirements (all must be met):
+    Requirements:
         1. Device is CUDA.
-        2. GPU compute capability >= 8.0 (Ampere / RTX 30xx or newer).
-        3. ``flash_attn`` package is importable.
+        2. Precision is bf16/fp16 (not fp32).
+        3. GPU compute capability >= 8.0 (Ampere / RTX 30xx+).
+        4. ``flash_attn`` package is importable.
     """
     if not device.startswith("cuda"):
-        return False
+        return "target device is not CUDA"
+    if precision == "fp32":
+        return "precision=fp32 is incompatible with flash_attention_2 (use bf16 or fp16)"
     try:
         dev_idx = int(device.split(":")[1]) if ":" in device else 0
         props = torch.cuda.get_device_properties(dev_idx)
         if props.major < 8:
-            logger.info(
-                "[INFO] Flash Attention skipped: GPU compute capability %d.%d < 8.0",
-                props.major, props.minor,
+            return (
+                f"GPU compute capability {props.major}.{props.minor} < 8.0 "
+                "(Ampere / RTX 30xx+ required)"
             )
-            return False
-    except Exception:
-        return False
+    except Exception as exc:
+        return f"could not query CUDA device properties: {exc}"
     try:
         import flash_attn  # noqa: F401
-        return True
     except ImportError:
-        return False
+        return "flash_attn package is not installed/importable"
+    return None
+
+
+def _print_attn_backend_decision(msg: str) -> None:
+    """Print/log a user-visible backend selection message."""
+    logger.info(msg)
+
+
+def _format_attn_load_error(exc: Exception) -> str:
+    """Compact one-line exception text for fallback diagnostics."""
+    text = str(exc).strip()
+    return text if text else exc.__class__.__name__
+
+
+def _log_attn_fallback(attempted: str, exc: Exception, next_backend: Optional[str]) -> None:
+    """Log fallback status after one attention backend load attempt fails."""
+    reason = _format_attn_load_error(exc)
+    if next_backend:
+        _print_attn_backend_decision(
+            f"attn backend '{attempted}' unavailable ({reason}); trying '{next_backend}'"
+        )
+    else:
+        logger.warning("[WARN] Failed with attn_implementation=%s: %s", attempted, reason)
+
+
+def _choose_attention_candidates(device: str, precision: str) -> tuple[list[str], Optional[str]]:
+    """Return backend candidates in preference order and FA2 skip reason."""
+    fa2_reason = _flash_attention_unavailable_reason(device, precision)
+    candidates = []
+    if fa2_reason is None:
+        candidates.append("flash_attention_2")
+    candidates.extend(["sdpa", "eager"])
+    return candidates, fa2_reason
+
+
+def _selected_attn_status(attn_impl: str) -> str:
+    """Human-friendly final status line for the selected backend."""
+    if attn_impl == "flash_attention_2":
+        return "Using flash_attention_2 (best memory/perf)"
+    if attn_impl == "sdpa":
+        return "Using sdpa fallback (training is valid; memory/perf may be lower than FA2)"
+    if attn_impl == "eager":
+        return "Using eager fallback (slowest; consider enabling sdpa/fa2)"
+    return f"Using attention backend: {attn_impl}"
 
 
 # Variant -> subdirectory mapping
@@ -104,7 +149,7 @@ def read_model_config(checkpoint_dir: str | Path, variant: str) -> Dict[str, Any
     config_path = model_dir / "config.json"
     if not config_path.is_file():
         raise FileNotFoundError(f"config.json not found at {config_path}")
-    return json.loads(config_path.read_text())
+    return json.loads(config_path.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -138,19 +183,21 @@ def load_decoder_for_training(
     dtype = _resolve_dtype(precision)
 
     logger.info("[INFO] Loading model from %s (variant=%s, dtype=%s)", model_dir, variant, dtype)
-    print(f"[INFO] Loading model from {model_dir} (variant={variant}, dtype={dtype})")
 
     # Try attention implementations in preference order.
     # flash_attention_2 first (matches handler.initialize_service), then sdpa, then eager.
-    attn_candidates = []
-    if _is_flash_attention_available(device):
-        attn_candidates.append("flash_attention_2")
-    attn_candidates.extend(["sdpa", "eager"])
+    attn_candidates, fa2_reason = _choose_attention_candidates(device, precision)
+    if fa2_reason is None:
+        _print_attn_backend_decision("flash_attention_2 appears available; attempting it first")
+    else:
+        _print_attn_backend_decision(
+            f"flash_attention_2 unavailable: {fa2_reason}. Falling back to sdpa/eager."
+        )
 
     model = None
     last_err: Optional[Exception] = None
 
-    for attn_impl in attn_candidates:
+    for idx, attn_impl in enumerate(attn_candidates):
         try:
             model = AutoModel.from_pretrained(
                 str(model_dir),
@@ -158,11 +205,14 @@ def load_decoder_for_training(
                 attn_implementation=attn_impl,
                 dtype=dtype,
             )
-            print(f"[OK] Model loaded with attn_implementation={attn_impl}")
+            setattr(model, "_side_step_attn_backend", attn_impl)
+            logger.info("[OK] Model loaded with attn_implementation=%s", attn_impl)
+            _print_attn_backend_decision(_selected_attn_status(attn_impl))
             break
         except Exception as exc:
             last_err = exc
-            logger.warning("[WARN] Failed with attn_implementation=%s: %s", attn_impl, exc)
+            next_backend = attn_candidates[idx + 1] if idx + 1 < len(attn_candidates) else None
+            _log_attn_fallback(attn_impl, exc, next_backend)
 
     if model is None:
         raise RuntimeError(

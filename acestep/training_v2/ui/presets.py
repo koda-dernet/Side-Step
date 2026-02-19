@@ -27,6 +27,21 @@ from typing import Any, Dict, List, Optional
 import logging
 
 logger = logging.getLogger(__name__)
+_LAST_PRESET_ERROR: str | None = None
+
+
+def _set_last_error(msg: str | None) -> None:
+    """Store the last user-facing preset operation error."""
+    global _LAST_PRESET_ERROR
+    _LAST_PRESET_ERROR = msg
+
+
+def get_last_preset_error(clear: bool = False) -> str | None:
+    """Return the latest preset operation error message."""
+    msg = _LAST_PRESET_ERROR
+    if clear:
+        _set_last_error(None)
+    return msg
 
 
 # ---- Directories ------------------------------------------------------------
@@ -94,7 +109,7 @@ def _global_presets_dir() -> Path:
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
     else:
-        base = Path.home() / ".config"
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return base / "sidestep" / "presets"
 
 
@@ -123,7 +138,6 @@ PRESET_FIELDS = frozenset([
     "save_every", "log_every", "log_heavy_every",
     "save_best", "save_best_after", "early_stop_patience",
     "gradient_checkpointing", "offload_encoder",
-    "sample_every_n_epochs",
 ])
 
 # ---- Max file size for import validation ------------------------------------
@@ -153,17 +167,27 @@ def _sanitize_name(name: str) -> str:
         raise ValueError("Preset name cannot be empty")
     # Block path traversal
     if ".." in name or name.startswith("/") or name.startswith("\\"):
-        raise ValueError(f"Invalid preset name: {name!r}")
+        raise ValueError("Path separators and '..' are not allowed")
     # Remove unsafe characters and replace spaces
     cleaned = "".join(c if c not in _UNSAFE_CHARS else "" for c in name)
     cleaned = cleaned.replace(" ", "_")
     if not cleaned:
-        raise ValueError(f"Preset name contains only special characters: {name!r}")
+        raise ValueError(
+            "Name contains only invalid characters. Avoid: / \\ : * ? \" < > |"
+        )
     # Block Windows reserved filenames (case-insensitive)
     if cleaned.upper() in _WINDOWS_RESERVED:
         raise ValueError(
             f"Preset name {cleaned!r} is a reserved filename on Windows"
         )
+    if cleaned != name.replace(" ", "_"):
+        invalid = sorted(set(ch for ch in name if ch in _UNSAFE_CHARS))
+        if invalid:
+            raise ValueError(
+                "Name contains invalid characters: "
+                + " ".join(invalid)
+                + ". Allowed: letters, numbers, spaces, '_' and '-'."
+            )
     return cleaned
 
 
@@ -230,8 +254,9 @@ def load_preset(name: str) -> Optional[Dict[str, Any]]:
     """
     try:
         sanitized = _sanitize_name(name)
-    except ValueError:
+    except ValueError as exc:
         logger.warning("Invalid preset name: %r", name)
+        _set_last_error(f"Invalid preset name: {exc}")
         return None
 
     for directory in [_local_presets_dir(), _global_presets_dir(), _builtin_presets_dir()]:
@@ -241,10 +266,13 @@ def load_preset(name: str) -> Optional[Dict[str, Any]]:
                 data = json.loads(fp.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError) as exc:
                 logger.warning("Failed to load preset %s: %s", fp, exc)
+                _set_last_error(f"Failed to read preset JSON: {exc}")
                 return None
             # Filter to known preset fields only
+            _set_last_error(None)
             return {k: v for k, v in data.items() if k in PRESET_FIELDS}
 
+    _set_last_error(f"Preset '{name}' was not found in local/global/built-in directories.")
     return None
 
 
@@ -275,6 +303,7 @@ def save_preset(name: str, description: str, answers: Dict[str, Any]) -> Path:
 
     fp = out_dir / f"{safe_name}.json"
     fp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _set_last_error(None)
     return fp
 
 
@@ -286,13 +315,16 @@ def delete_preset(name: str) -> bool:
     """
     try:
         safe_name = _sanitize_name(name)
-    except ValueError:
+    except ValueError as exc:
+        _set_last_error(f"Invalid preset name: {exc}")
         return False
     for directory in [_local_presets_dir(), _global_presets_dir()]:
         fp = directory / f"{safe_name}.json"
         if fp.is_file():
             fp.unlink()
+            _set_last_error(None)
             return True
+    _set_last_error(f"Preset '{name}' was not found, or it is built-in and cannot be deleted.")
     return False
 
 
@@ -305,30 +337,38 @@ def import_preset(source_path: str) -> Optional[str]:
     src = Path(source_path)
     if not src.is_file():
         logger.warning("Import source not found: %s", src)
+        _set_last_error(f"File not found: {src}")
         return None
     if src.stat().st_size > _MAX_PRESET_BYTES:
         logger.warning("Preset file too large (>1MB): %s", src)
+        _set_last_error(
+            f"Preset file is too large ({src.stat().st_size} bytes). Max allowed is {_MAX_PRESET_BYTES} bytes."
+        )
         return None
 
     try:
         data = json.loads(src.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             logger.warning("Preset must be a JSON object: %s", src)
+            _set_last_error("Preset JSON must be an object (key/value map), not a list or primitive.")
             return None
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Invalid preset file %s: %s", src, exc)
+        _set_last_error(f"Invalid preset JSON: {exc}")
         return None
 
     raw_name = data.get("name", src.stem)
     try:
         name = _sanitize_name(raw_name)
-    except ValueError:
+    except ValueError as exc:
         logger.warning("Invalid preset name in %s: %r", src, raw_name)
+        _set_last_error(f"Invalid preset name in file: {exc}")
         return None
     out_dir = _local_presets_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{name}.json"
     shutil.copy2(src, dest)
+    _set_last_error(None)
     return name
 
 
@@ -339,11 +379,14 @@ def export_preset(name: str, dest_path: str) -> bool:
     """
     try:
         safe_name = _sanitize_name(name)
-    except ValueError:
+    except ValueError as exc:
+        _set_last_error(f"Invalid preset name: {exc}")
         return False
     for directory in [_local_presets_dir(), _global_presets_dir(), _builtin_presets_dir()]:
         fp = directory / f"{safe_name}.json"
         if fp.is_file():
             shutil.copy2(fp, dest_path)
+            _set_last_error(None)
             return True
+    _set_last_error(f"Preset '{name}' was not found.")
     return False

@@ -20,9 +20,12 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 import torch
 
 from acestep.training_v2.optim import build_optimizer, build_scheduler
+
+_MAX_CONSECUTIVE_NAN = 10  # halt training after this many NaN/Inf losses in a row
 from acestep.training_v2.tensorboard_utils import TrainingLogger
 from acestep.training_v2.trainer_helpers import (
-    configure_memory_features, save_adapter_flat, save_checkpoint, save_final,
+    configure_memory_features, force_disable_decoder_cache, save_adapter_flat,
+    save_checkpoint, save_final,
 )
 from acestep.training_v2.ui import TrainingUpdate
 
@@ -71,8 +74,16 @@ def _flush_accumulated(
             steps_per_epoch=steps_per_epoch,
         ))
 
-    if global_step % cfg.log_heavy_every == 0:
+    if cfg.log_heavy_every > 0 and global_step % cfg.log_heavy_every == 0:
         tb.log_per_layer_grad_norms(module.model, global_step)
+        tb.flush()
+
+    timestep_every = max(0, int(getattr(cfg, "log_timestep_every", cfg.log_every)))
+    if (
+        getattr(cfg, "loss_weighting", "none") == "min_snr"
+        and timestep_every > 0
+        and global_step % timestep_every == 0
+    ):
         ts_buf = module.drain_timestep_buffer()
         if ts_buf is not None:
             tb.log_timestep_histogram(ts_buf, global_step)
@@ -146,6 +157,7 @@ def run_basic_training_loop(
     )
 
     # -- Training memory features (same as Fabric path) ----------------
+    force_disable_decoder_cache(module.model.decoder)
     if getattr(cfg, "gradient_checkpointing", True):
         ckpt_ok, cache_off, grads_ok = configure_memory_features(
             module.model.decoder
@@ -184,6 +196,9 @@ def run_basic_training_loop(
 
     module.model.decoder.train()
 
+    # NaN/Inf guard -- consecutive bad losses trigger a halt
+    consecutive_nan = 0
+
     # Best-model tracking (MA5 smoothed loss)
     best_loss = float('inf')
     best_epoch = 0
@@ -209,10 +224,26 @@ def run_basic_training_loop(
                 return
 
             loss = module.training_step(batch)
+
+            # Guard: skip backward on NaN/Inf to protect optimizer state
+            if torch.isnan(loss) or torch.isinf(loss):
+                consecutive_nan += 1
+                del loss
+                if consecutive_nan >= _MAX_CONSECUTIVE_NAN:
+                    yield TrainingUpdate(
+                        global_step, 0.0,
+                        f"[FAIL] {consecutive_nan} consecutive NaN/Inf losses -- halting training",
+                        kind="fail",
+                    )
+                    tb.close()
+                    return
+                continue
+            consecutive_nan = 0
+
             loss = loss / cfg.gradient_accumulation_steps
             loss.backward()
             accumulated_loss += loss.item()
-            del loss  # free scalar tensor immediately
+            del loss
             accumulation_step += 1
 
             if accumulation_step >= cfg.gradient_accumulation_steps:
@@ -285,10 +316,12 @@ def run_basic_training_loop(
             kind="epoch", epoch=epoch + 1, max_epochs=cfg.max_epochs, epoch_time=epoch_time,
         )
 
-        # Auto-save best model
+        # Auto-save best model (eval mode for consistent saved weights)
         if is_new_best:
             best_path = str(output_dir / "best")
+            module.model.decoder.eval()
             save_adapter_flat(trainer, best_path)
+            module.model.decoder.train()
             yield TrainingUpdate(
                 step=global_step, loss=avg_epoch_loss,
                 msg=f"[OK] Best model saved (epoch {epoch + 1}, MA5: {best_loss:.4f})",
@@ -310,10 +343,12 @@ def run_basic_training_loop(
             )
             break
 
-        # Periodic checkpoint
+        # Periodic checkpoint (eval mode for consistent saved weights)
         if (epoch + 1) % cfg.save_every_n_epochs == 0:
             ckpt_dir = str(output_dir / "checkpoints" / f"epoch_{epoch + 1}")
+            module.model.decoder.eval()
             save_checkpoint(trainer, optimizer, scheduler, epoch + 1, global_step, ckpt_dir)
+            module.model.decoder.train()
             yield TrainingUpdate(
                 step=global_step, loss=avg_epoch_loss,
                 msg=f"[OK] Checkpoint saved at epoch {epoch + 1}",
@@ -363,6 +398,7 @@ def run_basic_training_loop(
             kind="complete",
         )
     else:
+        module.model.decoder.eval()
         save_final(trainer, final_path)
         tb.flush()
         tb.close()

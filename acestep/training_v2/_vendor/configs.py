@@ -25,16 +25,27 @@ class LoRAConfig:
         "q_proj", "k_proj", "v_proj", "o_proj"
     ])
     bias: str = "none"
+    rank_pattern: dict = field(default_factory=dict)
+    """Per-module rank overrides for adaptive LoRA (PEFT ``rank_pattern``)."""
+    alpha_pattern: dict = field(default_factory=dict)
+    """Per-module alpha overrides for adaptive LoRA (PEFT ``alpha_pattern``)."""
+    rank_min: int = 16
+    """Safety-net rank used as global ``r`` when ``rank_pattern`` is active."""
 
     def to_dict(self):
         """Convert to dictionary for PEFT config."""
-        return {
+        d = {
             "r": self.r,
             "lora_alpha": self.alpha,
             "lora_dropout": self.dropout,
             "target_modules": self.target_modules,
             "bias": self.bias,
         }
+        if self.rank_pattern:
+            d["rank_pattern"] = self.rank_pattern
+        if self.alpha_pattern:
+            d["alpha_pattern"] = self.alpha_pattern
+        return d
 
 
 @dataclass

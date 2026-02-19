@@ -416,47 +416,12 @@ class TrainingMonitorScreen(Screen):
         training_config,
         worker,
     ) -> None:
-        """Run the VanillaTrainer (upstream LoRATrainer wrapper)."""
-        from acestep.training_v2.trainer_vanilla import VanillaTrainer
-
-        self._log_queue.put(("info", "Loading model (vanilla)..."))
-
-        def _callback(
-            epoch: int = 0,
-            step: int = 0,
-            loss: float = 0.0,
-            lr: float = 0.0,
-            is_epoch_end: bool = False,
-            **kwargs,
-        ) -> bool:
-            """Thread-safe progress callback."""
-            self.app.call_from_thread(
-                self._update_progress, epoch, step, loss, lr, is_epoch_end
-            )
-            if is_epoch_end:
-                self._log_queue.put(
-                    ("info", f"Epoch {epoch} -- loss {loss:.4f}")
-                )
-            # Handle pause
-            while self._is_paused and not self._is_stopping:
-                time.sleep(0.1)
-            return not self._is_stopping
-
-        trainer = VanillaTrainer(
-            lora_config=lora_config,
-            training_config=training_config,
-            progress_callback=_callback,
-        )
-
-        self._log_queue.put(("info", "Starting vanilla training..."))
-        trainer.train()
-
-        if not self._is_stopping:
-            self._log_queue.put(("success", "Training completed successfully!"))
-            self.app.call_from_thread(self._on_training_complete, True)
-        else:
-            self._log_queue.put(("warning", "Training stopped by user"))
-            self.app.call_from_thread(self._on_training_complete, False)
+        """Vanilla trainer has been removed -- redirect to fixed trainer."""
+        self._log_queue.put((
+            "error",
+            "VanillaTrainer has been removed. Please use the 'fixed' trainer instead.",
+        ))
+        self.app.call_from_thread(self._on_training_complete, False)
 
     # =========================================================================
     # UI Updates (called on the main thread)

@@ -347,7 +347,7 @@ class FixedLoRAModule(nn.Module):
                     use_meanflow=False,
                 )
 
-            # Accumulate for TensorBoard histogram logging
+            # Record sampled timesteps for TensorBoard histogram logging.
             self._timestep_buffer.append(t.detach().cpu())
 
             # ---- Flow matching noise ----------------------------------------
@@ -379,7 +379,9 @@ class FixedLoRAModule(nn.Module):
                     decoder_outputs[0], flow, reduction="none",
                 )
                 per_sample_loss = per_sample_loss.mean(dim=(-1, -2))
-                snr = ((1.0 - t) / t.clamp(min=1e-6)) ** 2
+                t_safe = t.clamp(min=1e-4, max=1.0 - 1e-4)
+                snr = ((1.0 - t_safe) / t_safe) ** 2
+                snr = snr.clamp(max=1e6)
                 weights = torch.clamp(snr, max=self._snr_gamma) / snr.clamp(min=1e-6)
                 diffusion_loss = (weights * per_sample_loss).mean()
             else:
@@ -387,5 +389,12 @@ class FixedLoRAModule(nn.Module):
 
         # fp32 for stable backward
         diffusion_loss = diffusion_loss.float()
+
+        if torch.isnan(diffusion_loss) or torch.isinf(diffusion_loss):
+            logger.warning(
+                "[WARN] NaN/Inf loss detected (step will be skipped by trainer)"
+            )
+            return diffusion_loss
+
         self.training_losses.append(diffusion_loss.item())
         return diffusion_loss

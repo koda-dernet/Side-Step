@@ -20,7 +20,9 @@ Supported schedulers:
 
 from __future__ import annotations
 
+import inspect
 import logging
+import math
 from typing import Iterable
 
 import torch
@@ -34,6 +36,60 @@ from torch.optim.lr_scheduler import (
 )
 
 logger = logging.getLogger(__name__)
+
+_PRODIGY_DEFAULT_LR = 0.1
+_PRODIGY_MAX_SAFE_LR = 0.5
+
+
+def _sanitize_scalar_hparams(lr: float, weight_decay: float) -> tuple[float, float]:
+    """Sanitize optimizer scalar hyperparameters to safe finite values."""
+    safe_lr = float(lr)
+    safe_wd = float(weight_decay)
+
+    if not math.isfinite(safe_lr) or safe_lr <= 0.0:
+        logger.warning(
+            "[Side-Step] Invalid learning rate (%s) -- using 1e-4",
+            lr,
+        )
+        safe_lr = 1e-4
+
+    if not math.isfinite(safe_wd) or safe_wd < 0.0:
+        logger.warning(
+            "[Side-Step] Invalid weight decay (%s) -- using 0.01",
+            weight_decay,
+        )
+        safe_wd = 0.01
+
+    return safe_lr, safe_wd
+
+
+def _build_prodigy_kwargs(
+    prodigy_cls,
+    params: Iterable,
+    lr: float,
+    weight_decay: float,
+) -> dict:
+    """Build kwargs for prodigy with optional stability flags if supported."""
+    kwargs = {
+        "params": params,
+        "lr": lr,
+        "weight_decay": weight_decay,
+    }
+    try:
+        sig = inspect.signature(prodigy_cls.__init__)
+    except Exception:
+        return kwargs
+
+    optional_safe_args = {
+        "safeguard_warmup": True,
+        "use_bias_correction": True,
+        "betas": (0.9, 0.99),
+        "eps": 1e-8,
+    }
+    for key, value in optional_safe_args.items():
+        if key in sig.parameters:
+            kwargs[key] = value
+    return kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +108,7 @@ def build_optimizer(
     Falls back to AdamW when an optional dependency is missing.
     """
     optimizer_type = optimizer_type.lower().strip()
+    lr, weight_decay = _sanitize_scalar_hparams(lr, weight_decay)
 
     if optimizer_type == "adamw8bit":
         try:
@@ -85,14 +142,27 @@ def build_optimizer(
     if optimizer_type == "prodigy":
         try:
             from prodigyopt import Prodigy
+            requested_lr = lr
+            if abs(lr - 1e-4) < 1e-12:
+                # User likely left the global default; use a safer Prodigy
+                # starting point instead of jumping straight to 1.0.
+                lr = _PRODIGY_DEFAULT_LR
+            if lr > _PRODIGY_MAX_SAFE_LR:
+                logger.warning(
+                    "[Side-Step] Prodigy LR %.4f is aggressive; clamping to %.2f "
+                    "to reduce divergence risk",
+                    lr,
+                    _PRODIGY_MAX_SAFE_LR,
+                )
+                lr = _PRODIGY_MAX_SAFE_LR
+
             logger.info(
-                "[Side-Step] Using Prodigy optimizer (adaptive LR -- set LR=1.0 for best results)"
+                "[Side-Step] Using Prodigy optimizer (requested_lr=%.6f, effective_lr=%.6f, wd=%.6f)",
+                requested_lr,
+                lr,
+                weight_decay,
             )
-            return Prodigy(
-                params,
-                lr=lr if lr != 1e-4 else 1.0,  # Default to 1.0 for Prodigy
-                weight_decay=weight_decay,
-            )
+            return Prodigy(**_build_prodigy_kwargs(Prodigy, params, lr, weight_decay))
         except ImportError:
             logger.warning(
                 "[Side-Step] prodigyopt not installed -- falling back to AdamW. "

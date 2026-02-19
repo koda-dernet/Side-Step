@@ -54,18 +54,6 @@ def is_rich_active() -> bool:
     return True
 
 
-def require_rich() -> None:
-    """Print an install hint and exit if Rich is missing."""
-    if RICH_AVAILABLE:
-        return
-    print(
-        "[FAIL] Rich is required for the pretty CLI.\n"
-        "       Install it with:  pip install rich\n"
-        "       Or use --plain for basic text output.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
 
 # ---- TrainingUpdate (backward-compatible structured yield) ------------------
 

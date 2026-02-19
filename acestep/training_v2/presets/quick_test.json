@@ -26,6 +26,5 @@
   "log_every": 5,
   "log_heavy_every": 50,
   "gradient_checkpointing": true,
-  "offload_encoder": false,
-  "sample_every_n_epochs": 0
+  "offload_encoder": false
 }

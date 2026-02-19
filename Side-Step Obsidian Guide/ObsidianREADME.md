@@ -1,6 +1,6 @@
 # Side-Step Guide
 
-Welcome to the Side-Step documentation vault. This guide covers installation, training, and model management for Side-Step 0.8.2-beta.
+Welcome to the Side-Step documentation vault. This guide covers installation, training, and model management for Side-Step 0.9.0-beta.
 
 ## Pages
 
@@ -15,6 +15,7 @@ Welcome to the Side-Step documentation vault. This guide covers installation, tr
 - [[The Settings Wizard]] -- All wizard settings reference
 - [[VRAM Optimization Guide]] -- VRAM optimizations, GPU profiles
 - [[Estimation Guide]] -- Gradient sensitivity analysis for targeted training
+- [[Preprocessing++]] -- Dataset-aware adaptive rank and auto-targeting workflow
 - [[Shift and Timestep Sampling]] -- How training timesteps work, what shift actually does, Side-Step vs upstream
 - [[CLI Argument Reference]] -- Every `--flag` that `train.py` accepts, by subcommand
 - [[Windows Notes]] -- num_workers, paths, installation, known workarounds
@@ -27,4 +28,4 @@ Welcome to the Side-Step documentation vault. This guide covers installation, tr
 
 ## Version
 
-This guide is for **Side-Step 0.8.2-beta**. Side-Step is fully standalone -- no base ACE-Step installation needed.
+This guide is for **Side-Step 0.9.0-beta**. Side-Step is fully standalone -- no base ACE-Step installation needed.

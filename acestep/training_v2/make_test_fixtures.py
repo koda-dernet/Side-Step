@@ -110,7 +110,7 @@ def generate_fixtures(
         "num_samples": num_samples,
     }
     manifest_path = output_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2))
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     print(f"[OK] Generated {num_samples} synthetic fixtures in {output_dir}")
     return output_dir

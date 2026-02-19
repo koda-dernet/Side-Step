@@ -2,11 +2,9 @@
 ACE-Step Compatibility Check for Side-Step.
 
 Side-Step bundles vendored copies of ACE-Step utilities for its corrected
-(fixed) training loop, so a full ACE-Step installation is no longer required
-for that path.  Vanilla training mode still needs base ACE-Step.
+(fixed) training loop, so a full ACE-Step installation is no longer required.
 
-This module checks that the vendored modules are importable and, optionally,
-whether base ACE-Step is available for vanilla mode.
+This module checks that critical vendored modules are importable.
 """
 
 from __future__ import annotations
@@ -23,7 +21,7 @@ TESTED_ACESTEP_COMMIT = "46116a6"
 """Short SHA of the upstream ``ace-step/ACE-Step-1.5`` commit that the
 vendored files were last synced from."""
 
-SIDESTEP_VERSION = "0.8.3-beta"
+SIDESTEP_VERSION = "0.9.0-beta"
 """Current Side-Step release string."""
 
 
@@ -34,8 +32,8 @@ SIDESTEP_VERSION = "0.8.3-beta"
 def check_compatibility() -> None:
     """Verify that critical symbols exist.
 
-    Checks vendored modules (required) and base ACE-Step (optional, for
-    vanilla mode).  Non-fatal: prints warnings and continues.
+    Checks vendored modules (required). Non-fatal: prints warnings and
+    continues.
     """
     warnings: list[str] = []
 
@@ -61,13 +59,6 @@ def check_compatibility() -> None:
             "Cannot import vendored configs.TrainingConfig"
         )
 
-    # 2. Base ACE-Step (optional -- only needed for vanilla mode)
-    vanilla_ok = True
-    try:
-        from acestep.training.trainer import LoRATrainer  # noqa: F401
-    except ImportError:
-        vanilla_ok = False
-
     if warnings:
         msg = (
             f"[Side-Step] Compatibility warning (vendored from ACE-Step "
@@ -83,12 +74,6 @@ def check_compatibility() -> None:
         print(f"\n{msg}\n")
     else:
         logger.debug(
-            "[Side-Step] Compatibility check passed (pin: %s, vanilla: %s)",
+            "[Side-Step] Compatibility check passed (pin: %s)",
             TESTED_ACESTEP_COMMIT,
-            "available" if vanilla_ok else "not available",
         )
-        if not vanilla_ok:
-            logger.info(
-                "[Side-Step] Base ACE-Step not detected. Vanilla training mode "
-                "will not be available. Corrected (fixed) mode works standalone."
-            )

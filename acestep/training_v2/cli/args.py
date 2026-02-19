@@ -57,13 +57,6 @@ def build_root_parser() -> argparse.ArgumentParser:
 
     subparsers = root.add_subparsers(dest="subcommand", required=True)
 
-    # -- vanilla (deprecated -- prints message and exits) ---------------------
-    subparsers.add_parser(
-        "vanilla",
-        help="(deprecated) Use 'fixed' instead -- turbo auto-detected",
-        formatter_class=formatter_class,
-    )
-
     # -- fixed ---------------------------------------------------------------
     p_fixed = subparsers.add_parser(
         "fixed",
@@ -73,15 +66,7 @@ def build_root_parser() -> argparse.ArgumentParser:
     _add_common_training_args(p_fixed)
     _add_fixed_args(p_fixed)
 
-    # -- selective -----------------------------------------------------------
-    p_selective = subparsers.add_parser(
-        "selective",
-        help="Corrected training with dataset-specific module selection",
-        formatter_class=formatter_class,
-    )
-    _add_common_training_args(p_selective)
-    _add_fixed_args(p_selective)
-    _add_selective_args(p_selective)
+    # -- selective (not yet implemented -- hidden from CLI) -------------------
 
     # -- estimate ------------------------------------------------------------
     p_estimate = subparsers.add_parser(
@@ -116,6 +101,16 @@ def build_root_parser() -> argparse.ArgumentParser:
         default=42,
         help="Random seed (default: 42)",
     )
+
+    # -- fisher --------------------------------------------------------------
+    p_fisher = subparsers.add_parser(
+        "fisher",
+        help="Fisher + Spectral analysis for adaptive LoRA rank assignment",
+        formatter_class=formatter_class,
+    )
+    _add_model_args(p_fisher)
+    _add_device_args(p_fisher)
+    _add_fisher_args(p_fisher)
 
     # -- compare-configs -----------------------------------------------------
     p_compare = subparsers.add_parser(
@@ -333,8 +328,7 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_log = parser.add_argument_group("Logging / TensorBoard")
     g_log.add_argument("--log-dir", type=str, default=None, help="TensorBoard log directory (default: {output-dir}/runs)")
     g_log.add_argument("--log-every", type=int, default=10, help="Log basic metrics every N steps (default: 10)")
-    g_log.add_argument("--log-heavy-every", type=int, default=50, help="Log per-layer gradient norms every N steps (default: 50)")
-    g_log.add_argument("--sample-every-n-epochs", type=int, default=0, help="Generate audio sample every N epochs; 0=disabled (default: 0)")
+    g_log.add_argument("--log-heavy-every", type=int, default=50, help="Log per-layer gradient norms every N steps; 0 disables heavy logging (default: 50)")
 
     # -- Preprocessing -------------------------------------------------------
     g_pre = parser.add_argument_group("Preprocessing")
@@ -355,6 +349,8 @@ def _add_fixed_args(parser: argparse.ArgumentParser) -> None:
                    help="Loss weighting: 'none' (flat MSE) or 'min_snr' (can yield better results on SFT/base)")
     g.add_argument("--snr-gamma", type=float, default=5.0,
                    help="Gamma for min-SNR weighting (default: 5.0)")
+    g.add_argument("--ignore-fisher-map", action="store_true", default=False,
+                   help="Bypass auto-detection of fisher_map.json in --dataset-dir")
 
 
 def _add_selective_args(parser: argparse.ArgumentParser) -> None:
@@ -372,3 +368,26 @@ def _add_estimation_args(parser: argparse.ArgumentParser) -> None:
     g.add_argument("--top-k", type=int, default=16, help="Number of top modules to select (default: 16)")
     g.add_argument("--granularity", type=str, default="module", choices=["layer", "module"], help="Estimation granularity (default: module)")
     g.add_argument("--output", type=str, default=None, dest="estimate_output", help="Path to write module config JSON (estimate only)")
+
+
+def _add_fisher_args(parser: argparse.ArgumentParser) -> None:
+    """Add arguments for the ``fisher`` subcommand."""
+    g = parser.add_argument_group("Fisher analysis")
+    g.add_argument("--dataset-dir", type=str, required=True,
+                   help="Directory containing preprocessed .pt files")
+    g.add_argument("--rank", "-r", type=int, default=64,
+                   help="Base LoRA rank (median target, default: 64)")
+    g.add_argument("--rank-min", type=int, default=16,
+                   help="Minimum adaptive rank (default: 16)")
+    g.add_argument("--rank-max", type=int, default=128,
+                   help="Maximum adaptive rank (default: 128)")
+    g.add_argument("--timestep-focus", type=str, default="texture",
+                   help="Timestep focus: texture (default), structure, balanced, or low,high")
+    g.add_argument("--fisher-runs", type=int, default=None,
+                   help="Number of estimation runs (default: auto from dataset size)")
+    g.add_argument("--fisher-batches", type=int, default=None,
+                   help="Batches per run (default: auto from dataset size)")
+    g.add_argument("--convergence-patience", type=int, default=5,
+                   help="Early stop when ranking stable for N batches (default: 5)")
+    g.add_argument("--output", type=str, default=None, dest="fisher_output",
+                   help="Override output path for fisher_map.json")

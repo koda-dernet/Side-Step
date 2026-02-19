@@ -117,6 +117,28 @@ def configure_memory_features(decoder: nn.Module) -> tuple:
     return ckpt_enabled, cache_disabled, input_grads_enabled
 
 
+def force_disable_decoder_cache(decoder: nn.Module) -> bool:
+    """Force ``use_cache=False`` across decoder wrapper chain.
+
+    This is independent from gradient checkpointing and should be applied
+    for training regardless of checkpointing mode to avoid KV-cache VRAM use.
+
+    Returns:
+        True if at least one module cache flag was changed.
+    """
+    cache_disabled = False
+    for mod in iter_module_wrappers(decoder):
+        cfg = getattr(mod, "config", None)
+        if cfg is not None and hasattr(cfg, "use_cache"):
+            try:
+                if getattr(cfg, "use_cache", None) is not False:
+                    cfg.use_cache = False
+                    cache_disabled = True
+            except Exception:
+                pass
+    return cache_disabled
+
+
 def offload_non_decoder(model: nn.Module) -> int:
     """Move encoder/VAE/non-decoder submodules to CPU. Returns count offloaded."""
     count = 0

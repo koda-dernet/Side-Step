@@ -45,19 +45,40 @@ def _step_model(a: dict) -> None:
             "  Results are saved as JSON and can be used to guide rank selection.\n"
         )
 
+    from acestep.training_v2.settings import get_checkpoint_dir
+    from acestep.training_v2.model_discovery import pick_model
+    from acestep.training_v2.ui.flows_common import (
+        describe_preprocessed_dataset_issue,
+        show_dataset_issue,
+        show_model_picker_fallback_hint,
+    )
+
+    ckpt_default = a.get("checkpoint_dir") or get_checkpoint_dir() or native_path("./checkpoints")
     a["checkpoint_dir"] = ask_path(
-        "Checkpoint directory", default=a.get("checkpoint_dir", native_path("./checkpoints")),
+        "Checkpoint directory", default=ckpt_default,
         must_exist=True, allow_back=True,
     )
-    a["model_variant"] = ask(
-        "Model variant", default=a.get("model_variant", "base"),
-        choices=["turbo", "base", "sft"], allow_back=True,
-    )
-    a["dataset_dir"] = ask_path(
-        "Dataset directory (preprocessed .pt files)",
-        default=a.get("dataset_dir"),
-        must_exist=True, allow_back=True,
-    )
+
+    result = pick_model(a["checkpoint_dir"])
+    if result is None:
+        show_model_picker_fallback_hint()
+        a["model_variant"] = ask(
+            "Model variant or folder name", default=a.get("model_variant", "base"),
+            allow_back=True,
+        )
+    else:
+        a["model_variant"] = result[0]
+
+    while True:
+        a["dataset_dir"] = ask_path(
+            "Dataset directory (preprocessed .pt files)",
+            default=a.get("dataset_dir"),
+            must_exist=True, allow_back=True,
+        )
+        issue = describe_preprocessed_dataset_issue(a["dataset_dir"])
+        if issue is None:
+            break
+        show_dataset_issue(issue)
 
 
 def _step_params(a: dict) -> None:
@@ -118,8 +139,11 @@ _STEPS: list[tuple[str, Callable[..., Any]]] = [
 ]
 
 
-def wizard_estimate() -> argparse.Namespace:
+def wizard_estimate(preset: dict | None = None) -> argparse.Namespace:
     """Interactive wizard for gradient estimation.
+
+    Args:
+        preset: Optional pre-filled defaults (session carry-over).
 
     Returns:
         A populated ``argparse.Namespace`` for the estimate subcommand.
@@ -127,7 +151,15 @@ def wizard_estimate() -> argparse.Namespace:
     Raises:
         GoBack: If the user backs out of the first step.
     """
-    answers: dict = {}
+    from acestep.training_v2.ui.flows_common import offer_load_preset_subset
+
+    answers: dict = dict(preset) if preset else {}
+    offer_load_preset_subset(
+        answers,
+        allowed_fields={"rank", "alpha", "dropout"},
+        prompt="Load a preset for LoRA estimation defaults?",
+        preserve_fields={"checkpoint_dir", "model_variant", "dataset_dir"},
+    )
     total = len(_STEPS)
     i = 0
 
@@ -176,7 +208,6 @@ def wizard_estimate() -> argparse.Namespace:
         log_dir=None,
         log_every=10,
         log_heavy_every=50,
-        sample_every_n_epochs=0,
         optimizer_type="adamw",
         scheduler_type="cosine",
         gradient_checkpointing=True,

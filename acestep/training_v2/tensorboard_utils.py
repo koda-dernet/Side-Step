@@ -28,11 +28,6 @@ except ImportError:
     SummaryWriter = None  # type: ignore[misc,assignment]
 
 
-def is_tensorboard_available() -> bool:
-    """Return True if tensorboard is importable."""
-    return _TB_AVAILABLE
-
-
 class TrainingLogger:
     """Wrapper around ``SummaryWriter`` with training-specific helpers.
 
@@ -93,6 +88,8 @@ class TrainingLogger:
         Returns:
             Dict mapping ``{prefix}/{param_name}`` -> norm value.
         """
+        if self._writer is None:
+            return {}
         norms: Dict[str, float] = {}
         with torch.no_grad():
             for name, param in model.named_parameters():

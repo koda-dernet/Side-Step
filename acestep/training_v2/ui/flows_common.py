@@ -8,20 +8,129 @@ Contains the Namespace builder for training flows, which maps the wizard
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
-from acestep.training_v2.ui.prompt_helpers import DEFAULT_NUM_WORKERS
+from acestep.training_v2.ui.prompt_helpers import DEFAULT_NUM_WORKERS, menu, print_message
 
 
 _DEFAULT_PROJECTIONS = "q_proj k_proj v_proj o_proj"
 
 
+def describe_preprocessed_dataset_issue(dataset_dir: str) -> str | None:
+    """Return a user-facing issue string when dataset_dir is not train-ready.
+
+    This is a lightweight preflight check used by wizard flows to catch
+    obvious misconfiguration before training/analysis starts.
+    """
+    d = Path(dataset_dir)
+    if not d.is_dir():
+        return f"Dataset directory not found: {d}"
+
+    if any(d.glob("*.pt")):
+        return None
+
+    manifest_path = d / "manifest.json"
+    if not manifest_path.is_file():
+        return "No .pt files found and manifest.json is missing"
+
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return (
+            f"manifest.json is invalid JSON: {exc}. "
+            "Escape backslashes (\\\\) or use forward slashes (/)."
+        )
+    except Exception as exc:
+        return f"Failed to read manifest.json: {exc}"
+
+    if not isinstance(raw, dict):
+        return "manifest.json must be a JSON object with a 'samples' list"
+    samples = raw.get("samples", [])
+    if not isinstance(samples, list):
+        return "manifest.json field 'samples' must be a list"
+    if not samples:
+        return "manifest.json has no samples and no .pt files were found in the directory"
+    if not any(isinstance(s, str) and s.strip() for s in samples):
+        return "manifest.json samples are empty or not string paths"
+    return None
+
+
+def show_dataset_issue(issue: str) -> None:
+    """Print a standardized dataset issue message with recovery tips."""
+    print_message(issue, style="yellow")
+    if "invalid JSON" in issue or "manifest.json" in issue:
+        print_message(
+            "Tip: regenerate tensors/manifest, or fix Windows JSON paths using / or escaped \\\\.",
+            style="dim",
+        )
+
+
+def show_model_picker_fallback_hint() -> None:
+    """Print a consistent hint when checkpoint model discovery is empty."""
+    print_message(
+        "No model directories found in that checkpoint path.",
+        style="yellow",
+    )
+    print_message(
+        "Enter the folder name manually (examples: turbo, base, sft, or your fine-tune folder name).",
+        style="dim",
+    )
+
+
+def offer_load_preset_subset(
+    answers: dict,
+    *,
+    allowed_fields: set[str],
+    prompt: str = "Load preset defaults for this flow?",
+    preserve_fields: set[str] | None = None,
+) -> None:
+    """Optionally load a training preset and apply only overlapping fields."""
+    from acestep.training_v2.ui.presets import list_presets, load_preset
+
+    presets = list_presets()
+    if not presets:
+        return
+
+    options: list[tuple[str, str]] = [("keep", "Keep current defaults")]
+    for p in presets:
+        tag = " (built-in)" if p["builtin"] else ""
+        desc = f" -- {p['description']}" if p["description"] else ""
+        options.append((p["name"], f"{p['name']}{tag}{desc}"))
+
+    choice = menu(prompt, options, default=1, allow_back=True)
+    if choice == "keep":
+        return
+
+    data = load_preset(choice)
+    if not data:
+        print_message(f"Could not load preset '{choice}'.", style="yellow")
+        return
+
+    preserved = preserve_fields or set()
+    applied = 0
+    for key, value in data.items():
+        if key in allowed_fields and key not in preserved:
+            answers[key] = value
+            applied += 1
+
+    if applied:
+        print_message(f"Loaded {applied} preset values from '{choice}'.", style="green")
+
+
 def _is_turbo(a: dict) -> bool:
-    """Quick name-based turbo check for default selection."""
+    """Variant check with metadata fallback for unknown custom names."""
     base = a.get("base_model", a.get("model_variant", "turbo"))
     label = base.lower() if isinstance(base, str) else ""
+    if "turbo" in label:
+        return True
     if "base" in label or "sft" in label:
         return False
-    return True
+    infer_steps = a.get("num_inference_steps", 8)
+    try:
+        return int(infer_steps) == 8
+    except (TypeError, ValueError):
+        return True
 
 
 def _resolve_wizard_projections(a: dict) -> list:
@@ -45,15 +154,15 @@ def _resolve_wizard_projections(a: dict) -> list:
     has_split = "self_target_modules_str" in a or "cross_target_modules_str" in a
 
     if attention_type == "both" and has_split:
-        self_mods = a.get("self_target_modules_str", _DEFAULT_PROJECTIONS).split()
-        cross_mods = a.get("cross_target_modules_str", _DEFAULT_PROJECTIONS).split()
+        self_mods = (a.get("self_target_modules_str") or _DEFAULT_PROJECTIONS).split()
+        cross_mods = (a.get("cross_target_modules_str") or _DEFAULT_PROJECTIONS).split()
         resolved = []
         for m in self_mods:
             resolved.append(m if "." in m else f"self_attn.{m}")
         for m in cross_mods:
             resolved.append(m if "." in m else f"cross_attn.{m}")
     else:
-        resolved = a.get("target_modules_str", _DEFAULT_PROJECTIONS).split()
+        resolved = (a.get("target_modules_str") or _DEFAULT_PROJECTIONS).split()
 
     if a.get("target_mlp", False):
         mlp_modules = ["gate_proj", "up_proj", "down_proj"]
@@ -78,6 +187,8 @@ def build_train_namespace(a: dict, mode: str = "fixed") -> argparse.Namespace:
     """
     target_modules = _resolve_wizard_projections(a)
     nw = a.get("num_workers", DEFAULT_NUM_WORKERS)
+    is_turbo = _is_turbo(a)
+    loss_weighting = "none" if is_turbo else a.get("loss_weighting", "none")
     return argparse.Namespace(
         subcommand="fixed",
         plain=False,
@@ -128,10 +239,9 @@ def build_train_namespace(a: dict, mode: str = "fixed") -> argparse.Namespace:
         resume_from=a.get("resume_from"),
         log_dir=a.get("log_dir"),
         log_every=a.get("log_every", 10),
-        log_heavy_every=a.get("log_heavy_every", 50),
-        sample_every_n_epochs=a.get("sample_every_n_epochs", 0),
-        shift=a.get("shift", 3.0 if _is_turbo(a) else 1.0),
-        num_inference_steps=a.get("num_inference_steps", 8 if _is_turbo(a) else 50),
+        log_heavy_every=max(0, int(a.get("log_heavy_every", 50))),
+        shift=a.get("shift", 3.0 if is_turbo else 1.0),
+        num_inference_steps=a.get("num_inference_steps", 8 if is_turbo else 50),
         optimizer_type=a.get("optimizer_type", "adamw"),
         scheduler_type=a.get("scheduler_type", "cosine"),
         gradient_checkpointing=a.get("gradient_checkpointing", True),
@@ -144,7 +254,7 @@ def build_train_namespace(a: dict, mode: str = "fixed") -> argparse.Namespace:
         max_duration=0,
         normalize="none",
         cfg_ratio=a.get("cfg_ratio", 0.15),
-        loss_weighting=a.get("loss_weighting", "none"),
+        loss_weighting=loss_weighting,
         snr_gamma=a.get("snr_gamma", 5.0),
         estimate_batches=None,
         top_k=16,

@@ -134,11 +134,14 @@ def detect_gpu(requested_device: str = "auto", requested_precision: str = "auto"
 # VRAM helpers
 # ---------------------------------------------------------------------------
 
-def _cuda_free_mb(idx: int = 0) -> float:
-    """Return free CUDA memory in MiB for device *idx*."""
-    torch.cuda.synchronize(idx)
-    free, _total = torch.cuda.mem_get_info(idx)
-    return free / (1024 ** 2)
+def _cuda_free_mb(idx: int = 0) -> Optional[float]:
+    """Return free CUDA memory in MiB for device *idx*, or None on failure."""
+    try:
+        torch.cuda.synchronize(idx)
+        free, _total = torch.cuda.mem_get_info(idx)
+        return free / (1024 ** 2)
+    except (RuntimeError, AssertionError):
+        return None
 
 
 def get_available_vram_mb(device: str = "auto") -> Optional[float]:
@@ -179,7 +182,7 @@ def get_gpu_info(device: str = "auto") -> dict:
             "temperature": 0,
             "power": 0,
         }
-    except Exception:
+    except (RuntimeError, OSError, ValueError, AssertionError):
         return {
             "name": "Unknown",
             "vram_used_gb": 0,

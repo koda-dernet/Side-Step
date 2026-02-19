@@ -57,7 +57,7 @@ def _has_subcommand() -> bool:
     args = sys.argv[1:]
     if "--help" in args or "-h" in args:
         return True  # let argparse handle help
-    known = {"vanilla", "fixed", "selective", "estimate", "compare-configs", "build-dataset"}
+    known = {"fixed", "estimate", "fisher", "compare-configs", "build-dataset"}
     return bool(known & set(args))
 
 
@@ -95,24 +95,15 @@ def _dispatch(args) -> int:
     if not validate_paths(args):
         return 1
 
-    if sub == "vanilla":
-        print(
-            "[INFO] Vanilla mode has been removed. Turbo models are now\n"
-            "       automatically trained with discrete 8-step sampling.\n"
-            "       Use 'fixed' instead -- it auto-detects turbo vs base/sft.",
-            file=sys.stderr,
-        )
-        return 1
-
-    elif sub == "fixed":
+    if sub == "fixed":
         from acestep.training_v2.cli.train_fixed import run_fixed
         return run_fixed(args)
 
-    elif sub == "selective":
-        return _run_selective(args)
-
     elif sub == "estimate":
         return _run_estimate(args)
+
+    elif sub == "fisher":
+        return _run_fisher(args)
 
     else:
         print(f"[FAIL] Unknown subcommand: {sub}", file=sys.stderr)
@@ -171,6 +162,10 @@ def main() -> int:
 def _run_preprocess(args) -> int:
     """Run the two-pass preprocessing pipeline."""
     from acestep.training_v2.preprocess import preprocess_audio_files
+    from acestep.training_v2.ui.dependency_check import (
+        ensure_optional_dependencies,
+        required_preprocess_optionals,
+    )
 
     audio_dir = getattr(args, "audio_dir", None)
     dataset_json = getattr(args, "dataset_json", None)
@@ -184,6 +179,12 @@ def _run_preprocess(args) -> int:
         return 1
 
     source_label = dataset_json if dataset_json else audio_dir
+
+    ensure_optional_dependencies(
+        required_preprocess_optionals(getattr(args, "normalize", "none")),
+        interactive=sys.stdin.isatty(),
+        allow_install_prompt=not getattr(args, "yes", False),
+    )
 
     # Show summary and confirm before starting
     print("\n" + "=" * 60)
@@ -293,6 +294,52 @@ def _run_estimate(args) -> int:
     except OSError as exc:
         print(f"[WARN] Could not save results: {exc}", file=sys.stderr)
 
+    return 0
+
+
+def _run_fisher(args) -> int:
+    """Run Fisher + Spectral analysis for adaptive LoRA rank assignment."""
+    from acestep.training_v2.fisher import run_fisher_analysis
+
+    print("\n" + "=" * 60)
+    print("  Fisher + Spectral Analysis")
+    print("=" * 60)
+    print(f"  Checkpoint:      {args.checkpoint_dir}")
+    print(f"  Model variant:   {args.model_variant}")
+    print(f"  Dataset:         {args.dataset_dir}")
+    print(f"  Timestep focus:  {getattr(args, 'timestep_focus', 'texture')}")
+    print(f"  Rank budget:     {args.rank} (base), {args.rank_min}-{args.rank_max}")
+    print("=" * 60)
+
+    try:
+        result = run_fisher_analysis(
+            checkpoint_dir=args.checkpoint_dir,
+            variant=args.model_variant,
+            dataset_dir=args.dataset_dir,
+            base_rank=args.rank,
+            rank_min=getattr(args, "rank_min", 16),
+            rank_max=getattr(args, "rank_max", 128),
+            timestep_focus=getattr(args, "timestep_focus", "texture"),
+            num_runs=getattr(args, "fisher_runs", None),
+            batches_per_run=getattr(args, "fisher_batches", None),
+            convergence_patience=getattr(args, "convergence_patience", 5),
+            auto_confirm=getattr(args, "yes", False),
+        )
+    except Exception as exc:
+        print(f"[FAIL] Fisher analysis failed: {exc}", file=sys.stderr)
+        logger.exception("Fisher analysis error")
+        return 1
+    finally:
+        _cleanup_gpu()
+
+    if result is None:
+        print("[INFO] Fisher analysis cancelled or produced no results.")
+        return 1
+
+    n_modules = len(result.get("rank_pattern", {}))
+    budget = result.get("rank_budget", {})
+    print(f"\n[OK] Fisher analysis complete: {n_modules} modules, "
+          f"ranks {budget.get('min', '?')}-{budget.get('max', '?')}")
     return 0
 
 

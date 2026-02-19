@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 from acestep.training_v2.ui import TrainingUpdate, console, is_rich_active
@@ -41,19 +42,59 @@ class _LiveLogCapture(logging.Handler):
     normally.
     """
 
-    def __init__(self, messages: list, live: object = None) -> None:
+    def __init__(
+        self,
+        messages: list,
+        live: object = None,
+        session_logger: "_SessionTextLogger | None" = None,
+    ) -> None:
         super().__init__(level=logging.INFO)
         self._messages = messages
         self._live = live
+        self._session_logger = session_logger
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = record.getMessage()
-            self._messages.append(msg)
-            if len(self._messages) > 20:
-                self._messages.pop(0)
+            _append_recent_message(self._messages, msg)
+            if self._session_logger is not None:
+                self._session_logger.log(msg)
         except Exception:
             pass
+
+
+# ---- Session log sink --------------------------------------------------------
+
+class _SessionTextLogger:
+    """Line-based session logger for UI/training events."""
+
+    def __init__(self, path: str | Path, session_name: str = "") -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = self.path.open("a", encoding="utf-8", buffering=1)
+        self._closed = False
+        self._session_name = session_name.strip() or "session"
+        if self.path.stat().st_size == 0:
+            self._fh.write(f"# Side-Step session UI log\n")
+            self._fh.write(f"# session: {self._session_name}\n")
+            self._fh.write(f"# started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+    def log(self, msg: object) -> None:
+        if self._closed:
+            return
+        line = _normalize_live_log_message(msg)
+        if not line:
+            return
+        self._fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        try:
+            self._fh.flush()
+            self._fh.close()
+        finally:
+            self._closed = True
 
 
 # ---- Training statistics tracker --------------------------------------------
@@ -84,6 +125,10 @@ class TrainingStats:
     _step_times: list = field(default_factory=list)
     checkpoints: List[Dict[str, object]] = field(default_factory=list)
     """Saved checkpoints: ``[{"epoch": int, "loss": float, "path": str}, ...]``."""
+    attention_backend: str = "unknown"
+    """Selected attention backend (flash_attention_2/sdpa/eager)."""
+    device_label: str = ""
+    """Device label shown in the live panel."""
 
     @property
     def elapsed(self) -> float:
@@ -147,6 +192,91 @@ def _fmt_duration(seconds: float) -> str:
 # ---- Rich live display builder ----------------------------------------------
 
 _LOG_LINES = 5  # Fixed number of log lines for stable panel height
+_LOG_HISTORY = 20
+_MIN_LOG_WIDTH = 48
+_LOG_WIDTH_FALLBACK = 110
+
+
+def _normalize_live_log_message(msg: object) -> str:
+    """Normalize one update to a single display line.
+
+    Rich Live rendering needs stable frame height. Embedded newlines in
+    updates (or weird whitespace) can make the panel grow/shrink and create
+    visual stacking artifacts in some terminals.
+    """
+    if msg is None:
+        return ""
+    text = str(msg).replace("\r\n", "\n").replace("\r", "\n")
+    parts = [segment.strip() for segment in text.split("\n") if segment.strip()]
+    if not parts:
+        return ""
+    return " | ".join(" ".join(part.split()) for part in parts)
+
+
+def _log_char_limit() -> int:
+    """Estimate max chars per log row to avoid soft wrapping."""
+    width = _LOG_WIDTH_FALLBACK
+    if console is not None:
+        try:
+            width = int(console.size.width)
+        except Exception:
+            pass
+    # Keep headroom for panel border/padding and row indent.
+    return max(_MIN_LOG_WIDTH, width - 16)
+
+
+def _truncate_for_log_panel(msg: str, max_chars: int) -> str:
+    """Truncate one-line messages for the fixed-height panel log."""
+    if max_chars <= 0 or len(msg) <= max_chars:
+        return msg
+    if max_chars <= 3:
+        return "." * max_chars
+    return msg[: max_chars - 3].rstrip() + "..."
+
+
+def _append_recent_message(recent_msgs: list[str], msg: object) -> None:
+    """Append normalized message while capping and de-duplicating history."""
+    normalized = _normalize_live_log_message(msg)
+    if not normalized:
+        return
+    if recent_msgs and recent_msgs[-1] == normalized:
+        return
+    recent_msgs.append(normalized)
+    if len(recent_msgs) > _LOG_HISTORY:
+        recent_msgs.pop(0)
+
+
+def _memory_snapshot_mb() -> tuple[float, float, float, float]:
+    """Return process/system RAM in MiB.
+
+    Returns ``(proc_mb, sys_used_mb, sys_total_mb, sys_pct)`` and caches
+    values for 2 seconds to keep refresh overhead low.
+    """
+    now = time.monotonic()
+    cache = getattr(_memory_snapshot_mb, "_cache", None)
+    if cache is not None:
+        ts, value = cache
+        if (now - ts) < 2.0:
+            return value
+
+    value = (0.0, 0.0, 0.0, 0.0)
+    try:
+        import psutil
+
+        proc = psutil.Process()
+        proc_mb = proc.memory_info().rss / (1024 ** 2)
+        vm = psutil.virtual_memory()
+        value = (
+            proc_mb,
+            vm.used / (1024 ** 2),
+            vm.total / (1024 ** 2),
+            float(vm.percent),
+        )
+    except Exception:
+        pass
+
+    setattr(_memory_snapshot_mb, "_cache", (now, value))
+    return value
 
 
 def _build_display(
@@ -189,10 +319,16 @@ def _build_display(
         step_line = Text()
         step_line.append(f"  Step {shown_step}", style="dim")
         step_line.append(f" / {stats.steps_per_epoch}  ", style="dim")
-        step_line.append_text(
-            Text.from_markup(f"  {step_bar}  [dim]{step_pct * 100:.0f}%[/]"),
+        step_bar_row = Table.grid(padding=0)
+        step_bar_row.add_column(width=2)
+        step_bar_row.add_column()
+        step_bar_row.add_column(width=6)
+        step_bar_row.add_row(
+            Text("  "),
+            step_bar,
+            Text.from_markup(f"[dim]{step_pct * 100:.0f}%[/]"),
         )
-        step_parts = [step_line]
+        step_parts = [step_line, step_bar_row]
 
     # -- Metrics table --------------------------------------------------------
     metrics = Table(
@@ -211,6 +347,14 @@ def _build_display(
         f"{stats.samples_per_sec:.1f} steps/s"
         if stats.samples_per_sec > 0 else "--"
     )
+    attn_str = stats.attention_backend or "--"
+    device_str = stats.device_label or "--"
+    proc_ram_mb, sys_used_mb, sys_total_mb, sys_pct = _memory_snapshot_mb()
+    proc_ram_str = f"{proc_ram_mb / 1024:.2f} GiB" if proc_ram_mb > 0 else "--"
+    if sys_total_mb > 0:
+        sys_ram_str = f"{sys_used_mb / 1024:.1f}/{sys_total_mb / 1024:.1f} GiB ({sys_pct:.0f}%)"
+    else:
+        sys_ram_str = "--"
 
     metrics.add_row("Loss", f"[bold]{loss_str}[/]", "Best", f"[green]{best_str}[/]")
     metrics.add_row("LR", lr_str, "Speed", speed_str)
@@ -219,8 +363,11 @@ def _build_display(
         "Epoch time",
         f"{stats.last_epoch_time:.1f}s" if stats.last_epoch_time > 0 else "--",
     )
+    metrics.add_row("Attn", attn_str, "Device", device_str)
+    metrics.add_row("Proc RAM", proc_ram_str, "System RAM", sys_ram_str)
 
     # -- VRAM bar -------------------------------------------------------------
+    vram_global_line = ""
     if gpu.available:
         snap = gpu.snapshot()
         pct = snap.percent
@@ -233,33 +380,61 @@ def _build_display(
             f"{snap.used_gb:.1f} / {snap.total_gb:.1f} GiB  "
             f"[dim]({pct:.0f}%)[/]"
         )
+        global_used_mb = float(getattr(snap, "global_used_mb", 0.0) or 0.0)
+        total_mb = float(getattr(snap, "total_mb", 0.0) or 0.0)
+        global_used_gb = float(
+            getattr(snap, "global_used_gb", global_used_mb / 1024.0)
+            or 0.0
+        )
+        if global_used_mb > 0 and total_mb > 0:
+            global_pct = (global_used_mb / total_mb) * 100.0
+            vram_global_line = (
+                f"  [dim]VRAM global (all processes): "
+                f"{global_used_gb:.1f} / {snap.total_gb:.1f} GiB "
+                f"({global_pct:.0f}%)[/]"
+            )
+        else:
+            vram_global_line = "  [dim]VRAM global (all processes): --[/]"
     else:
         vram_line = "  [dim]VRAM monitoring not available[/]"
 
     # -- Recent log (fixed height for stable panel) ---------------------------
-    log_text = Text()
+    log_text = Text(no_wrap=True, overflow="ellipsis")
+    log_limit = _log_char_limit()
     padded = recent_msgs[-_LOG_LINES:]
     while len(padded) < _LOG_LINES:
         padded.insert(0, "")
     for msg in padded:
         if not msg:
             log_text.append("  \n")
-        elif msg.startswith("[OK]"):
-            log_text.append(f"  {msg}\n", style="green")
-        elif msg.startswith("[WARN]"):
-            log_text.append(f"  {msg}\n", style="yellow")
-        elif msg.startswith("[FAIL]"):
-            log_text.append(f"  {msg}\n", style="red")
-        elif msg.startswith("[INFO]"):
-            log_text.append(f"  {msg}\n", style="blue")
         else:
-            log_text.append(f"  {msg}\n", style="dim")
+            line = _truncate_for_log_panel(msg, log_limit)
+            if line.startswith("[OK]"):
+                log_text.append(f"  {line}\n", style="green")
+            elif line.startswith("[WARN]"):
+                log_text.append(f"  {line}\n", style="yellow")
+            elif line.startswith("[FAIL]"):
+                log_text.append(f"  {line}\n", style="red")
+            elif line.startswith("[INFO]"):
+                log_text.append(f"  {line}\n", style="blue")
+            else:
+                log_text.append(f"  {line}\n", style="dim")
 
     # -- Assemble panel -------------------------------------------------------
+    epoch_bar_row = Table.grid(padding=0)
+    epoch_bar_row.add_column(width=2)
+    epoch_bar_row.add_column()
+    epoch_bar_row.add_column(width=6)
+    epoch_bar_row.add_row(
+        Text("  "),
+        epoch_bar,
+        Text.from_markup(f"[dim]{epoch_pct * 100:.0f}%[/]"),
+    )
+
     parts: list = [
         epoch_line,
         Text(""),
-        Text.from_markup(f"  {epoch_bar}  [dim]{epoch_pct * 100:.0f}%[/]"),
+        epoch_bar_row,
     ]
     parts.extend(step_parts)
     parts.extend([
@@ -267,6 +442,10 @@ def _build_display(
         metrics,
         Text(""),
         Text.from_markup(vram_line),
+    ])
+    if vram_global_line:
+        parts.append(Text.from_markup(vram_global_line))
+    parts.extend([
         Text(""),
         log_text,
     ])
@@ -286,6 +465,9 @@ def track_training(
     max_epochs: int,
     device: str = "cuda:0",
     refresh_per_second: int = 2,
+    attention_backend: Optional[str] = None,
+    session_log_path: Optional[str] = None,
+    session_name: str = "",
 ) -> TrainingStats:
     """Consume training yields and display live progress.
 
@@ -295,17 +477,47 @@ def track_training(
         max_epochs: Total number of epochs (for progress bar).
         device: Device string for GPU monitoring.
         refresh_per_second: Rich Live refresh rate.
+        attention_backend: Selected attention backend label.
+        session_log_path: Optional per-session UI log file path.
+        session_name: Friendly session name used in the UI log header.
 
     Returns:
         Final ``TrainingStats`` for the summary display.
     """
-    stats = TrainingStats(start_time=time.time(), max_epochs=max_epochs)
+    stats = TrainingStats(
+        start_time=time.time(),
+        max_epochs=max_epochs,
+        attention_backend=attention_backend or "unknown",
+        device_label=device,
+    )
     gpu = GPUMonitor(device=device, interval=3.0)
     recent_msgs: list[str] = []
+    session_logger: _SessionTextLogger | None = None
+    if session_log_path:
+        try:
+            session_logger = _SessionTextLogger(session_log_path, session_name=session_name)
+            session_logger.log(f"[INFO] Progress tracking started (device={device})")
+        except Exception:
+            session_logger = None
 
-    if is_rich_active() and console is not None:
-        return _track_rich(training_iter, stats, gpu, recent_msgs, refresh_per_second)
-    return _track_plain(training_iter, stats, gpu, recent_msgs)
+    try:
+        if is_rich_active() and console is not None:
+            return _track_rich(
+                training_iter,
+                stats,
+                gpu,
+                recent_msgs,
+                refresh_per_second,
+                session_logger=session_logger,
+            )
+        return _track_plain(training_iter, stats, gpu, recent_msgs, session_logger=session_logger)
+    finally:
+        if session_logger is not None:
+            try:
+                session_logger.log("[INFO] Progress tracking ended")
+            except Exception:
+                pass
+            session_logger.close()
 
 
 def _track_rich(
@@ -314,12 +526,9 @@ def _track_rich(
     gpu: GPUMonitor,
     recent_msgs: list,
     refresh_per_second: int,
+    session_logger: "_SessionTextLogger | None" = None,
 ) -> TrainingStats:
     """Rich Live display loop.
-
-    Uses ``transient=True`` so each frame cleanly erases the previous one,
-    preventing ghost-panel stacking when external code (e.g. Lightning's
-    SLURM warning) writes to stdout/stderr during the live display.
 
     During the Live session, Python logging is redirected from stderr into
     the panel's scrolling log area.  This prevents log output (e.g. from
@@ -327,15 +536,28 @@ def _track_rich(
     caused "ghost panels" — especially in tmux and web terminals.  The file
     handler (sidestep.log) is unaffected.
 
-    After the Live context exits, the final dashboard is re-printed as a
-    static renderable so it remains visible in the terminal.
+    Rendering uses manual refresh to avoid background redraw races.
     """
     import warnings
     from rich.live import Live
 
     assert console is not None
 
-    error_msgs: list[str] = []
+    def _all_loggers() -> list[logging.Logger]:
+        out: list[logging.Logger] = [logging.getLogger()]
+        for obj in logging.Logger.manager.loggerDict.values():
+            if isinstance(obj, logging.Logger):
+                out.append(obj)
+        # De-duplicate by identity while preserving order.
+        seen: set[int] = set()
+        uniq: list[logging.Logger] = []
+        for lg in out:
+            ident = id(lg)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            uniq.append(lg)
+        return uniq
 
     # Suppress warnings that print to stderr during Live and disrupt
     # Rich's cursor positioning (e.g. Lightning SLURM, fork safety).
@@ -347,54 +569,62 @@ def _track_rich(
     )
 
     # -- Redirect logging to prevent ghost panels ---------------------------
-    # Find and temporarily mute stderr StreamHandlers.  Replace them with a
-    # capture handler that feeds messages into the panel's log area.
+    # Mute stream handlers from *all* configured loggers, not just root.
+    # Some libraries install non-root handlers (or disable propagation),
+    # which can still write directly to stderr and break Live cursor math.
     root_logger = logging.getLogger()
-    muted_handlers: list[logging.Handler] = []
-    for h in list(root_logger.handlers):
-        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
-            root_logger.removeHandler(h)
-            muted_handlers.append(h)
+    all_loggers = _all_loggers()
+    muted_handlers: list[tuple[logging.Logger, logging.Handler]] = []
+    for lg in all_loggers:
+        for h in list(lg.handlers):
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+                lg.removeHandler(h)
+                muted_handlers.append((lg, h))
 
-    capture = _LiveLogCapture(recent_msgs)
+    capture = _LiveLogCapture(recent_msgs, session_logger=session_logger)
     root_logger.addHandler(capture)
+    capture_on_nonprop: list[logging.Logger] = []
+    for lg in all_loggers:
+        if lg is root_logger:
+            continue
+        if not lg.propagate:
+            lg.addHandler(capture)
+            capture_on_nonprop.append(lg)
 
     try:
         with Live(
             _build_display(stats, gpu, recent_msgs),
             console=console,
             refresh_per_second=refresh_per_second,
-            transient=True,
+            transient=False,
+            redirect_stdout=True,
+            redirect_stderr=True,
+            auto_refresh=False,
+            vertical_overflow="crop",
         ) as live:
             for update in training_iter:
                 if isinstance(update, TrainingUpdate):
                     step, loss, msg = update.step, update.loss, update.msg
                     _process_structured(update, stats)
-                    if update.kind in ("fail", "warn"):
-                        error_msgs.append(msg)
                 else:
                     step, loss, msg = update
                     _process_tuple(step, loss, msg, stats)
-                    if "[FAIL]" in msg or "[WARN]" in msg:
-                        error_msgs.append(msg)
 
-                recent_msgs.append(msg)
-                if len(recent_msgs) > 20:
-                    recent_msgs.pop(0)
+                _append_recent_message(recent_msgs, msg)
+                if session_logger is not None:
+                    session_logger.log(msg)
 
-                live.update(_build_display(stats, gpu, recent_msgs))
+                live.update(_build_display(stats, gpu, recent_msgs), refresh=True)
     finally:
         # Restore original console handlers
         root_logger.removeHandler(capture)
-        for h in muted_handlers:
-            root_logger.addHandler(h)
-
-    # Print the final dashboard state (transient=True erases it on exit)
-    console.print(_build_display(stats, gpu, recent_msgs))
-
-    # Re-print errors that may have scrolled out of the log window
-    for err in error_msgs:
-        console.print(f"  {err}")
+        for lg in capture_on_nonprop:
+            try:
+                lg.removeHandler(capture)
+            except Exception:
+                pass
+        for lg, h in muted_handlers:
+            lg.addHandler(h)
 
     stats.peak_vram_mb = gpu.peak_mb()
     return stats
@@ -405,6 +635,7 @@ def _track_plain(
     stats: TrainingStats,
     gpu: GPUMonitor,
     recent_msgs: list,
+    session_logger: "_SessionTextLogger | None" = None,
 ) -> TrainingStats:
     """Plain-text fallback (no Rich)."""
     for update in training_iter:
@@ -416,6 +647,8 @@ def _track_plain(
             _process_tuple(step, loss, msg, stats)
 
         print(msg)
+        if session_logger is not None:
+            session_logger.log(msg)
 
     stats.peak_vram_mb = gpu.peak_mb()
     return stats

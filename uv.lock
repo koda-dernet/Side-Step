@@ -1983,7 +1983,7 @@ wheels = [
 
 [[package]]
 name = "side-step"
-version = "0.8.2b0"
+version = "0.9.0b0"
 source = { editable = "." }
 dependencies = [
     { name = "accelerate" },

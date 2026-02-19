@@ -40,6 +40,14 @@ class LoRAConfigV2(LoRAConfig):
     target_mlp: bool = False
     """Also target MLP/FFN layers (gate_proj, up_proj, down_proj)."""
 
+    def __post_init__(self) -> None:
+        if self.r < 1:
+            raise ValueError(f"LoRA rank (r) must be >= 1 (got {self.r})")
+        if self.r > 1024:
+            raise ValueError(f"LoRA rank (r) > 1024 is almost certainly wrong (got {self.r})")
+        if self.alpha < 1:
+            raise ValueError(f"LoRA alpha must be >= 1 (got {self.alpha})")
+
     def to_dict(self) -> dict:
         base = super().to_dict()
         base["attention_type"] = self.attention_type
@@ -219,10 +227,6 @@ class TrainingConfigV2(TrainingConfig):
     log_heavy_every: int = 50
     """Log per-layer gradient norms every N optimiser steps."""
 
-    # --- Sample generation --------------------------------------------------
-    sample_every_n_epochs: int = 0
-    """Generate an audio sample every N epochs (0 = disabled)."""
-
     # --- Estimation params --------------------------------------------------
     estimate_batches: Optional[int] = None
     """Number of batches for gradient estimation (None = auto from GPU)."""
@@ -241,6 +245,28 @@ class TrainingConfigV2(TrainingConfig):
 
     estimate_output: Optional[str] = None
     """Path to write module config JSON (estimate subcommand only)."""
+
+    # --- Fisher analysis params -----------------------------------------------
+    fisher_runs: Optional[int] = None
+    """Number of Fisher estimation runs (None = auto-scale with dataset)."""
+
+    fisher_batches_per_run: Optional[int] = None
+    """Batches per Fisher run (None = auto-scale with dataset)."""
+
+    convergence_patience: int = 5
+    """Stop a Fisher run early when top-K ranking is stable for N batches."""
+
+    timestep_focus: str = "texture"
+    """Timestep focus for Fisher: 'texture', 'structure', 'balanced', or 'low,high'."""
+
+    rank_min: int = 16
+    """Minimum adaptive LoRA rank."""
+
+    rank_max: int = 128
+    """Maximum adaptive LoRA rank."""
+
+    ignore_fisher_map: bool = False
+    """Bypass auto-detection of fisher_map.json in dataset_dir."""
 
     # --- Preprocessing flags ------------------------------------------------
     preprocess: bool = False
@@ -266,6 +292,40 @@ class TrainingConfigV2(TrainingConfig):
     from each sample during training.  ``None`` = disabled, ``60`` = recommended.
     Values below 60 (e.g. 30) may reduce training quality for full-length
     inference."""
+
+    # -----------------------------------------------------------------------
+    # Validation
+    # -----------------------------------------------------------------------
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        errors: list[str] = []
+        if self.learning_rate <= 0:
+            errors.append(f"learning_rate must be > 0 (got {self.learning_rate})")
+        if self.learning_rate > 1.0:
+            errors.append(
+                f"learning_rate={self.learning_rate} is dangerously high -- "
+                "typical range is 1e-5..1e-3"
+            )
+        if self.batch_size < 1:
+            errors.append(f"batch_size must be >= 1 (got {self.batch_size})")
+        if self.max_grad_norm <= 0:
+            errors.append(f"max_grad_norm must be > 0 (got {self.max_grad_norm})")
+        if self.max_epochs < 1:
+            errors.append(f"max_epochs must be >= 1 (got {self.max_epochs})")
+        if self.gradient_accumulation_steps < 1:
+            errors.append(
+                f"gradient_accumulation_steps must be >= 1 "
+                f"(got {self.gradient_accumulation_steps})"
+            )
+        if self.save_every_n_epochs < 1:
+            errors.append(
+                f"save_every_n_epochs must be >= 1 (got {self.save_every_n_epochs})"
+            )
+        if errors:
+            raise ValueError(
+                "Invalid training configuration:\n  - " + "\n  - ".join(errors)
+            )
 
     # -----------------------------------------------------------------------
     # Helpers
@@ -307,10 +367,12 @@ class TrainingConfigV2(TrainingConfig):
                 "device": self.device,
                 "precision": self.precision,
                 "resume_from": self.resume_from,
+                "save_best": self.save_best,
+                "save_best_after": self.save_best_after,
+                "early_stop_patience": self.early_stop_patience,
                 "log_dir": self.log_dir,
                 "log_every": self.log_every,
                 "log_heavy_every": self.log_heavy_every,
-                "sample_every_n_epochs": self.sample_every_n_epochs,
                 "estimate_batches": self.estimate_batches,
                 "top_k": self.top_k,
                 "granularity": self.granularity,
@@ -324,6 +386,13 @@ class TrainingConfigV2(TrainingConfig):
                 "max_duration": self.max_duration,
                 "normalize": self.normalize,
                 "chunk_duration": self.chunk_duration,
+                "fisher_runs": self.fisher_runs,
+                "fisher_batches_per_run": self.fisher_batches_per_run,
+                "convergence_patience": self.convergence_patience,
+                "timestep_focus": self.timestep_focus,
+                "rank_min": self.rank_min,
+                "rank_max": self.rank_max,
+                "ignore_fisher_map": self.ignore_fisher_map,
             }
         )
         return base
@@ -332,10 +401,10 @@ class TrainingConfigV2(TrainingConfig):
         """Persist the full config to a JSON file."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.to_dict(), indent=2))
+        path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
 
     @classmethod
     def from_json(cls, path: Path) -> "TrainingConfigV2":
         """Load config from a JSON file."""
-        data = json.loads(Path(path).read_text())
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})

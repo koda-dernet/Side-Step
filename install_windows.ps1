@@ -48,7 +48,7 @@ Write-Host "  ███████ ██ ██   ██ █████   █
 Write-Host "       ██ ██ ██   ██ ██                 ██    ██    ██      ██" -ForegroundColor Cyan
 Write-Host "  ███████ ██ ██████  ███████       ███████    ██    ███████ ██" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Standalone Installer (v0.8.0-beta)" -ForegroundColor Green
+Write-Host "  Standalone Installer (v0.9.0-beta)" -ForegroundColor Green
 Write-Host ""
 
 # ── Pre-flight: Git ──────────────────────────────────────────────────────
@@ -60,6 +60,17 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 Write-Ok "Git found: $(git --version)"
+Write-Ok "Install directory: $(Resolve-Path -LiteralPath $InstallDir)"
+
+# Optional Python visibility check (uv manages Python, this is informational)
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    try {
+        $pyv = python --version 2>$null
+        if ($pyv) { Write-Ok "System Python found: $pyv (uv will still manage 3.11)" }
+    } catch {}
+} else {
+    Write-Warn "System Python not found on PATH (this is okay; uv will provision Python 3.11)."
+}
 
 # ── Install uv if missing ───────────────────────────────────────────────
 Write-Step "Checking for uv (fast Python package manager)"
@@ -75,6 +86,13 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
         if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
             $uvPath = Join-Path $env:USERPROFILE ".local\bin"
             $env:Path += ";$uvPath"
+        }
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+            Write-Fail "uv installation completed but command was not found on PATH."
+            Write-Host "  Try opening a new PowerShell window, then run:"
+            Write-Host "    irm https://astral.sh/uv/install.ps1 | iex"
+            Write-Host "  Or install manually: https://docs.astral.sh/uv/getting-started/installation/"
+            exit 1
         }
         Write-Ok "uv installed: $(uv --version)"
     } catch {
@@ -148,8 +166,10 @@ if (-not $SkipACEStep -and (Test-Path $aceDir)) {
         uv sync
         Write-Ok "ACE-Step dependencies installed"
     } catch {
-        Write-Warn "ACE-Step dependency sync failed. Vanilla mode may not work."
-        Write-Host "  You can try again later with: cd $aceDir && uv sync"
+        Write-Warn "ACE-Step dependency sync failed."
+        Write-Host "  Side-Step training still works standalone."
+        Write-Host "  Re-run later if you need ACE-Step generation UI/extra tooling:"
+        Write-Host "    cd $aceDir && uv sync"
     }
     Set-Location $sideDir
 }
@@ -211,4 +231,8 @@ if (-not $SkipACEStep) {
 }
 Write-Host "  If you get CUDA errors, check:"
 Write-Host "    uv run python -c `"import torch; print(torch.cuda.is_available())`""
+Write-Host ""
+Write-Host "  If uv is not recognized in new terminals:"
+Write-Host "    - Close and reopen PowerShell"
+Write-Host "    - Or run: $env:Path += ';$env:USERPROFILE\.local\bin'"
 Write-Host ""

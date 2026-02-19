@@ -18,6 +18,10 @@ class VRAMSnapshot:
 
     used_mb: float = 0.0
     total_mb: float = 0.0
+    global_used_mb: float = 0.0
+    """Device-wide used VRAM (all processes), when available."""
+    global_free_mb: float = 0.0
+    """Device-wide free VRAM, when available."""
     name: str = "unknown"
     timestamp: float = 0.0
 
@@ -28,6 +32,14 @@ class VRAMSnapshot:
     @property
     def total_gb(self) -> float:
         return self.total_mb / 1024.0
+
+    @property
+    def global_used_gb(self) -> float:
+        return self.global_used_mb / 1024.0
+
+    @property
+    def global_free_gb(self) -> float:
+        return self.global_free_mb / 1024.0
 
     @property
     def percent(self) -> float:
@@ -108,9 +120,14 @@ class GPUMonitor:
             idx = self._cuda_idx()
             torch.cuda.synchronize(idx)
             reserved = torch.cuda.memory_reserved(idx) / (1024 ** 2)
+            free_bytes, total_bytes = torch.cuda.mem_get_info(idx)
+            global_free_mb = free_bytes / (1024 ** 2)
+            global_used_mb = max(0.0, (total_bytes - free_bytes) / (1024 ** 2))
             snap = VRAMSnapshot(
                 used_mb=reserved,
                 total_mb=self._total_mb,
+                global_used_mb=global_used_mb,
+                global_free_mb=global_free_mb,
                 name=self._name,
                 timestamp=now,
             )

@@ -599,7 +599,7 @@ class TrainingConfigScreen(Screen):
         yield Static("Which optimizer to use for weight updates", classes="form-hint")
         yield Static(
             "AdamW = reliable default  |  8-bit = saves ~30% optimizer VRAM\n"
-            "Adafactor = extreme VRAM savings  |  Prodigy = auto-tunes LR (set LR=1.0)",
+            "Adafactor = extreme VRAM savings  |  Prodigy = auto-tunes LR (start around 0.1)",
             classes="impact-hint",
         )
         
@@ -717,7 +717,10 @@ class TrainingConfigScreen(Screen):
                     id="input-log-dir",
                 )
                 yield Button("...", id="btn-browse-logs", variant="default")
-        yield Static("Where to save TensorBoard logs (view with: tensorboard --logdir ./logs)", classes="form-hint")
+        yield Static(
+            "Where to save TensorBoard logs (view with: uvx --with \"setuptools<70\" tensorboard --logdir ./logs)",
+            classes="form-hint",
+        )
         
         # Log every N steps
         with Horizontal(classes="form-row"):

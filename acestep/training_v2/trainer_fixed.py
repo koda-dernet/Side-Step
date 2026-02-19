@@ -28,6 +28,8 @@ import torch.nn as nn
 from acestep.training_v2.optim import build_optimizer, build_scheduler
 from acestep.training_v2._vendor.data_module import PreprocessedDataModule
 
+_MAX_CONSECUTIVE_NAN = 10  # halt training after this many NaN/Inf losses in a row
+
 # V2 modules
 from acestep.training_v2.configs import TrainingConfigV2
 from acestep.training_v2.tensorboard_utils import TrainingLogger
@@ -43,6 +45,7 @@ from acestep.training_v2.fixed_lora_module import (
 )
 from acestep.training_v2.trainer_helpers import (
     configure_memory_features,
+    force_disable_decoder_cache,
     offload_non_decoder,
     resume_checkpoint,
     save_adapter_flat,
@@ -154,7 +157,22 @@ class FixedLoRATrainer:
             data_module.setup("fit")
 
             if len(data_module.train_dataset) == 0:
-                yield TrainingUpdate(0, 0.0, "[FAIL] No valid samples found in dataset directory", kind="fail")
+                fail_msg = "[FAIL] No valid samples found in dataset directory"
+                ds = data_module.train_dataset
+                manifest_path = getattr(ds, "manifest_path", None)
+                manifest_error = getattr(ds, "manifest_error", None)
+                fallback_used = bool(getattr(ds, "manifest_fallback_used", False))
+
+                if manifest_error:
+                    fail_msg += f"\n       {manifest_error}"
+                elif manifest_path and Path(manifest_path).is_file() and fallback_used:
+                    fail_msg += (
+                        "\n       manifest.json could not be used; fallback scan found no valid .pt files"
+                    )
+                elif manifest_path and not Path(manifest_path).is_file():
+                    fail_msg += "\n       manifest.json not found and directory contains no valid .pt files"
+
+                yield TrainingUpdate(0, 0.0, fail_msg, kind="fail")
                 return
 
             yield TrainingUpdate(0, 0.0, f"[OK] Loaded {len(data_module.train_dataset)} preprocessed samples", kind="info")
@@ -290,6 +308,14 @@ class FixedLoRATrainer:
         yield TrainingUpdate(0, 0.0, f"[INFO] Scheduler: {scheduler_type}", kind="info")
 
         # -- Training memory features ----------------------------------------
+        cache_forced_off = force_disable_decoder_cache(self.module.model.decoder)
+        if cache_forced_off:
+            yield TrainingUpdate(
+                0, 0.0,
+                "[INFO] Disabled decoder KV cache for training VRAM stability",
+                kind="info",
+            )
+
         if getattr(cfg, "gradient_checkpointing", True):
             ckpt_ok, cache_off, grads_ok = configure_memory_features(
                 self.module.model.decoder
@@ -350,6 +376,9 @@ class FixedLoRATrainer:
         optimizer.zero_grad(set_to_none=True)
         self.module.model.decoder.train()
 
+        # NaN/Inf guard -- consecutive bad losses trigger a halt
+        consecutive_nan = 0
+
         # Best-model tracking (MA5 smoothed loss)
         best_loss = float('inf')
         best_epoch = 0
@@ -376,10 +405,26 @@ class FixedLoRATrainer:
                     return
 
                 loss = self.module.training_step(batch)
+
+                # Guard: skip backward on NaN/Inf to protect optimizer state
+                if torch.isnan(loss) or torch.isinf(loss):
+                    consecutive_nan += 1
+                    del loss
+                    if consecutive_nan >= _MAX_CONSECUTIVE_NAN:
+                        yield TrainingUpdate(
+                            global_step, 0.0,
+                            f"[FAIL] {consecutive_nan} consecutive NaN/Inf losses -- halting training",
+                            kind="fail",
+                        )
+                        tb.close()
+                        return
+                    continue
+                consecutive_nan = 0
+
                 loss = loss / cfg.gradient_accumulation_steps
                 self.fabric.backward(loss)
                 accumulated_loss += loss.item()
-                del loss  # free scalar tensor immediately
+                del loss
                 accumulation_step += 1
 
                 if accumulation_step >= cfg.gradient_accumulation_steps:
@@ -402,8 +447,16 @@ class FixedLoRATrainer:
                             steps_per_epoch=steps_per_epoch,
                         )
 
-                    if global_step % cfg.log_heavy_every == 0:
+                    if cfg.log_heavy_every > 0 and global_step % cfg.log_heavy_every == 0:
                         tb.log_per_layer_grad_norms(self.module.model, global_step)
+                        tb.flush()
+
+                    timestep_every = max(0, int(getattr(cfg, "log_timestep_every", cfg.log_every)))
+                    if (
+                        getattr(cfg, "loss_weighting", "none") == "min_snr"
+                        and timestep_every > 0
+                        and global_step % timestep_every == 0
+                    ):
                         ts_buf = self.module.drain_timestep_buffer()
                         if ts_buf is not None:
                             tb.log_timestep_histogram(ts_buf, global_step)
@@ -492,10 +545,12 @@ class FixedLoRATrainer:
                 kind="epoch", epoch=epoch + 1, max_epochs=cfg.max_epochs, epoch_time=epoch_time,
             )
 
-            # Auto-save best model
+            # Auto-save best model (eval mode for consistent saved weights)
             if is_new_best:
                 best_path = str(output_dir / "best")
+                self.module.model.decoder.eval()
                 self._save_adapter_flat(best_path)
+                self.module.model.decoder.train()
                 yield TrainingUpdate(
                     step=global_step, loss=avg_epoch_loss,
                     msg=f"[OK] Best model saved (epoch {epoch + 1}, MA5: {best_loss:.4f})",
@@ -517,10 +572,12 @@ class FixedLoRATrainer:
                 )
                 break
 
-            # Periodic checkpoint
+            # Periodic checkpoint (eval mode for consistent saved weights)
             if (epoch + 1) % cfg.save_every_n_epochs == 0:
                 ckpt_dir = str(output_dir / "checkpoints" / f"epoch_{epoch + 1}")
+                self.module.model.decoder.eval()
                 self._save_checkpoint(optimizer, scheduler, epoch + 1, global_step, ckpt_dir)
+                self.module.model.decoder.train()
                 yield TrainingUpdate(
                     step=global_step, loss=avg_epoch_loss,
                     msg=f"[OK] Checkpoint saved at epoch {epoch + 1}",
@@ -572,6 +629,7 @@ class FixedLoRATrainer:
                 kind="complete",
             )
         else:
+            self.module.model.decoder.eval()
             self._save_final(final_path)
             tb.flush()
             tb.close()

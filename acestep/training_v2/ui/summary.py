@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from acestep.training_v2.ui import console, is_rich_active
 from acestep.training_v2.ui.progress import TrainingStats
+from acestep.training_v2.ui.tensorboard_launcher import tensorboard_manual_command
 
 
 def _dir_size_str(path: str) -> str:
@@ -67,8 +68,9 @@ def _show_failure(stats: TrainingStats, output_dir: str) -> None:
                 "  0 epochs completed, 0 steps executed.\n\n"
                 "  Common causes:\n"
                 "  1. [bold]Dataset directory is empty[/] -- no .pt files found\n"
-                "  2. [bold]Device mismatch[/] -- wrong GPU index or insufficient VRAM\n"
-                "  3. [bold]Dependency issue[/] -- peft, lightning, or bitsandbytes\n\n"
+                "  2. [bold]Invalid manifest.json[/] -- broken JSON/path escaping\n"
+                "  3. [bold]Device mismatch[/] -- wrong GPU index or insufficient VRAM\n"
+                "  4. [bold]Dependency issue[/] -- peft, lightning, or bitsandbytes\n\n"
                 "  Check [bold]sidestep.log[/] for the full error traceback.",
                 title="[bold red]Training Failed[/]",
                 border_style="red",
@@ -152,7 +154,7 @@ def _show_rich(
     hints.append(f"load from {final_dir}\n")
     if log_dir:
         hints.append("  2. View metrics:  ", style="dim")
-        hints.append(f"tensorboard --logdir {log_dir}\n")
+        hints.append(f"{tensorboard_manual_command(log_dir)}\n")
     hints.append("  3. Generate music with the adapter via the Gradio UI\n", style="dim")
 
     # -- Assemble panel -------------------------------------------------------
@@ -244,5 +246,6 @@ def _show_plain(
         print(f"  Final weights ....... {final_dir}  ({_dir_size_str(str(final_dir))})", file=sys.stderr)
     if log_dir:
         print(f"  TensorBoard ......... {log_dir}", file=sys.stderr)
+        print(f"  View metrics ........ {tensorboard_manual_command(log_dir)}", file=sys.stderr)
 
     print("=" * 60 + "\n", file=sys.stderr)

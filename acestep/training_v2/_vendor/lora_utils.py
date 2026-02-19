@@ -5,7 +5,7 @@ Uses PEFT (Parameter-Efficient Fine-Tuning) library for LoRA implementation.
 """
 
 import os
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple
 from loguru import logger
 import types
 
@@ -31,52 +31,6 @@ from acestep.training_v2._vendor.configs import LoRAConfig
 def check_peft_available() -> bool:
     """Check if PEFT library is available."""
     return PEFT_AVAILABLE
-
-
-def get_dit_target_modules(model) -> List[str]:
-    """Get the list of module names in the DiT decoder that can have LoRA applied.
-
-    Args:
-        model: The AceStepConditionGenerationModel
-
-    Returns:
-        List of module names suitable for LoRA
-    """
-    target_modules = []
-
-    # Focus on the decoder (DiT) attention layers
-    if hasattr(model, 'decoder'):
-        for name, module in model.decoder.named_modules():
-            # Target attention projection layers
-            if any(proj in name for proj in ['q_proj', 'k_proj', 'v_proj', 'o_proj']):
-                if isinstance(module, nn.Linear):
-                    target_modules.append(name)
-
-    return target_modules
-
-
-def freeze_non_lora_parameters(model, freeze_encoder: bool = True) -> None:
-    """Freeze all non-LoRA parameters in the model.
-
-    Args:
-        model: The model to freeze parameters for
-        freeze_encoder: Whether to freeze the encoder (condition encoder)
-    """
-    # Freeze all parameters first
-    for param in model.parameters():
-        param.requires_grad = False
-
-    # Count frozen and trainable parameters
-    total_params = 0
-    trainable_params = 0
-
-    for name, param in model.named_parameters():
-        total_params += param.numel()
-        if param.requires_grad:
-            trainable_params += param.numel()
-
-    logger.info(f"Frozen parameters: {total_params - trainable_params:,}")
-    logger.info(f"Trainable parameters: {trainable_params:,}")
 
 
 def inject_lora_into_dit(
@@ -152,13 +106,28 @@ def inject_lora_into_dit(
             pass
 
     # Create PEFT LoRA config
+    rank_pat = getattr(lora_config, "rank_pattern", None) or {}
+    alpha_pat = getattr(lora_config, "alpha_pattern", None) or {}
+    # When adaptive ranks are active, global r is the SAFETY NET (rank_min).
+    # Every real module rank lives in rank_pattern.  If a module slips
+    # through target matching without a pattern entry it gets the safe
+    # minimum rank instead of an expensive fallback.
+    if rank_pat:
+        fallback_r = getattr(lora_config, "rank_min", lora_config.r)
+        fallback_alpha = fallback_r * 2
+    else:
+        fallback_r = lora_config.r
+        fallback_alpha = lora_config.alpha
+
     peft_lora_config = LoraConfig(
-        r=lora_config.r,
-        lora_alpha=lora_config.alpha,
+        r=fallback_r,
+        lora_alpha=fallback_alpha,
         lora_dropout=lora_config.dropout,
         target_modules=lora_config.target_modules,
+        rank_pattern=rank_pat,
+        alpha_pattern=alpha_pat,
         bias=lora_config.bias,
-        task_type=TaskType.FEATURE_EXTRACTION,  # For diffusion models
+        task_type=TaskType.FEATURE_EXTRACTION,
     )
 
     # Apply LoRA to the decoder
@@ -222,6 +191,16 @@ def save_lora_weights(
     Returns:
         Path to saved weights
     """
+    import sys
+    if sys.platform == "win32" and len(os.path.abspath(output_dir)) > 240:
+        logger.warning(
+            "Output path is very long (%d chars) -- this may fail on Windows. "
+            "Try a shorter output path, or enable long path support: "
+            "run 'reg add HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem "
+            "/v LongPathsEnabled /t REG_DWORD /d 1 /f' in an admin terminal "
+            "and restart.",
+            len(os.path.abspath(output_dir)),
+        )
     os.makedirs(output_dir, exist_ok=True)
 
     # Unwrap Fabric wrapper so PEFT's save_pretrained sees the real model
@@ -426,48 +405,3 @@ def load_training_checkpoint(
     return result
 
 
-def merge_lora_weights(model) -> Any:
-    """Merge LoRA weights into the base model.
-
-    This permanently integrates the LoRA adaptations into the model weights.
-    After merging, the model can be used without PEFT.
-    """
-    if hasattr(model, 'decoder') and hasattr(model.decoder, 'merge_and_unload'):
-        model.decoder = model.decoder.merge_and_unload()
-        logger.info("LoRA weights merged into base model")
-    else:
-        logger.warning("Model does not support LoRA merging")
-
-    return model
-
-
-def get_lora_info(model) -> Dict[str, Any]:
-    """Get information about LoRA adapters in the model."""
-    info = {
-        "has_lora": False,
-        "lora_params": 0,
-        "total_params": 0,
-        "modules_with_lora": [],
-    }
-
-    total_params = 0
-    lora_params = 0
-    lora_modules = []
-
-    for name, param in model.named_parameters():
-        total_params += param.numel()
-        if 'lora_' in name:
-            lora_params += param.numel()
-            module_name = name.rsplit('.lora_', 1)[0]
-            if module_name not in lora_modules:
-                lora_modules.append(module_name)
-
-    info["total_params"] = total_params
-    info["lora_params"] = lora_params
-    info["has_lora"] = lora_params > 0
-    info["modules_with_lora"] = lora_modules
-
-    if total_params > 0:
-        info["lora_ratio"] = lora_params / total_params
-
-    return info

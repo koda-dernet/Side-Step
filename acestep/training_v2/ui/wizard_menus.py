@@ -6,63 +6,15 @@ Extracted from ``wizard.py`` to keep modules under the LOC cap.
 
 from __future__ import annotations
 
-import argparse
-from typing import Optional
-
 from acestep.training_v2.ui import console, is_rich_active
-from acestep.training_v2.ui.prompt_helpers import GoBack, menu, section, ask
-
-
-def experimental_menu() -> Optional[argparse.Namespace]:
-    """Show experimental features and return a Namespace, or None to go back.
-
-    Uses a loop instead of recursion.  Returns None when the user
-    chooses 'Back', which the caller interprets as "show main menu".
-    """
-    from acestep.training_v2.ui.flows import wizard_estimate
-
-    if is_rich_active() and console is not None:
-        console.print(
-            "\n  [dim]These features are functional but under active development.\n"
-            "  Results may vary. Feedback welcome.[/]"
-        )
-    else:
-        print(
-            "\n  These features are functional but under active development.\n"
-            "  Results may vary. Feedback welcome."
-        )
-
-    while True:
-        action = menu(
-            "Experimental Features",
-            [
-                ("estimate", "Gradient estimation (analyze which layers learn fastest)"),
-                ("selective", "Selective training (coming soon)"),
-                ("compare", "Compare module configs (coming soon)"),
-                ("back", "Back"),
-            ],
-            default=4,
-        )
-
-        if action == "back":
-            return None  # caller loops back to main menu
-
-        if action == "estimate":
-            try:
-                return wizard_estimate()
-            except GoBack:
-                continue  # stay in experimental menu
-
-        # Coming-soon items
-        _print_msg("  This feature is not yet available.\n"
-                   if not is_rich_active() else
-                   "  [yellow]This feature is not yet available.[/]\n")
+from acestep.training_v2.ui.prompt_helpers import menu, section, ask
 
 
 def manage_presets_menu() -> None:
     """Submenu for listing, viewing, deleting, importing, and exporting presets."""
     from acestep.training_v2.ui.presets import (
         list_presets, load_preset, delete_preset, import_preset, export_preset,
+        get_last_preset_error,
     )
 
     while True:
@@ -102,7 +54,11 @@ def manage_presets_menu() -> None:
             name = ask("Preset name to view", required=True)
             data = load_preset(name)
             if data is None:
-                _print_msg(f"  Preset '{name}' not found.")
+                err = get_last_preset_error(clear=True)
+                if err:
+                    _print_msg(f"  Could not load preset '{name}': {err}")
+                else:
+                    _print_msg(f"  Preset '{name}' not found.")
             else:
                 section(f"Preset: {name}")
                 for k, v in sorted(data.items()):
@@ -118,7 +74,11 @@ def manage_presets_menu() -> None:
             if delete_preset(name):
                 _print_msg(f"  Deleted preset '{name}'.")
             else:
-                _print_msg(f"  Preset '{name}' not found (or is built-in).")
+                err = get_last_preset_error(clear=True)
+                if err:
+                    _print_msg(f"  Could not delete preset '{name}': {err}")
+                else:
+                    _print_msg(f"  Preset '{name}' not found (or is built-in).")
 
         elif action == "import":
             path = ask("Path to preset JSON file", required=True)
@@ -126,7 +86,11 @@ def manage_presets_menu() -> None:
             if imported:
                 _print_msg(f"  Imported preset '{imported}'.")
             else:
-                _print_msg("  Import failed. Check the file path and format.")
+                err = get_last_preset_error(clear=True)
+                if err:
+                    _print_msg(f"  Import failed: {err}")
+                else:
+                    _print_msg("  Import failed. Check the file path and format.")
 
         elif action == "export":
             name = ask("Preset name to export", required=True)
@@ -134,14 +98,19 @@ def manage_presets_menu() -> None:
             if export_preset(name, dest):
                 _print_msg(f"  Exported '{name}' to {dest}.")
             else:
-                _print_msg(f"  Preset '{name}' not found.")
+                err = get_last_preset_error(clear=True)
+                if err:
+                    _print_msg(f"  Export failed: {err}")
+                else:
+                    _print_msg(f"  Preset '{name}' not found.")
 
 
 def _print_msg(msg: str) -> None:
     """Print a message using Rich if available, plain otherwise."""
     if is_rich_active() and console is not None:
-        # Strip Rich markup for plain fallback detection
-        console.print(msg)
+        # Treat messages as plain text so user-provided values like
+        # paths with brackets are not parsed as Rich markup.
+        console.print(msg, markup=False)
     else:
         # Remove Rich markup tags for plain output
         import re

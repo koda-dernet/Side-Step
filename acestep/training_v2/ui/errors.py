@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import sys
 import traceback
-from typing import Optional
-
 from acestep.training_v2.ui import console, is_rich_active
 
 # ---- Suggestion database ----------------------------------------------------
@@ -53,9 +51,41 @@ _SUGGESTIONS: dict[str, list[str]] = {
         "Flash Attention 2 is optional. The model will fall back to SDPA",
         "To install:  pip install flash-attn --no-build-isolation",
     ],
+    "attn_implementation": [
+        "Attention backend fallback is normal on unsupported setups",
+        "Flash Attention 2 needs CUDA + Ampere (RTX 30xx+) + bf16/fp16",
+        "SDPA fallback is valid, but can use more VRAM than Flash Attention 2",
+    ],
     # Dtype
     "bfloat16": [
         "Your GPU may not support bf16.  Try --precision fp16",
+    ],
+    # Dataset manifest / JSON path handling
+    "Invalid \\escape": [
+        "manifest.json contains an unescaped Windows path",
+        "Use escaped backslashes (\\\\) or forward slashes (/)",
+        "Example: C:/data/song.pt or C:\\\\data\\\\song.pt",
+    ],
+    "JSONDecodeError": [
+        "A JSON file is malformed (commonly manifest.json or dataset JSON)",
+        "Validate JSON syntax and quote/escape all path strings",
+    ],
+    "manifest.json": [
+        "Verify manifest.json is valid JSON and contains a 'samples' list",
+        "Re-run preprocessing to regenerate manifest.json if needed",
+    ],
+    # Preprocessing++
+    "Fisher analysis": [
+        "Try reducing dataset scope with --fisher-batches",
+        "Ensure gradient checkpointing is working (check GPU driver)",
+    ],
+    "Preprocessing++": [
+        "Try reducing dataset scope with --fisher-batches",
+        "Ensure gradient checkpointing is working (check GPU driver)",
+    ],
+    "fisher_map": [
+        "Re-run Preprocessing++: train.py fisher --dataset-dir <dir>",
+        "Or bypass with --ignore-fisher-map",
     ],
     # Generic
     "Permission denied": [
@@ -101,22 +131,6 @@ def handle_error(
         _show_plain(exc, exc_type, error_str, context, suggestions, show_traceback)
 
 
-def show_warning(msg: str) -> None:
-    """Display a warning message."""
-    if is_rich_active() and console is not None:
-        console.print(f"[bold yellow][WARN][/] {msg}")
-    else:
-        print(f"[WARN] {msg}", file=sys.stderr)
-
-
-def show_fail(msg: str) -> None:
-    """Display a failure message (non-exception)."""
-    if is_rich_active() and console is not None:
-        console.print(f"[bold red][Side-Step][/] {msg}")
-    else:
-        print(f"[Side-Step] {msg}", file=sys.stderr)
-
-
 def show_info(msg: str) -> None:
     """Display an info message."""
     if is_rich_active() and console is not None:
@@ -124,44 +138,6 @@ def show_info(msg: str) -> None:
     else:
         print(f"[INFO] {msg}", file=sys.stderr)
 
-
-def show_error(
-    title: str,
-    message: str,
-    suggestion: Optional[str] = None,
-) -> None:
-    """Display a styled error panel (non-exception).
-
-    Args:
-        title: Panel title (e.g. "Vanilla + Non-Turbo Model Warning").
-        message: Main error message text (can be multiline).
-        suggestion: Optional suggestion text (e.g. command to run instead).
-    """
-    if is_rich_active() and console is not None:
-        from rich.panel import Panel
-        from rich.text import Text
-
-        body = Text()
-        body.append(message, style="red")
-        if suggestion:
-            body.append("\n\nSuggested fix:\n", style="bold yellow")
-            body.append(f"  {suggestion}", style="yellow")
-
-        console.print(
-            Panel(
-                body,
-                title=f"[bold red]{title}[/]",
-                border_style="red",
-                padding=(0, 1),
-            )
-        )
-    else:
-        print(f"\n[Side-Step] {title}", file=sys.stderr)
-        print("-" * 60, file=sys.stderr)
-        print(message, file=sys.stderr)
-        if suggestion:
-            print(f"\nSuggested fix: {suggestion}", file=sys.stderr)
-        print("-" * 60 + "\n", file=sys.stderr)
 
 
 # ---- Rich rendering --------------------------------------------------------

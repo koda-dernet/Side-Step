@@ -7,11 +7,12 @@ Supports both raw audio loading and preprocessed tensor loading.
 import os
 import json
 import random
-from typing import Optional, List, Dict, Any, Tuple
+import re
+from pathlib import Path
+from typing import Optional, List, Dict, Any
 from loguru import logger
 
 import torch
-import torchaudio
 from torch.utils.data import Dataset, DataLoader
 
 try:
@@ -51,6 +52,45 @@ class PreprocessedTensorDataset(Dataset):
     # when per-sample duration metadata is unavailable.
     _LATENT_FPS_FALLBACK = 25
 
+    @staticmethod
+    def _scan_tensor_dir(tensor_dir: str) -> List[str]:
+        """Collect .pt files from tensor_dir when manifest is unavailable."""
+        paths: List[str] = []
+        for filename in os.listdir(tensor_dir):
+            if filename.endswith(".pt") and filename != "manifest.json":
+                paths.append(os.path.join(tensor_dir, filename))
+        return paths
+
+    @staticmethod
+    def _normalize_manifest_path(path_value: Any, tensor_dir: str) -> Optional[str]:
+        """Normalize one manifest path entry into an OS-native path string."""
+        if not isinstance(path_value, str):
+            return None
+
+        raw = path_value.strip()
+        if not raw:
+            return None
+
+        # Common malformed Windows absolute-path typo: ".C:\\..."
+        if re.match(r"^\.[A-Za-z]:[\\/]", raw):
+            raw = raw[1:]
+
+        # Windows absolute path / UNC path: keep slashes as-is and normalize.
+        is_windows_abs = bool(re.match(r"^[A-Za-z]:[\\/]", raw) or raw.startswith("\\\\"))
+        if is_windows_abs:
+            return os.path.normpath(raw)
+
+        # Relative paths can arrive with backslashes from Windows-generated manifests.
+        normalized_rel = raw.replace("\\", "/")
+        try:
+            p = Path(normalized_rel).expanduser()
+            if not p.is_absolute():
+                p = Path(tensor_dir) / p
+            return os.path.normpath(str(p.resolve(strict=False)))
+        except (OSError, ValueError):
+            p = Path(tensor_dir) / normalized_rel
+            return os.path.normpath(str(p))
+
     def __init__(self, tensor_dir: str, chunk_duration: Optional[int] = None):
         """Initialize from a directory of preprocessed .pt files.
 
@@ -65,24 +105,51 @@ class PreprocessedTensorDataset(Dataset):
         self.tensor_dir = tensor_dir
         self.chunk_duration = chunk_duration
         self.sample_paths = []
+        self.manifest_path = os.path.join(tensor_dir, "manifest.json")
+        self.manifest_error: Optional[str] = None
+        self.manifest_loaded: bool = False
+        self.manifest_fallback_used: bool = False
 
         # Load manifest if exists
-        manifest_path = os.path.join(tensor_dir, "manifest.json")
-        if os.path.exists(manifest_path):
-            with open(manifest_path, 'r') as f:
-                manifest = json.load(f)
-            self.sample_paths = manifest.get("samples", [])
+        if os.path.exists(self.manifest_path):
+            try:
+                with open(self.manifest_path, "r", encoding="utf-8") as f:
+                    manifest = json.load(f)
+                samples = manifest.get("samples", [])
+                if not isinstance(samples, list):
+                    raise ValueError(
+                        f"'samples' must be a list in manifest.json, got {type(samples).__name__}"
+                    )
+                normalized = [
+                    self._normalize_manifest_path(sample, tensor_dir) for sample in samples
+                ]
+                self.sample_paths = [p for p in normalized if p]
+                self.manifest_loaded = True
+            except json.JSONDecodeError as exc:
+                self.manifest_error = (
+                    f"manifest.json is invalid JSON: {exc}. "
+                    "Windows tip: escape backslashes (\\\\) or use forward slashes (/)."
+                )
+                logger.error(self.manifest_error)
+                self.sample_paths = self._scan_tensor_dir(tensor_dir)
+                self.manifest_fallback_used = True
+            except Exception as exc:
+                self.manifest_error = f"Failed to read manifest.json: {exc}"
+                logger.error(self.manifest_error)
+                self.sample_paths = self._scan_tensor_dir(tensor_dir)
+                self.manifest_fallback_used = True
         else:
-            # Fallback: scan directory for .pt files
-            for f in os.listdir(tensor_dir):
-                if f.endswith('.pt') and f != "manifest.json":
-                    self.sample_paths.append(os.path.join(tensor_dir, f))
+            self.sample_paths = self._scan_tensor_dir(tensor_dir)
 
         # Validate paths
         self.valid_paths = [p for p in self.sample_paths if os.path.exists(p)]
 
         if len(self.valid_paths) != len(self.sample_paths):
-            logger.warning(f"Some tensor files not found: {len(self.sample_paths) - len(self.valid_paths)} missing")
+            missing = len(self.sample_paths) - len(self.valid_paths)
+            logger.warning(f"Some tensor files not found: {missing} missing")
+            if missing > 0 and self.sample_paths:
+                preview = [p for p in self.sample_paths if not os.path.exists(p)][:3]
+                logger.warning(f"Missing sample preview: {preview}")
 
         # Auto-detect latent FPS from first sample when chunking is enabled
         self._latent_fps: float = self._LATENT_FPS_FALLBACK
@@ -114,14 +181,30 @@ class PreprocessedTensorDataset(Dataset):
     def __len__(self) -> int:
         return len(self.valid_paths)
 
+    _REQUIRED_KEYS = frozenset([
+        "target_latents", "attention_mask", "encoder_hidden_states",
+        "encoder_attention_mask", "context_latents",
+    ])
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         """Load a preprocessed tensor file, optionally chunked."""
         tensor_path = self.valid_paths[idx]
         data = torch.load(tensor_path, map_location='cpu', weights_only=True)
 
+        missing = self._REQUIRED_KEYS - data.keys()
+        if missing:
+            raise KeyError(
+                f"Preprocessed tensor file is missing required keys {sorted(missing)}: "
+                f"{tensor_path}"
+            )
+
         target_latents = data["target_latents"]      # [T, 64]
         attention_mask = data["attention_mask"]        # [T]
         context_latents = data["context_latents"]      # [T, 65]
+        encoder_hidden_states = data["encoder_hidden_states"]  # [L, D]
+        encoder_attention_mask = data["encoder_attention_mask"]  # [L]
+        metadata = data.get("metadata", {})
+        del data
 
         # Random chunking: slice a window from T-aligned tensors
         if self.chunk_duration is not None:
@@ -137,10 +220,10 @@ class PreprocessedTensorDataset(Dataset):
         return {
             "target_latents": target_latents,           # [T', 64]
             "attention_mask": attention_mask,             # [T']
-            "encoder_hidden_states": data["encoder_hidden_states"],  # [L, D]
-            "encoder_attention_mask": data["encoder_attention_mask"],  # [L]
+            "encoder_hidden_states": encoder_hidden_states,  # [L, D]
+            "encoder_attention_mask": encoder_attention_mask,  # [L]
             "context_latents": context_latents,          # [T', 65]
-            "metadata": data.get("metadata", {}),
+            "metadata": metadata,
         }
 
 
@@ -306,215 +389,3 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
             persistent_workers=persistent_workers,
         )
 
-
-# ============================================================================
-# Raw Audio Dataset (Legacy - for backward compatibility)
-# ============================================================================
-
-class AceStepTrainingDataset(Dataset):
-    """Dataset for ACE-Step training from raw audio.
-
-    DEPRECATED: Use PreprocessedTensorDataset instead for better performance.
-    """
-
-    def __init__(
-        self,
-        samples: List[Dict[str, Any]],
-        dit_handler,
-        max_duration: float = 240.0,
-        target_sample_rate: int = 48000,
-    ):
-        """Initialize the dataset."""
-        self.samples = samples
-        self.dit_handler = dit_handler
-        self.max_duration = max_duration
-        self.target_sample_rate = target_sample_rate
-
-        self.valid_samples = self._validate_samples()
-        logger.info(f"Dataset initialized with {len(self.valid_samples)} valid samples")
-
-    def _validate_samples(self) -> List[Dict[str, Any]]:
-        """Validate and filter samples."""
-        valid = []
-        for i, sample in enumerate(self.samples):
-            audio_path = sample.get("audio_path", "")
-            if not audio_path or not os.path.exists(audio_path):
-                logger.warning(f"Sample {i}: Audio file not found: {audio_path}")
-                continue
-
-            if not sample.get("caption"):
-                logger.warning(f"Sample {i}: Missing caption")
-                continue
-
-            valid.append(sample)
-
-        return valid
-
-    def __len__(self) -> int:
-        return len(self.valid_samples)
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """Get a single training sample."""
-        sample = self.valid_samples[idx]
-
-        audio_path = sample["audio_path"]
-        audio, sr = torchaudio.load(audio_path)
-
-        if sr != self.target_sample_rate:
-            resampler = torchaudio.transforms.Resample(sr, self.target_sample_rate)
-            audio = resampler(audio)
-
-        if audio.shape[0] == 1:
-            audio = audio.repeat(2, 1)
-        elif audio.shape[0] > 2:
-            audio = audio[:2, :]
-
-        max_samples = int(self.max_duration * self.target_sample_rate)
-        if audio.shape[1] > max_samples:
-            audio = audio[:, :max_samples]
-
-        min_samples = int(5.0 * self.target_sample_rate)
-        if audio.shape[1] < min_samples:
-            padding = min_samples - audio.shape[1]
-            audio = torch.nn.functional.pad(audio, (0, padding))
-
-        return {
-            "audio": audio,
-            "caption": sample.get("caption", ""),
-            "lyrics": sample.get("lyrics", "[Instrumental]"),
-            "metadata": {
-                "caption": sample.get("caption", ""),
-                "lyrics": sample.get("lyrics", "[Instrumental]"),
-                "bpm": sample.get("bpm"),
-                "keyscale": sample.get("keyscale", ""),
-                "timesignature": sample.get("timesignature", ""),
-                "duration": sample.get("duration", audio.shape[1] / self.target_sample_rate),
-                "language": sample.get("language", "unknown"),
-                "is_instrumental": sample.get("is_instrumental", True),
-            },
-            "audio_path": audio_path,
-        }
-
-
-def collate_training_batch(batch: List[Dict]) -> Dict[str, Any]:
-    """Collate function for raw audio batches (legacy)."""
-    max_len = max(sample["audio"].shape[1] for sample in batch)
-
-    padded_audio = []
-    attention_masks = []
-
-    for sample in batch:
-        audio = sample["audio"]
-        audio_len = audio.shape[1]
-
-        if audio_len < max_len:
-            padding = max_len - audio_len
-            audio = torch.nn.functional.pad(audio, (0, padding))
-
-        padded_audio.append(audio)
-
-        mask = torch.ones(max_len)
-        if audio_len < max_len:
-            mask[audio_len:] = 0
-        attention_masks.append(mask)
-
-    return {
-        "audio": torch.stack(padded_audio),
-        "attention_mask": torch.stack(attention_masks),
-        "captions": [s["caption"] for s in batch],
-        "lyrics": [s["lyrics"] for s in batch],
-        "metadata": [s["metadata"] for s in batch],
-        "audio_paths": [s["audio_path"] for s in batch],
-    }
-
-
-class AceStepDataModule(LightningDataModule if LIGHTNING_AVAILABLE else object):
-    """DataModule for raw audio loading (legacy).
-
-    DEPRECATED: Use PreprocessedDataModule for better training performance.
-    """
-
-    def __init__(
-        self,
-        samples: List[Dict[str, Any]],
-        dit_handler,
-        batch_size: int = 1,
-        num_workers: int = 4,
-        pin_memory: bool = True,
-        max_duration: float = 240.0,
-        val_split: float = 0.0,
-    ):
-        if LIGHTNING_AVAILABLE:
-            super().__init__()
-
-        self.samples = samples
-        self.dit_handler = dit_handler
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        self.pin_memory = pin_memory
-        self.max_duration = max_duration
-        self.val_split = val_split
-
-        self.train_dataset = None
-        self.val_dataset = None
-
-    def setup(self, stage: Optional[str] = None):
-        if stage == 'fit' or stage is None:
-            if self.val_split > 0 and len(self.samples) > 1:
-                n_val = max(1, int(len(self.samples) * self.val_split))
-
-                indices = list(range(len(self.samples)))
-                random.shuffle(indices)
-
-                val_indices = indices[:n_val]
-                train_indices = indices[n_val:]
-
-                train_samples = [self.samples[i] for i in train_indices]
-                val_samples = [self.samples[i] for i in val_indices]
-
-                self.train_dataset = AceStepTrainingDataset(
-                    train_samples, self.dit_handler, self.max_duration
-                )
-                self.val_dataset = AceStepTrainingDataset(
-                    val_samples, self.dit_handler, self.max_duration
-                )
-            else:
-                self.train_dataset = AceStepTrainingDataset(
-                    self.samples, self.dit_handler, self.max_duration
-                )
-                self.val_dataset = None
-
-    def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            collate_fn=collate_training_batch,
-            drop_last=True,
-        )
-
-    def val_dataloader(self) -> Optional[DataLoader]:
-        if self.val_dataset is None:
-            return None
-
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            collate_fn=collate_training_batch,
-        )
-
-
-def load_dataset_from_json(json_path: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Load a dataset from JSON file."""
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-
-    metadata = data.get("metadata", {})
-    samples = data.get("samples", [])
-
-    return samples, metadata

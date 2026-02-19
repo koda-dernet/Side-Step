@@ -38,7 +38,7 @@ If you're training LoRAs for ACE-Step, Side-Step is built to get you from audio 
 ---
 
 ## Beta Status & Support
-**Current Version:** 0.8.2-beta
+**Current Version:** 0.9.0-beta
 
 | Feature | Status | Note |
 | :--- | :--- | :--- |
@@ -446,7 +446,7 @@ Available in: vanilla, fixed
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--lr` or `--learning-rate` | `0.0001` | Initial learning rate. For Prodigy optimizer, set to `1.0` |
+| `--lr` or `--learning-rate` | `0.0001` | Initial learning rate. For Prodigy optimizer, start around `0.1` and reduce if unstable |
 | `--batch-size` | `1` | Number of samples per training step. Usually 1 for music generation (audio tensors are large) |
 | `--gradient-accumulation` | `4` | Number of steps to accumulate gradients before updating weights. Effective batch size = batch-size x gradient-accumulation |
 | `--epochs` | `100` | Maximum number of training epochs (full passes through the dataset) |

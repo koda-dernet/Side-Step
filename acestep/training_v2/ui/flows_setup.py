@@ -79,7 +79,7 @@ def run_first_setup() -> dict:
         if not ckpt_path.is_dir():
             _print(f"  [red]Directory not found: {_esc(ckpt_dir)}[/]")
             if not ask_bool("Try a different path?", default=True):
-                break
+                raise KeyboardInterrupt
             continue
 
         # Scan for model subdirectories
@@ -95,8 +95,10 @@ def run_first_setup() -> dict:
         else:
             _print("  [yellow]No model directories found in that location.[/]")
             _print("  [dim](Looking for subfolders with a config.json file.)[/]")
+            _print("  [dim]Examples: acestep-v15-turbo, acestep-v15-base, acestep-v15-sft[/]")
             if not ask_bool("Try a different path?", default=True):
-                break
+                _print("  [red]Setup requires at least one valid model directory. Cancelling setup.[/]")
+                raise KeyboardInterrupt
 
     data["checkpoint_dir"] = ckpt_dir
     data["first_run_complete"] = True

@@ -37,7 +37,7 @@ def native_path(path: str) -> str:
 
     On Windows, replaces forward slashes with backslashes so that path
     defaults shown in wizard prompts look natural to the user
-    (e.g. ``.\checkpoints`` instead of ``./checkpoints``).
+    (e.g. ``.\\checkpoints`` instead of ``./checkpoints``).
 
     On Linux/macOS, returns the path unchanged.
     """
@@ -70,6 +70,18 @@ def step_indicator(current: int, total: int, label: str) -> None:
 
 
 # ---- Helpers ----------------------------------------------------------------
+
+def print_message(text: object, style: str | None = None) -> None:
+    """Print one consistently formatted message line."""
+    if is_rich_active() and console is not None:
+        body = _esc(text)
+        if style:
+            console.print(f"  [{style}]{body}[/]")
+        else:
+            console.print(f"  {body}")
+    else:
+        print(f"  {text}")
+
 
 def menu(
     title: str,
@@ -259,13 +271,41 @@ def ask_path(
     """
     while True:
         val = ask(label, default=default, required=True, allow_back=allow_back)
-        if must_exist and not Path(val).exists():
-            if is_rich_active() and console is not None:
-                console.print(f"  [red]Path not found: {_esc(val)}[/]")
-            else:
-                print(f"  Path not found: {val}")
-            continue
-        return val
+        p = Path(val).expanduser()
+        if must_exist:
+            try:
+                exists = p.exists()
+            except PermissionError:
+                if is_rich_active() and console is not None:
+                    console.print(f"  [red]Permission denied accessing: {_esc(p)}[/]")
+                    console.print("  [dim]Check permissions or choose a different path.[/]")
+                else:
+                    print(f"  Permission denied accessing: {p}")
+                    print("  Check permissions or choose a different path.")
+                continue
+            if not exists:
+                if is_rich_active() and console is not None:
+                    console.print(f"  [red]Path not found: {_esc(p)}[/]")
+                    console.print("  [dim]Use an absolute path or verify the folder exists.[/]")
+                else:
+                    print(f"  Path not found: {p}")
+                    print("  Use an absolute path or verify the folder exists.")
+                continue
+            try:
+                p.stat()
+            except PermissionError:
+                if is_rich_active() and console is not None:
+                    console.print(f"  [red]Permission denied: {_esc(p)}[/]")
+                    console.print("  [dim]Check permissions or choose a different path.[/]")
+                else:
+                    print(f"  Permission denied: {p}")
+                    print("  Check permissions or choose a different path.")
+                continue
+        try:
+            return str(p.resolve(strict=False))
+        except Exception:
+            # Keep user input if resolution fails for any reason.
+            return str(p)
 
 
 def ask_bool(label: str, default: bool = True, allow_back: bool = False) -> bool:

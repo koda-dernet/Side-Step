@@ -3,6 +3,12 @@
 
 The wizard has two modes: **Basic** (fewer questions, good defaults) and **Advanced** (all settings exposed). Basic mode settings are shown to everyone. Advanced settings appear only when you select "Advanced" at the start.
 
+### Flow UX Notes
+
+- **Session carry-over defaults**: checkpoint/model/dataset values are reused across actions in the same wizard session.
+- **Training review checkpoint**: before training starts, the wizard shows a compact review with quick "edit section" actions.
+- **Preprocess chain clarity**: after preprocessing, chaining into training now explicitly shows what is carried over and what can still be changed.
+
 ### Basic Mode Settings
 
 These are always shown regardless of mode.
@@ -84,10 +90,10 @@ These appear only when "Advanced" is selected at the start of the wizard.
 
 | Setting | Default | What it does | Why you'd change it |
 |---|---|---|---|
-| Optimizer | `adamw` | Weight update algorithm | `adamw8bit` saves VRAM. `prodigy` auto-tunes LR (set LR to 1.0). `adafactor` for minimal state |
+| Optimizer | `adamw` | Weight update algorithm | `adamw8bit` saves VRAM. `prodigy` auto-tunes LR (start around 0.1, lower if unstable). `adafactor` for minimal state |
 | Scheduler | `cosine` | LR decay curve after warmup | `constant` for Prodigy. `linear` for steady decay. `constant_with_warmup` for flat after ramp |
 
-> **Prodigy note:** When you select Prodigy, set the learning rate to `1.0` and the scheduler to `constant`. Prodigy auto-tunes the actual learning rate internally.
+> **Prodigy note:** When you select Prodigy, start around learning rate `0.1` (lower if unstable) and use scheduler `constant`. Prodigy auto-tunes the effective step size internally.
 
 #### VRAM Savings
 
