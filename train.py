@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import os
 import sys
 
 # ---------------------------------------------------------------------------
@@ -50,6 +51,32 @@ except OSError:
 
 logging.basicConfig(level=logging.DEBUG, handlers=_log_handlers)
 logger = logging.getLogger("train")
+
+_TORCHAO_CPP_WARN_SNIPPET = "Skipping import of cpp extensions due to incompatible torch version"
+
+
+def _install_torchao_warning_filter() -> None:
+    """Suppress one known non-fatal torchao compatibility warning."""
+    if os.getenv("SIDESTEP_DISABLE_TORCHAO_WARN_FILTER", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return
+
+    def _drop_only_known_torchao_warning(record: logging.LogRecord) -> bool:
+        if not record.name.startswith("torchao"):
+            return True
+        try:
+            msg = record.getMessage()
+        except Exception:
+            msg = str(record.msg)
+        return _TORCHAO_CPP_WARN_SNIPPET not in msg
+
+    root_logger = logging.getLogger()
+    root_logger.addFilter(_drop_only_known_torchao_warning)
+    logging.getLogger("torchao").addFilter(_drop_only_known_torchao_warning)
+
+
+_install_torchao_warning_filter()
 
 
 def _has_subcommand() -> bool:
