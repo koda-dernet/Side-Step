@@ -317,6 +317,10 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_ckpt.add_argument("--output-dir", type=str, required=True, help="Output directory for LoRA weights")
     g_ckpt.add_argument("--save-every", type=int, default=10, help="Save checkpoint every N epochs (default: 10)")
     g_ckpt.add_argument("--resume-from", type=str, default=None, help="Path to checkpoint dir to resume from")
+    g_ckpt.add_argument("--strict-resume", action=argparse.BooleanOptionalAction, default=True,
+                         help="Abort on config mismatch or failed state restore during resume (default: True)")
+    g_ckpt.add_argument("--run-name", type=str, default=None,
+                         help="Name for this training run (used for output dir, TB logs). Auto-generated if omitted")
     g_ckpt.add_argument("--save-best", action=argparse.BooleanOptionalAction, default=True,
                          help="Auto-save best model by smoothed loss (default: True)")
     g_ckpt.add_argument("--save-best-after", type=int, default=200,

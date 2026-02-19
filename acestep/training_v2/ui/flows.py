@@ -10,6 +10,7 @@ from acestep.training_v2.ui.flows_train import wizard_train
 from acestep.training_v2.ui.flows_preprocess import wizard_preprocess
 from acestep.training_v2.ui.flows_estimate import wizard_estimate
 from acestep.training_v2.ui.flows_fisher import wizard_preprocessing_pp, wizard_fisher
+from acestep.training_v2.ui.flows_resume import wizard_resume
 
 __all__ = [
     "wizard_train",
@@ -17,4 +18,5 @@ __all__ = [
     "wizard_estimate",
     "wizard_preprocessing_pp",
     "wizard_fisher",
+    "wizard_resume",
 ]

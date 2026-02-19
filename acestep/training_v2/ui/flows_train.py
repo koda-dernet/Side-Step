@@ -24,6 +24,7 @@ from acestep.training_v2.ui.flows_train_steps import (
     step_training,
     step_cfg,
     step_logging,
+    step_run_name,
     step_chunk_duration,
     step_advanced_device,
     step_advanced_optimizer,
@@ -72,6 +73,7 @@ def _build_steps(answers: dict, config_mode: str, adapter_type: str = "lora") ->
         steps.append(("CFG Dropout Settings", step_cfg))
 
     steps.append(("Logging & Checkpoints", step_logging))
+    steps.append(("Run Name", step_run_name))
     steps.append(("Latent Chunking", step_chunk_duration))
 
     if config_mode == "advanced":

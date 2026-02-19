@@ -342,6 +342,25 @@ def step_logging(a: dict) -> None:
                     allow_back=True,
                 )
         a["resume_from"] = resume_raw
+        a["strict_resume"] = ask_bool(
+            "Strict resume? (abort on state mismatch)",
+            default=a.get("strict_resume", True),
+            allow_back=True,
+        )
+
+
+def step_run_name(a: dict) -> None:
+    """Prompt for an optional user-chosen run name."""
+    section("Run Name (optional)")
+    raw = ask(
+        "Run name (used for output dir / TB logs, leave empty for auto)",
+        default=a.get("run_name"),
+        allow_back=True,
+    )
+    if raw in (None, "None", ""):
+        a["run_name"] = None
+    else:
+        a["run_name"] = raw
 
 
 # ---- Advanced steps ---------------------------------------------------------

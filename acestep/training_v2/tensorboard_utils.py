@@ -6,11 +6,13 @@ Provides helpers for:
     - Learning rate tracking
     - Loss curves
     - Estimation score logging
+    - Versioned log directory management
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -18,6 +20,63 @@ import torch
 import torch.nn as nn
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Versioned log directory helpers
+# ---------------------------------------------------------------------------
+
+def resolve_versioned_log_dir(log_root: str | Path, run_name: str) -> Path:
+    """Find the next available versioned log directory for *run_name*.
+
+    Scans *log_root* for existing ``{run_name}_v{N}`` directories and
+    returns the next version.  First run gets ``_v0``.
+
+    Examples::
+
+        logs/jazz_v0/   # first run named "jazz"
+        logs/jazz_v1/   # second run (re-run, not resume)
+    """
+    log_root = Path(log_root)
+    log_root.mkdir(parents=True, exist_ok=True)
+    pattern = re.compile(re.escape(run_name) + r"_v(\d+)$")
+    max_ver = -1
+    for child in log_root.iterdir():
+        if child.is_dir():
+            m = pattern.match(child.name)
+            if m:
+                max_ver = max(max_ver, int(m.group(1)))
+    next_ver = max_ver + 1
+    result = log_root / f"{run_name}_v{next_ver}"
+    try:
+        result.mkdir(exist_ok=False)
+    except FileExistsError:
+        next_ver += 1
+        result = log_root / f"{run_name}_v{next_ver}"
+        result.mkdir(parents=True, exist_ok=True)
+    return result
+
+
+def resolve_latest_versioned_log_dir(log_root: str | Path, run_name: str) -> Optional[Path]:
+    """Return latest existing ``{run_name}_vN`` directory, or ``None``.
+
+    Used by resume flow so TensorBoard continues in the previous run dir.
+    """
+    log_root = Path(log_root)
+    if not log_root.is_dir():
+        return None
+    pattern = re.compile(re.escape(run_name) + r"_v(\d+)$")
+    best: tuple[int, Path] | None = None
+    for child in log_root.iterdir():
+        if not child.is_dir():
+            continue
+        m = pattern.match(child.name)
+        if not m:
+            continue
+        ver = int(m.group(1))
+        if best is None or ver > best[0]:
+            best = (ver, child)
+    return best[1] if best is not None else None
 
 try:
     from torch.utils.tensorboard import SummaryWriter

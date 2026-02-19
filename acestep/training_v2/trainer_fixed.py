@@ -44,9 +44,11 @@ from acestep.training_v2.fixed_lora_module import (
     _select_fabric_precision,
 )
 from acestep.training_v2.trainer_helpers import (
+    capture_rng_state,
     configure_memory_features,
     force_disable_decoder_cache,
     offload_non_decoder,
+    restore_rng_state,
     resume_checkpoint,
     save_adapter_flat,
     save_checkpoint,
@@ -119,7 +121,8 @@ class FixedLoRATrainer:
                 yield TrainingUpdate(0, 0.0, f"[FAIL] Dataset directory not found: {ds_dir}", kind="fail")
                 return
 
-            # -- Seed -------------------------------------------------------
+            # -- Seed (may be overridden by checkpoint RNG restore) ----------
+            self._rng_seeded_fresh = True
             torch.manual_seed(cfg.seed)
             random.seed(cfg.seed)
             if torch.cuda.is_available():
@@ -214,8 +217,9 @@ class FixedLoRATrainer:
 
     def _save_checkpoint(
         self, optimizer: Any, scheduler: Any, epoch: int, global_step: int, ckpt_dir: str,
+        runtime_state: Optional[Dict[str, Any]] = None,
     ) -> None:
-        save_checkpoint(self, optimizer, scheduler, epoch, global_step, ckpt_dir)
+        save_checkpoint(self, optimizer, scheduler, epoch, global_step, ckpt_dir, runtime_state)
 
     def _save_final(self, output_dir: str) -> None:
         save_final(self, output_dir)
@@ -355,6 +359,7 @@ class FixedLoRATrainer:
         # -- Resume ---------------------------------------------------------
         start_epoch = 0
         global_step = 0
+        _resumed_runtime: Optional[Dict[str, Any]] = None
 
         if cfg.resume_from and Path(cfg.resume_from).exists():
             try:
@@ -363,12 +368,30 @@ class FixedLoRATrainer:
                     cfg.resume_from, optimizer, scheduler,
                 )
                 if resumed is not None:
-                    start_epoch, global_step = resumed
+                    start_epoch, global_step = resumed[0], resumed[1]
+                    _resumed_runtime = resumed[2] if len(resumed) > 2 else None
             except Exception as exc:
                 logger.exception("Failed to load checkpoint")
                 yield TrainingUpdate(0, 0.0, f"[WARN] Checkpoint load failed: {exc} -- starting fresh", kind="warn")
                 start_epoch = 0
                 global_step = 0
+
+        # Restore RNG state from checkpoint (overrides initial seed)
+        if _resumed_runtime and _resumed_runtime.get("rng_state"):
+            restored_components = restore_rng_state(
+                _resumed_runtime["rng_state"],
+                current_device=self.module.device,
+            )
+            if restored_components:
+                self._rng_seeded_fresh = False
+                yield TrainingUpdate(
+                    0, 0.0,
+                    f"[OK] RNG state restored: {', '.join(restored_components)}",
+                    kind="info",
+                )
+
+        # Stash total_steps on cfg for checkpoint metadata
+        cfg._checkpoint_total_steps = total_steps
 
         # -- Training loop --------------------------------------------------
         accumulation_step = 0
@@ -387,6 +410,22 @@ class FixedLoRATrainer:
         min_delta = 0.001
         loss_window_size = 5
         recent_losses: list = []
+
+        # Rehydrate tracker state from checkpoint if available
+        if _resumed_runtime and _resumed_runtime.get("tracker_state"):
+            ts = _resumed_runtime["tracker_state"]
+            best_loss = ts.get("best_loss", best_loss)
+            best_epoch = ts.get("best_epoch", best_epoch)
+            best_tracking_active = ts.get("best_tracking_active", best_tracking_active)
+            recent_losses = list(ts.get("recent_losses", []))
+            saved_patience = ts.get("patience_counter", 0)
+            patience_counter = min(saved_patience, cfg.early_stop_patience) if cfg.early_stop_patience > 0 else 0
+            yield TrainingUpdate(
+                0, 0.0,
+                f"[OK] Tracker state restored (best_loss={best_loss:.4f}, "
+                f"best_epoch={best_epoch}, patience={patience_counter})",
+                kind="info",
+            )
 
         for epoch in range(start_epoch, cfg.max_epochs):
             epoch_loss = 0.0
@@ -582,7 +621,17 @@ class FixedLoRATrainer:
             if (epoch + 1) % cfg.save_every_n_epochs == 0:
                 ckpt_dir = str(output_dir / "checkpoints" / f"epoch_{epoch + 1}")
                 self.module.model.decoder.eval()
-                self._save_checkpoint(optimizer, scheduler, epoch + 1, global_step, ckpt_dir)
+                _rt_state = {
+                    "rng_state": capture_rng_state(self.module.device),
+                    "tracker_state": {
+                        "best_loss": best_loss,
+                        "best_epoch": best_epoch,
+                        "patience_counter": patience_counter,
+                        "best_tracking_active": best_tracking_active,
+                        "recent_losses": list(recent_losses),
+                    },
+                }
+                self._save_checkpoint(optimizer, scheduler, epoch + 1, global_step, ckpt_dir, _rt_state)
                 self.module.model.decoder.train()
                 yield TrainingUpdate(
                     step=global_step, loss=avg_epoch_loss,

@@ -54,6 +54,24 @@ class LoRAConfigV2(LoRAConfig):
         base["target_mlp"] = self.target_mlp
         return base
 
+    def save_json(self, path: Path) -> None:
+        """Persist the adapter config to a JSON file."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+
+    @classmethod
+    def from_json(cls, path: Path) -> "LoRAConfigV2":
+        """Load adapter config from a JSON file."""
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        field_names = set(cls.__dataclass_fields__) | set(LoRAConfig.__dataclass_fields__)
+        filtered = {}
+        for k, v in data.items():
+            mapped_key = {"lora_alpha": "alpha", "lora_dropout": "dropout"}.get(k, k)
+            if mapped_key in field_names:
+                filtered[mapped_key] = v
+        return cls(**filtered)
+
     # --- Data loading (declared here for compatibility with base packages
     #     that may not include these fields in TrainingConfig) -----------------
     num_workers: int = 4
@@ -95,6 +113,19 @@ class LoKRConfigV2(LoKRConfig):
         base["attention_type"] = self.attention_type
         base["target_mlp"] = self.target_mlp
         return base
+
+    def save_json(self, path: Path) -> None:
+        """Persist the adapter config to a JSON file."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+
+    @classmethod
+    def from_json(cls, path: Path) -> "LoKRConfigV2":
+        """Load adapter config from a JSON file."""
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        field_names = set(cls.__dataclass_fields__) | set(LoKRConfig.__dataclass_fields__)
+        return cls(**{k: v for k, v in data.items() if k in field_names})
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +236,15 @@ class TrainingConfigV2(TrainingConfig):
     # --- Checkpointing ------------------------------------------------------
     resume_from: Optional[str] = None
     """Path to checkpoint directory to resume training from."""
+
+    strict_resume: bool = True
+    """When True, abort if critical checkpoint state (optimizer/scheduler)
+    cannot be restored or if config has changed since the checkpoint.
+    When False, warn and continue with partial restore."""
+
+    run_name: Optional[str] = None
+    """User-chosen name for this training run.  Used for output directory
+    naming, TensorBoard log versioning, and session artifacts."""
 
     save_best: bool = True
     """Auto-save the adapter with the lowest smoothed loss (MA5)."""
@@ -333,10 +373,36 @@ class TrainingConfigV2(TrainingConfig):
 
     @property
     def effective_log_dir(self) -> Path:
-        """Return the resolved TensorBoard log directory."""
-        if self.log_dir is not None:
-            return Path(self.log_dir)
-        return Path(self.output_dir) / "runs"
+        """Return the resolved TensorBoard log directory.
+
+        When ``run_name`` is set and ``resume_from`` is not set, uses
+        versioned subdirectory naming (``{run_name}_v0``, ``_v1``, ...).
+        When resuming, falls back to the non-versioned directory so
+        TensorBoard curves stay continuous.
+
+        The result is cached after first access to avoid creating
+        multiple versioned directories on repeated calls.
+        """
+        cached = getattr(self, "_effective_log_dir_cache", None)
+        if cached is not None:
+            return cached
+        log_root = Path(self.log_dir) if self.log_dir is not None else Path(self.output_dir) / "runs"
+        if self.run_name and not self.resume_from:
+            from acestep.training_v2.tensorboard_utils import resolve_versioned_log_dir
+            result = resolve_versioned_log_dir(log_root, self.run_name)
+        else:
+            # Resume continuity: if log_dir was explicitly restored from the
+            # original run config, use it; otherwise best-effort fallback to
+            # latest versioned dir for this run_name.
+            if self.resume_from and self.run_name and self.log_dir is None:
+                from acestep.training_v2.tensorboard_utils import resolve_latest_versioned_log_dir
+
+                latest = resolve_latest_versioned_log_dir(log_root, self.run_name)
+                result = latest if latest is not None else log_root
+            else:
+                result = log_root
+        object.__setattr__(self, "_effective_log_dir_cache", result)
+        return result
 
     def to_dict(self) -> dict:
         """Serialize every field, including new ones."""
@@ -367,6 +433,8 @@ class TrainingConfigV2(TrainingConfig):
                 "device": self.device,
                 "precision": self.precision,
                 "resume_from": self.resume_from,
+                "strict_resume": self.strict_resume,
+                "run_name": self.run_name,
                 "save_best": self.save_best,
                 "save_best_after": self.save_best_after,
                 "early_stop_patience": self.early_stop_patience,

@@ -24,8 +24,8 @@ from acestep.training_v2.optim import build_optimizer, build_scheduler
 _MAX_CONSECUTIVE_NAN = 10  # halt training after this many NaN/Inf losses in a row
 from acestep.training_v2.tensorboard_utils import TrainingLogger
 from acestep.training_v2.trainer_helpers import (
-    configure_memory_features, force_disable_decoder_cache, save_adapter_flat,
-    save_checkpoint, save_final,
+    capture_rng_state, configure_memory_features, force_disable_decoder_cache,
+    restore_rng_state, save_adapter_flat, save_checkpoint, save_final,
 )
 from acestep.training_v2.ui import TrainingUpdate
 
@@ -174,6 +174,7 @@ def run_basic_training_loop(
     # -- Resume ---------------------------------------------------------
     start_epoch = 0
     global_step = 0
+    _resumed_runtime: Optional[Dict[str, Any]] = None
 
     if cfg.resume_from and Path(cfg.resume_from).exists():
         try:
@@ -183,12 +184,29 @@ def run_basic_training_loop(
                 cfg.resume_from, optimizer, scheduler,
             )
             if resumed is not None:
-                start_epoch, global_step = resumed
+                start_epoch, global_step = resumed[0], resumed[1]
+                _resumed_runtime = resumed[2] if len(resumed) > 2 else None
         except Exception as exc:
             logger.exception("Failed to load checkpoint")
             yield TrainingUpdate(0, 0.0, f"[WARN] Checkpoint load failed: {exc} -- starting fresh", kind="warn")
             start_epoch = 0
             global_step = 0
+
+    # Restore RNG state from checkpoint
+    if _resumed_runtime and _resumed_runtime.get("rng_state"):
+        restored_components = restore_rng_state(
+            _resumed_runtime["rng_state"],
+            current_device=module.device,
+        )
+        if restored_components:
+            yield TrainingUpdate(
+                0, 0.0,
+                f"[OK] RNG state restored: {', '.join(restored_components)}",
+                kind="info",
+            )
+
+    # Stash total_steps on cfg for checkpoint metadata
+    cfg._checkpoint_total_steps = total_steps
 
     accumulation_step = 0
     accumulated_loss = 0.0
@@ -207,6 +225,22 @@ def run_basic_training_loop(
     min_delta = 0.001
     loss_window_size = 5
     recent_losses: list = []
+
+    # Rehydrate tracker state from checkpoint if available
+    if _resumed_runtime and _resumed_runtime.get("tracker_state"):
+        ts = _resumed_runtime["tracker_state"]
+        best_loss = ts.get("best_loss", best_loss)
+        best_epoch = ts.get("best_epoch", best_epoch)
+        best_tracking_active = ts.get("best_tracking_active", best_tracking_active)
+        recent_losses = list(ts.get("recent_losses", []))
+        saved_patience = ts.get("patience_counter", 0)
+        patience_counter = min(saved_patience, cfg.early_stop_patience) if cfg.early_stop_patience > 0 else 0
+        yield TrainingUpdate(
+            0, 0.0,
+            f"[OK] Tracker state restored (best_loss={best_loss:.4f}, "
+            f"best_epoch={best_epoch}, patience={patience_counter})",
+            kind="info",
+        )
 
     for epoch in range(start_epoch, cfg.max_epochs):
         epoch_loss = 0.0
@@ -347,7 +381,17 @@ def run_basic_training_loop(
         if (epoch + 1) % cfg.save_every_n_epochs == 0:
             ckpt_dir = str(output_dir / "checkpoints" / f"epoch_{epoch + 1}")
             module.model.decoder.eval()
-            save_checkpoint(trainer, optimizer, scheduler, epoch + 1, global_step, ckpt_dir)
+            _rt_state = {
+                "rng_state": capture_rng_state(module.device),
+                "tracker_state": {
+                    "best_loss": best_loss,
+                    "best_epoch": best_epoch,
+                    "patience_counter": patience_counter,
+                    "best_tracking_active": best_tracking_active,
+                    "recent_losses": list(recent_losses),
+                },
+            }
+            save_checkpoint(trainer, optimizer, scheduler, epoch + 1, global_step, ckpt_dir, _rt_state)
             module.model.decoder.train()
             yield TrainingUpdate(
                 step=global_step, loss=avg_epoch_loss,

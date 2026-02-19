@@ -8,10 +8,12 @@ configuration, and module wrapper introspection -- extracted from
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import random
 from pathlib import Path
-from typing import Any, Generator, Optional, Tuple
+from typing import Any, Dict, Generator, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -189,9 +191,60 @@ def save_adapter_flat(trainer: Any, output_dir: str) -> None:
             save_lora_weights(module.model, output_dir)
 
 
+_CHECKPOINT_SCHEMA_VERSION = 2
+
+
+def capture_rng_state(device: Any = None) -> Dict[str, Any]:
+    """Snapshot Python, torch CPU, and CUDA RNG state for checkpoint."""
+    rng: Dict[str, Any] = {
+        "python": random.getstate(),
+        "torch_cpu": torch.random.get_rng_state(),
+    }
+    if torch.cuda.is_available() and device is not None:
+        try:
+            dev = torch.device(device)
+            idx = dev.index if dev.index is not None else 0
+            rng["cuda_device"] = idx
+            rng["cuda_rng"] = torch.cuda.get_rng_state(idx)
+        except Exception as exc:
+            logger.debug("Could not capture CUDA RNG state: %s", exc)
+    return rng
+
+
+def restore_rng_state(rng_state: Dict[str, Any], current_device: Any = None) -> list[str]:
+    """Restore RNG state from checkpoint. Returns list of restored components."""
+    restored: list[str] = []
+    if "python" in rng_state:
+        random.setstate(rng_state["python"])
+        restored.append("python_rng")
+    if "torch_cpu" in rng_state:
+        torch.random.set_rng_state(rng_state["torch_cpu"])
+        restored.append("torch_cpu_rng")
+    if "cuda_rng" in rng_state and torch.cuda.is_available():
+        saved_idx = rng_state.get("cuda_device", 0)
+        current_idx = 0
+        if current_device is not None:
+            dev = torch.device(current_device)
+            current_idx = dev.index if dev.index is not None else 0
+        if saved_idx == current_idx:
+            try:
+                torch.cuda.set_rng_state(rng_state["cuda_rng"], current_idx)
+                restored.append("cuda_rng")
+            except Exception as exc:
+                logger.warning("[WARN] Could not restore CUDA RNG: %s", exc)
+        else:
+            logger.warning(
+                "[WARN] CUDA device changed (saved cuda:%d, current cuda:%d) "
+                "-- CUDA RNG not restored",
+                saved_idx, current_idx,
+            )
+    return restored
+
+
 def save_checkpoint(
     trainer: Any, optimizer: Any, scheduler: Any,
     epoch: int, global_step: int, ckpt_dir: str,
+    runtime_state: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Save a resumable checkpoint that is also inference-ready.
 
@@ -202,15 +255,47 @@ def save_checkpoint(
     """
     save_adapter_flat(trainer, ckpt_dir)
 
+    cfg = trainer.training_config
     # Save optimizer / scheduler / progress for resume
-    training_state = {
+    # NOTE: weights_only=False is required on load because RNG state
+    # contains raw byte buffers that need unpickling.
+    training_state: Dict[str, Any] = {
         "epoch": epoch,
         "global_step": global_step,
         "optimizer_state_dict": optimizer.state_dict(),
         "scheduler_state_dict": scheduler.state_dict(),
+        "config_meta": {
+            "schema_version": _CHECKPOINT_SCHEMA_VERSION,
+            "optimizer_type": getattr(cfg, "optimizer_type", "adamw"),
+            "scheduler_type": getattr(cfg, "scheduler_type", "cosine"),
+            "warmup_steps": getattr(cfg, "warmup_steps", 0),
+            "learning_rate": getattr(cfg, "learning_rate", 1e-4),
+            "total_steps": getattr(cfg, "_checkpoint_total_steps", 0),
+        },
     }
+    if runtime_state:
+        if "rng_state" in runtime_state:
+            training_state["rng_state"] = runtime_state["rng_state"]
+        if "tracker_state" in runtime_state:
+            training_state["tracker_state"] = runtime_state["tracker_state"]
+
     state_path = os.path.join(ckpt_dir, "training_state.pt")
     torch.save(training_state, state_path)
+
+    # Persist training + adapter configs for the resume wizard
+    try:
+        cfg.save_json(Path(ckpt_dir) / "training_config.json")
+    except Exception as exc:
+        logger.debug("Could not write training_config.json: %s", exc)
+    try:
+        adapter_cfg = getattr(trainer, "adapter_config", None) or getattr(trainer, "lora_config", None)
+        if adapter_cfg is not None and hasattr(adapter_cfg, "save_json"):
+            adapter_cfg.save_json(Path(ckpt_dir) / "sidestep_adapter_config.json")
+        elif adapter_cfg is not None:
+            ac_path = Path(ckpt_dir) / "sidestep_adapter_config.json"
+            ac_path.write_text(json.dumps(adapter_cfg.to_dict(), indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Could not write sidestep_adapter_config.json: %s", exc)
 
     # Also write a safetensors file with epoch/global_step so that
     # load_training_checkpoint (which reads .safetensors) can restore
@@ -297,16 +382,50 @@ def verify_saved_adapter(output_dir: str) -> None:
         logger.warning("[WARN] Could not verify adapter: %s", exc)
 
 
+def _validate_config_meta(
+    config_meta: Dict[str, Any], cfg: Any, strict: bool,
+) -> Tuple[bool, list[str]]:
+    """Compare saved config_meta against current training config.
+
+    Returns ``(ok, warnings)`` where *ok* is False if strict mode should abort.
+    """
+    warnings: list[str] = []
+    if not config_meta:
+        return True, warnings
+
+    checks = [
+        ("optimizer_type", getattr(cfg, "optimizer_type", "adamw")),
+        ("scheduler_type", getattr(cfg, "scheduler_type", "cosine")),
+    ]
+    for key, current_val in checks:
+        saved_val = config_meta.get(key)
+        if saved_val is not None and saved_val != current_val:
+            msg = (
+                f"[WARN] {key} changed since checkpoint "
+                f"(saved={saved_val}, current={current_val})"
+            )
+            warnings.append(msg)
+            if strict:
+                return False, warnings
+    return True, warnings
+
+
 def resume_checkpoint(
     trainer: Any, resume_path: str, optimizer: Any, scheduler: Any,
-) -> Generator[TrainingUpdate, None, Optional[Tuple[int, int]]]:
-    """Resume from a checkpoint directory. Returns (start_epoch, global_step) or None."""
+) -> Generator[TrainingUpdate, None, Optional[Tuple[int, int, Optional[Dict[str, Any]]]]]:
+    """Resume from a checkpoint directory.
+
+    Returns ``(start_epoch, global_step, runtime_state)`` or ``None``.
+    *runtime_state* contains ``rng_state`` and ``tracker_state`` dicts
+    when they are available in the checkpoint (schema v2+).  Callers
+    should apply these after the scheduler/optimizer are fully set up.
+    """
     module = trainer.module
+    cfg = trainer.training_config
+    strict = getattr(cfg, "strict_resume", True)
     assert module is not None
     ckpt_dir = Path(resume_path)
 
-    # Normalize: if user pointed to a file inside the checkpoint dir,
-    # use the containing directory instead.
     if ckpt_dir.is_file():
         logger.info(
             "resume_from points to a file (%s) -- using parent directory %s",
@@ -319,7 +438,6 @@ def resume_checkpoint(
     state_path = ckpt_dir / "training_state.pt"
 
     if lokr_weights_path.exists() and module.lycoris_net is not None:
-        # LoKR resume
         if trainer.adapter_type != "lokr":
             logger.warning(
                 "[WARN] Found lokr_weights.safetensors but adapter_type is '%s' "
@@ -331,18 +449,62 @@ def resume_checkpoint(
             state = torch.load(str(state_path), map_location=module.device, weights_only=False)
             epoch = state.get("epoch", 0)
             step = state.get("global_step", 0)
+
+            # Config meta validation
+            config_meta = state.get("config_meta", {})
+            meta_ok, meta_warnings = _validate_config_meta(config_meta, cfg, strict)
+            for w in meta_warnings:
+                yield TrainingUpdate(0, 0.0, w, kind="warn")
+            if not meta_ok:
+                yield TrainingUpdate(
+                    0, 0.0,
+                    "[FAIL] Config changed since checkpoint (strict_resume=True). "
+                    "Use --no-strict-resume to force.",
+                    kind="fail",
+                )
+                return None
+
+            opt_ok = False
+            sched_ok = False
             if "optimizer_state_dict" in state:
-                optimizer.load_state_dict(state["optimizer_state_dict"])
+                try:
+                    optimizer.load_state_dict(state["optimizer_state_dict"])
+                    opt_ok = True
+                except Exception as exc:
+                    msg = f"[WARN] Failed to load optimizer state: {exc}"
+                    logger.warning(msg)
+                    if strict:
+                        yield TrainingUpdate(0, 0.0, msg, kind="warn")
+                        yield TrainingUpdate(
+                            0, 0.0,
+                            "[FAIL] Optimizer restore failed (strict_resume=True)",
+                            kind="fail",
+                        )
+                        return None
             if "scheduler_state_dict" in state:
-                scheduler.load_state_dict(state["scheduler_state_dict"])
+                try:
+                    scheduler.load_state_dict(state["scheduler_state_dict"])
+                    sched_ok = True
+                except Exception as exc:
+                    logger.warning("[WARN] Failed to load scheduler state: %s", exc)
+
+            # Build runtime state from checkpoint
+            runtime_state = _extract_runtime_state(state)
+
+            parts = [f"[OK] Resumed LoKR from epoch {epoch}, step {step}"]
+            if opt_ok:
+                parts.append("optimizer OK")
+            if sched_ok:
+                parts.append("scheduler OK")
+            if runtime_state.get("rng_state"):
+                parts.append("RNG state available")
+            if runtime_state.get("tracker_state"):
+                parts.append("tracker state available")
             yield TrainingUpdate(
-                0,
-                0.0,
-                f"[OK] Resumed LoKR from epoch {epoch}, step {step}",
-                kind="info",
-                resume_start_epoch=epoch,
+                0, 0.0, ", ".join(parts),
+                kind="info", resume_start_epoch=epoch,
             )
-            return (epoch, step)
+            return (epoch, step, runtime_state)
         yield TrainingUpdate(0, 0.0, "[OK] LoKR weights loaded (no training state)", kind="info")
         return None
 
@@ -367,6 +529,21 @@ def resume_checkpoint(
         scheduler=scheduler,
         device=module.device,
     )
+    ts_path = ckpt_dir / "training_state.pt"
+    if strict and ts_path.exists():
+        try:
+            ts = torch.load(str(ts_path), map_location=module.device, weights_only=False)
+            has_opt_state = "optimizer_state_dict" in ts
+        except Exception:
+            has_opt_state = False
+        if has_opt_state and not ckpt_info.get("loaded_optimizer", False):
+            yield TrainingUpdate(
+                0,
+                0.0,
+                "[FAIL] Optimizer restore failed (strict_resume=True)",
+                kind="fail",
+            )
+            return None
     if ckpt_info["adapter_path"]:
         adapter_path = ckpt_info["adapter_path"]
         aw_path = os.path.join(adapter_path, "adapter_model.safetensors")
@@ -387,20 +564,60 @@ def resume_checkpoint(
 
             start_epoch = ckpt_info["epoch"]
             g_step = ckpt_info["global_step"]
+
+            # Load extended state from training_state.pt directly
+            runtime_state: Optional[Dict[str, Any]] = None
+            if ts_path.exists():
+                try:
+                    raw_state = torch.load(str(ts_path), map_location=module.device, weights_only=False)
+                    config_meta = raw_state.get("config_meta", {})
+                    meta_ok, meta_warnings = _validate_config_meta(config_meta, cfg, strict)
+                    for w in meta_warnings:
+                        yield TrainingUpdate(0, 0.0, w, kind="warn")
+                    if not meta_ok:
+                        yield TrainingUpdate(
+                            0, 0.0,
+                            "[FAIL] Config changed since checkpoint (strict_resume=True). "
+                            "Use --no-strict-resume to force.",
+                            kind="fail",
+                        )
+                        return None
+                    runtime_state = _extract_runtime_state(raw_state)
+                except Exception as exc:
+                    logger.debug("Could not read extended state: %s", exc)
+
             parts = [f"[OK] Resumed from epoch {start_epoch}, step {g_step}"]
             if ckpt_info["loaded_optimizer"]:
                 parts.append("optimizer OK")
             if ckpt_info["loaded_scheduler"]:
                 parts.append("scheduler OK")
+            if runtime_state and runtime_state.get("rng_state"):
+                parts.append("RNG state available")
+            if runtime_state and runtime_state.get("tracker_state"):
+                parts.append("tracker state available")
             yield TrainingUpdate(
-                0,
-                0.0,
-                ", ".join(parts),
-                kind="info",
-                resume_start_epoch=start_epoch,
+                0, 0.0, ", ".join(parts),
+                kind="info", resume_start_epoch=start_epoch,
             )
-            return (start_epoch, g_step)
+            return (start_epoch, g_step, runtime_state)
         yield TrainingUpdate(0, 0.0, f"[WARN] Adapter weights not found in {adapter_path}", kind="warn")
         return None
     yield TrainingUpdate(0, 0.0, f"[WARN] No valid checkpoint in {ckpt_dir}", kind="warn")
     return None
+
+
+def _extract_runtime_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Pull runtime state fields from a loaded training_state dict."""
+    runtime: Dict[str, Any] = {}
+    if "rng_state" in state:
+        runtime["rng_state"] = state["rng_state"]
+    if "tracker_state" in state:
+        runtime["tracker_state"] = state["tracker_state"]
+    if "config_meta" in state:
+        runtime["config_meta"] = state["config_meta"]
+    if not runtime:
+        logger.info(
+            "[INFO] Checkpoint predates runtime-state support -- "
+            "RNG/tracker state not restored"
+        )
+    return runtime

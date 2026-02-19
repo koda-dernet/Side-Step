@@ -46,7 +46,13 @@ def _safe_slug(text: str) -> str:
 
 
 def _build_session_name(train_cfg: Any) -> str:
-    """Create a stable session name for artifacts/logs."""
+    """Create a stable session name for artifacts/logs.
+
+    Prefers the user-specified ``run_name`` when available.
+    """
+    run_name = getattr(train_cfg, "run_name", None)
+    if run_name:
+        return _safe_slug(run_name)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     variant = _safe_slug(getattr(train_cfg, "model_variant", "model"))
     adapter = _safe_slug(getattr(train_cfg, "adapter_type", "adapter"))
@@ -173,6 +179,16 @@ def run_fixed(args: argparse.Namespace) -> int:
         show_info(f"Session UI log: {session_ui_log_path}")
     except Exception as exc:
         show_info(f"Session artifact setup skipped: {exc}")
+
+    # Persist configs to output root for the resume wizard
+    try:
+        out_root = Path(train_cfg.output_dir).expanduser()
+        out_root.mkdir(parents=True, exist_ok=True)
+        train_cfg.save_json(out_root / "training_config.json")
+        if hasattr(adapter_cfg, "save_json"):
+            adapter_cfg.save_json(out_root / "sidestep_adapter_config.json")
+    except Exception as exc:
+        show_info(f"Config persistence skipped: {exc}")
 
     if auto_launch_tensorboard:
         launched, launch_msg = launch_tensorboard_background(train_cfg.effective_log_dir)

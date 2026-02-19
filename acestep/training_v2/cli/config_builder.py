@@ -250,6 +250,8 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
         device=gpu_info.device,
         precision=gpu_info.precision,
         resume_from=args.resume_from,
+        strict_resume=getattr(args, "strict_resume", True),
+        run_name=getattr(args, "run_name", None),
         log_dir=args.log_dir,
         log_every=args.log_every,
         log_heavy_every=max(0, getattr(args, "log_heavy_every", 50)),

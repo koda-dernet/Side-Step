@@ -17,6 +17,7 @@ from acestep.training_v2.ui import console, is_rich_active
 from acestep.training_v2.ui.prompt_helpers import GoBack, _esc, menu
 from acestep.training_v2.ui.flows import wizard_train, wizard_preprocess
 from acestep.training_v2.ui.flows_build_dataset import wizard_build_dataset
+from acestep.training_v2.ui.flows_resume import wizard_resume
 from acestep.training_v2.ui.wizard_menus import manage_presets_menu
 from acestep.training_v2.ui.flows_fisher import wizard_preprocessing_pp
 
@@ -186,6 +187,7 @@ def _main_menu(session_defaults: dict[str, Any] | None = None) -> Optional[argpa
             [
                 ("train_lora", "Train a LoRA (PEFT)"),
                 ("train_lokr", "Train a LoKR (LyCORIS)"),
+                ("resume", "Resume a previous training run"),
                 ("build_dataset", "Build dataset from folder"),
                 ("preprocess", "Preprocess audio into tensors"),
                 ("preprocessing_pp", "Preprocessing++ (auto-targeting + adaptive ranks)"),
@@ -220,6 +222,9 @@ def _main_menu(session_defaults: dict[str, Any] | None = None) -> Optional[argpa
 
             if action == "preprocessing_pp":
                 return wizard_preprocessing_pp(preset=prefill)
+
+            if action == "resume":
+                return wizard_resume(prefill=prefill)
 
             if action in ("train_lora", "train_lokr"):
                 adapter = "lokr" if action == "train_lokr" else "lora"

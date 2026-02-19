@@ -150,6 +150,12 @@ def _resolve_wizard_projections(a: dict) -> list:
     When ``target_mlp`` is True, MLP module names (gate_proj, up_proj,
     down_proj) are appended (deduplicated).
     """
+    # Resume flow can provide a pre-resolved list directly from
+    # saved adapter config; preserve it as-is.
+    direct = a.get("target_modules")
+    if isinstance(direct, list) and direct:
+        return list(direct)
+
     attention_type = a.get("attention_type", "both")
     has_split = "self_target_modules_str" in a or "cross_target_modules_str" in a
 
@@ -237,6 +243,8 @@ def build_train_namespace(a: dict, mode: str = "fixed") -> argparse.Namespace:
         save_best_after=a.get("save_best_after", 200),
         early_stop_patience=a.get("early_stop_patience", 0),
         resume_from=a.get("resume_from"),
+        strict_resume=a.get("strict_resume", True),
+        run_name=a.get("run_name"),
         log_dir=a.get("log_dir"),
         log_every=a.get("log_every", 10),
         log_heavy_every=max(0, int(a.get("log_heavy_every", 50))),
