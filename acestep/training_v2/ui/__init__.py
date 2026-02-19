@@ -78,6 +78,8 @@ class TrainingUpdate:
     samples_per_sec: float = 0.0
     steps_per_epoch: int = 0
     """Total optimizer steps per epoch (for step-level progress bar)."""
+    resume_start_epoch: int = -1
+    """Checkpoint resume epoch used as ETA baseline (when available)."""
     checkpoint_path: str = ""
     """Filesystem path emitted with kind='checkpoint'."""
 

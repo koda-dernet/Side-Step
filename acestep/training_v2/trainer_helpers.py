@@ -335,7 +335,13 @@ def resume_checkpoint(
                 optimizer.load_state_dict(state["optimizer_state_dict"])
             if "scheduler_state_dict" in state:
                 scheduler.load_state_dict(state["scheduler_state_dict"])
-            yield TrainingUpdate(0, 0.0, f"[OK] Resumed LoKR from epoch {epoch}, step {step}", kind="info")
+            yield TrainingUpdate(
+                0,
+                0.0,
+                f"[OK] Resumed LoKR from epoch {epoch}, step {step}",
+                kind="info",
+                resume_start_epoch=epoch,
+            )
             return (epoch, step)
         yield TrainingUpdate(0, 0.0, "[OK] LoKR weights loaded (no training state)", kind="info")
         return None
@@ -386,7 +392,13 @@ def resume_checkpoint(
                 parts.append("optimizer OK")
             if ckpt_info["loaded_scheduler"]:
                 parts.append("scheduler OK")
-            yield TrainingUpdate(0, 0.0, ", ".join(parts), kind="info")
+            yield TrainingUpdate(
+                0,
+                0.0,
+                ", ".join(parts),
+                kind="info",
+                resume_start_epoch=start_epoch,
+            )
             return (start_epoch, g_step)
         yield TrainingUpdate(0, 0.0, f"[WARN] Adapter weights not found in {adapter_path}", kind="warn")
         return None

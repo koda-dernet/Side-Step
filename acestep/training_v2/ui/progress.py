@@ -112,6 +112,12 @@ class TrainingStats:
     last_lr: float = 0.0
     _lr_seen: bool = False
     current_epoch: int = 0
+    session_start_epoch: int = -1
+    """Completed-epoch baseline for this process session.
+
+    Prefer checkpoint metadata (``resume_start_epoch`` from ``TrainingUpdate``)
+    when available. Otherwise infer from the first seen epoch as ``epoch - 1``.
+    """
     max_epochs: int = 0
     current_step: int = 0
     total_steps_estimate: int = 0
@@ -153,13 +159,24 @@ class TrainingStats:
     def eta_seconds(self) -> float:
         if self.max_epochs <= 0 or self.current_epoch <= 0:
             return 0.0
+        remaining_epochs = self.max_epochs - self.current_epoch
+        if remaining_epochs <= 0:
+            return 0.0
+
+        # Prefer measured epoch duration once available (stable on resume).
+        if self.last_epoch_time > 0:
+            return self.last_epoch_time * remaining_epochs
+
         elapsed = self.elapsed
         if elapsed <= 0:
             return 0.0
-        progress = self.current_epoch / self.max_epochs
-        if progress <= 0:
+
+        if self.session_start_epoch < 0:
             return 0.0
-        return elapsed * (1.0 / progress - 1.0)
+        session_epochs = self.current_epoch - self.session_start_epoch
+        if session_epochs <= 0:
+            return 0.0
+        return (elapsed / session_epochs) * remaining_epochs
 
     @property
     def eta_str(self) -> str:
@@ -173,6 +190,19 @@ class TrainingStats:
         self._step_times.append(now)
         if len(self._step_times) > 50:
             self._step_times = self._step_times[-50:]
+
+    def note_epoch(self, epoch: int) -> None:
+        """Capture first seen epoch as this session's ETA baseline."""
+        if epoch <= 0:
+            return
+        if self.session_start_epoch < 0:
+            self.session_start_epoch = max(epoch - 1, 0)
+
+    def note_resume_start_epoch(self, start_epoch: int) -> None:
+        """Use explicit checkpoint epoch as ETA baseline."""
+        if start_epoch < 0:
+            return
+        self.session_start_epoch = max(start_epoch, 0)
 
 
 def _fmt_duration(seconds: float) -> str:
@@ -658,9 +688,11 @@ def _track_plain(
 
 def _process_structured(update: TrainingUpdate, stats: TrainingStats) -> None:
     """Extract stats from a TrainingUpdate."""
+    stats.note_resume_start_epoch(update.resume_start_epoch)
     stats.current_step = update.step
     stats.last_loss = update.loss
     stats.current_epoch = update.epoch
+    stats.note_epoch(update.epoch)
     if update.max_epochs > 0:
         stats.max_epochs = update.max_epochs
     if update.lr >= 0 and update.kind == "step":
@@ -722,6 +754,7 @@ def _process_tuple(step: int, loss: float, msg: str, stats: TrainingStats) -> No
                 max_part = parts[1].split(",")[0].split(" ")[0].strip()
                 max_epochs = int(max_part)
                 stats.current_epoch = epoch_num
+                stats.note_epoch(epoch_num)
                 if max_epochs > 0:
                     stats.max_epochs = max_epochs
         except (ValueError, IndexError):
