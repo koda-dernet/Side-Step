@@ -38,6 +38,17 @@ class TestPeakNormalize(unittest.TestCase):
         result = peak_normalize(audio)
         self.assertEqual(result.shape, audio.shape)
 
+    def test_peak_custom_target_db(self):
+        """Peak normalization with custom target_db scales correctly."""
+        from acestep.training_v2.audio_normalize import peak_normalize
+
+        audio = torch.randn(2, 48000) * 0.5
+        result = peak_normalize(audio, target_db=-3.0)
+
+        target_amp = 10 ** (-3.0 / 20.0)
+        actual_peak = torch.max(torch.abs(result)).item()
+        self.assertAlmostEqual(actual_peak, target_amp, places=5)
+
 
 class TestLufsNormalize(unittest.TestCase):
     """Verify LUFS normalization and its pyloudnorm fallback."""
@@ -97,6 +108,29 @@ class TestNormalizeDispatch(unittest.TestCase):
         audio = torch.randn(2, 48000)
         result = normalize_audio(audio, 48000, method="unknown_method")
         self.assertTrue(torch.equal(audio, result))
+
+    def test_peak_with_target_db(self):
+        """normalize_audio with target_db passes through to peak_normalize."""
+        from acestep.training_v2.audio_normalize import normalize_audio
+
+        audio = torch.randn(2, 48000) * 0.3
+        result = normalize_audio(audio, 48000, method="peak", target_db=-3.0)
+
+        target_amp = 10 ** (-3.0 / 20.0)
+        actual_peak = torch.max(torch.abs(result)).item()
+        self.assertAlmostEqual(actual_peak, target_amp, places=5)
+
+    def test_lufs_with_target_lufs(self):
+        """normalize_audio with target_lufs does not crash (accepts param)."""
+        from acestep.training_v2.audio_normalize import normalize_audio
+
+        audio = torch.randn(2, 48000) * 0.5
+        result = normalize_audio(
+            audio, 48000, method="lufs", target_lufs=-18.0
+        )
+        self.assertEqual(result.shape, audio.shape)
+        # If pyloudnorm is available, result is LUFS-normalized; otherwise
+        # fallback to peak. Either way, no crash and shape preserved.
 
 
 if __name__ == "__main__":

@@ -343,6 +343,10 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_pre.add_argument("--max-duration", type=float, default=0, help="Max audio duration in seconds (0 = auto-detect from dataset, default: 0)")
     g_pre.add_argument("--normalize", type=str, default="none", choices=["none", "peak", "lufs"],
                         help="Audio normalization: none, peak (-1.0 dBFS), lufs (-14 LUFS). LUFS requires pyloudnorm (default: none)")
+    g_pre.add_argument("--target-db", type=float, default=-1.0,
+                        help="Peak normalization target in dBFS (used with --normalize peak, default: -1.0)")
+    g_pre.add_argument("--target-lufs", type=float, default=-14.0,
+                        help="LUFS normalization target (used with --normalize lufs, default: -14.0)")
 
 
 def _add_fixed_args(parser: argparse.ArgumentParser) -> None:

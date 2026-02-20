@@ -55,6 +55,8 @@ def preprocess_audio_files(
     device: str = "auto",
     precision: str = "auto",
     normalize: str = "none",
+    target_db: float = -1.0,
+    target_lufs: float = -14.0,
     progress_callback: Optional[Callable] = None,
     cancel_check: Optional[Callable] = None,
 ) -> Dict[str, Any]:
@@ -84,6 +86,8 @@ def preprocess_audio_files(
         precision: Target precision (``"auto"`` to auto-detect).
         normalize: Audio normalization method (``"none"``, ``"peak"``,
             or ``"lufs"``).
+        target_db: Peak normalization target in dBFS (peak method only).
+        target_lufs: LUFS normalization target (lufs method only).
         progress_callback: ``(current, total, message) -> None``.
         cancel_check: ``() -> bool`` -- return True to cancel.
 
@@ -139,6 +143,8 @@ def preprocess_audio_files(
         precision=prec,
         max_duration=max_duration,
         normalize=normalize,
+        target_db=target_db,
+        target_lufs=target_lufs,
         progress_callback=progress_callback,
         cancel_check=cancel_check,
     )
@@ -184,6 +190,8 @@ def _pass1_light(
     precision: str,
     max_duration: float,
     normalize: str = "none",
+    target_db: float = -1.0,
+    target_lufs: float = -14.0,
     progress_callback: Optional[Callable] = None,
     cancel_check: Optional[Callable] = None,
 ) -> tuple[List[Path], int]:
@@ -252,7 +260,10 @@ def _pass1_light(
 
                 # 1b. Optional normalization (CPU, before GPU transfer)
                 if normalize != "none":
-                    audio = _normalize_audio(audio, _TARGET_SR, method=normalize)
+                    audio = _normalize_audio(
+                        audio, _TARGET_SR, method=normalize,
+                        target_db=target_db, target_lufs=target_lufs
+                    )
 
                 audio = audio.unsqueeze(0).to(device=device, dtype=vae.dtype)
 

@@ -223,8 +223,14 @@ def _run_preprocess(args) -> int:
     print(f"  Model variant: {args.model_variant}")
     _md = getattr(args, "max_duration", 0)
     _norm = getattr(args, "normalize", "none")
+    _tdb = getattr(args, "target_db", -1.0)
+    _tlufs = getattr(args, "target_lufs", -14.0)
     print(f"  Max duration:  {'auto-detect' if _md <= 0 else f'{_md}s'}")
-    print(f"  Normalize:     {_norm}")
+    if _norm != "none":
+        _norm_str = f"{_norm} ({_tdb} dBFS)" if _norm == "peak" else f"{_norm} ({_tlufs} LUFS)"
+        print(f"  Normalize:     {_norm_str}")
+    else:
+        print(f"  Normalize:     {_norm}")
     print("=" * 60)
     print("[INFO] Two-pass pipeline (sequential model loading for low VRAM)")
 
@@ -239,6 +245,8 @@ def _run_preprocess(args) -> int:
             device=getattr(args, "device", "auto"),
             precision=getattr(args, "precision", "auto"),
             normalize=getattr(args, "normalize", "none"),
+            target_db=getattr(args, "target_db", -1.0),
+            target_lufs=getattr(args, "target_lufs", -14.0),
         )
     except Exception as exc:
         print(f"[FAIL] Preprocessing failed: {exc}", file=sys.stderr)
