@@ -13,6 +13,7 @@ from acestep.training_v2.ui.prompt_helpers import (
     _esc,
     ask,
     ask_path,
+    ask_output_path,
     menu,
     section,
 )
@@ -75,10 +76,12 @@ def wizard_build_dataset() -> dict:
     )
 
     # Step 5: Output path
-    output = ask(
+    output = ask_output_path(
         "Output JSON path (leave empty for <folder>/dataset.json)",
         default="",
+        required=False,
         allow_back=True,
+        for_file=True,
     )
     if not output or output.strip() == "":
         output = None

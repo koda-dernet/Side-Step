@@ -155,6 +155,41 @@ def fuzzy_search(query: str, models: List[ModelInfo]) -> List[ModelInfo]:
 
 
 # ---------------------------------------------------------------------------
+# Weight file check (best-effort)
+# ---------------------------------------------------------------------------
+
+def _has_weight_files(model_path: Path) -> bool:
+    """Return True if model dir appears to contain loadable weights.
+
+    Checks for common patterns: model.safetensors, pytorch_model.bin, *.safetensors.
+    Used to warn about incomplete downloads; does not exclude from menu.
+    """
+    if not model_path.is_dir():
+        return False
+    for name in ("model.safetensors", "pytorch_model.bin"):
+        if (model_path / name).is_file():
+            return True
+    return any(model_path.glob("*.safetensors"))
+
+
+def _warn_if_no_weights(model_path: Path, model_name: str) -> None:
+    """Warn if model directory has no obvious weight files."""
+    if _has_weight_files(model_path):
+        return
+    from acestep.training_v2.ui import console, is_rich_active
+    from acestep.training_v2.ui.prompt_helpers import _esc
+    _msg = (
+        f"  [yellow]Warning: '{_esc(model_name)}' has no model.safetensors, "
+        "pytorch_model.bin, or *.safetensors.[/]\n"
+        "  [dim]This may be an incomplete download. Loading will likely fail.[/]"
+    )
+    if is_rich_active() and console is not None:
+        console.print(_msg)
+    else:
+        print(f"  Warning: '{model_name}' has no weight files. This may be an incomplete download.")
+
+
+# ---------------------------------------------------------------------------
 # Interactive picker
 # ---------------------------------------------------------------------------
 
@@ -195,11 +230,15 @@ def pick_model(
     )
 
     if choice == "__search__":
-        return _search_loop(models)
+        result = _search_loop(models)
+        if result is not None:
+            _warn_if_no_weights(result[1].path, result[0])
+        return result
 
     # Find the matching model
     for m in models:
         if m.name == choice:
+            _warn_if_no_weights(m.path, m.name)
             return (m.name, m)
 
     return None
@@ -222,15 +261,19 @@ def _search_loop(models: List[ModelInfo]) -> Optional[Tuple[str, ModelInfo]]:
                 print(_msg)
             continue
 
-        if len(hits) == 1:
-            return (hits[0].name, hits[0])
-
         options = []
         for m in hits:
             tag = "(official)" if m.is_official else f"(custom, base: {m.base_model})"
             options.append((m.name, f"{m.name}  {tag}"))
-
-        choice = menu("Multiple matches -- pick one", options, default=1, allow_back=True)
+        title = (
+            "Matched 1 model — pick one"
+            if len(hits) == 1
+            else "Multiple matches — pick one"
+        )
+        try:
+            choice = menu(title, options, default=1, allow_back=True)
+        except GoBack:
+            continue
         for m in hits:
             if m.name == choice:
                 return (m.name, m)

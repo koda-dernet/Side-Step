@@ -16,6 +16,7 @@ from acestep.training_v2.ui.prompt_helpers import (
     ask,
     ask_path,
     ask_bool,
+    ask_output_path,
     native_path,
     section,
 )
@@ -106,10 +107,11 @@ def step_required(a: dict) -> None:
         if issue is None:
             break
         show_dataset_issue(issue)
-    a["output_dir"] = ask(
+    a["output_dir"] = ask_output_path(
         "Output directory for adapter weights",
         default=a.get("output_dir"),
-        required=True, allow_back=True,
+        required=True,
+        allow_back=True,
     )
 
 
@@ -341,6 +343,14 @@ def step_logging(a: dict) -> None:
                     must_exist=True,
                     allow_back=True,
                 )
+        else:
+            # Directory path: validate it exists
+            resume_raw = ask_path(
+                "Resume checkpoint directory",
+                default=resume_raw,
+                must_exist=True,
+                allow_back=True,
+            )
         a["resume_from"] = resume_raw
         a["strict_resume"] = ask_bool(
             "Strict resume? (abort on state mismatch)",
@@ -450,7 +460,15 @@ def step_advanced_logging(a: dict) -> None:
     """Advanced: TensorBoard logging."""
     section("Advanced Logging (press Enter for defaults)")
     log_dir_raw = ask("TensorBoard log directory (leave empty for default)", default=a.get("log_dir"), allow_back=True)
-    a["log_dir"] = None if log_dir_raw in (None, "None", "") else log_dir_raw
+    if log_dir_raw in (None, "None", "") or not str(log_dir_raw).strip():
+        a["log_dir"] = None
+    else:
+        a["log_dir"] = ask_output_path(
+            "TensorBoard log directory",
+            default=str(log_dir_raw).strip(),
+            required=True,
+            allow_back=True,
+        )
 
 
 def step_chunk_duration(a: dict) -> None:

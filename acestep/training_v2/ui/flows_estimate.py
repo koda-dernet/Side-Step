@@ -15,6 +15,7 @@ from acestep.training_v2.ui.prompt_helpers import (
     GoBack,
     ask,
     ask_path,
+    ask_output_path,
     native_path,
     section,
     step_indicator,
@@ -122,11 +123,14 @@ def _step_output(a: dict) -> None:
     Raises:
         GoBack: If the user presses back.
     """
-    a["estimate_output"] = ask(
+    result = ask_output_path(
         "Output JSON path",
         default=a.get("estimate_output", native_path("./estimate_results.json")),
+        required=False,
         allow_back=True,
+        for_file=True,
     )
+    a["estimate_output"] = result or native_path("./estimate_results.json")
 
 
 # ---- Step list and runner ---------------------------------------------------

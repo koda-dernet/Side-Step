@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from acestep.training_v2.ui.prompt_helpers import ask_path
+from acestep.training_v2.ui.prompt_helpers import ask_output_path, ask_path
 
 
 class TestAskPathErrors(unittest.TestCase):
@@ -35,6 +37,55 @@ class TestAskPathErrors(unittest.TestCase):
         ):
             out = ask_path("Checkpoint dir", must_exist=True)
         self.assertIn("/tmp/ok2", str(out))
+
+
+class TestAskOutputPath(unittest.TestCase):
+    """Tests for ask_output_path writability validation."""
+
+    def test_writable_dir_accepts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            out_path = Path(td) / "output"
+            with patch(
+                "acestep.training_v2.ui.prompt_helpers.ask",
+                return_value=str(out_path),
+            ):
+                result = ask_output_path("Output dir", required=True)
+            self.assertIn(str(td), result)
+            self.assertIn("output", result)
+
+    def test_writable_file_path_accepts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            out_file = Path(td) / "results.json"
+            with patch(
+                "acestep.training_v2.ui.prompt_helpers.ask",
+                return_value=str(out_file),
+            ):
+                result = ask_output_path("Output file", required=True, for_file=True)
+            self.assertIn("results.json", result)
+
+    def test_required_false_empty_returns_empty_string(self) -> None:
+        with patch(
+            "acestep.training_v2.ui.prompt_helpers.ask",
+            return_value="",
+        ):
+            result = ask_output_path("Output", default="", required=False)
+        self.assertEqual(result, "")
+
+    def test_unwritable_then_writable_accepts_second(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bad_path = Path(td) / "readonly_subdir"
+            bad_path.mkdir()
+            good_path = Path(td) / "output"
+            with patch(
+                "acestep.training_v2.ui.prompt_helpers.ask",
+                side_effect=[str(bad_path), str(good_path)],
+            ), patch(
+                "acestep.training_v2.ui.prompt_helpers._check_path_writable",
+                side_effect=["Permission denied", None],
+            ):
+                result = ask_output_path("Output dir", required=True)
+            self.assertIn(str(td), result)
+            self.assertIn("output", result)
 
 
 if __name__ == "__main__":

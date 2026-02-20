@@ -65,10 +65,15 @@ def validate_paths(args: argparse.Namespace) -> bool:
         )
         return False
 
-    # Resume path
+    # Resume path: fail if explicitly set but missing
     resume = getattr(args, "resume_from", None)
-    if resume is not None and not Path(resume).exists():
-        print(f"[WARN] Resume path not found (will train from scratch): {resume}", file=sys.stderr)
+    if resume is not None and str(resume).strip() and not Path(str(resume)).exists():
+        print(
+            f"[FAIL] Resume path not found: {resume}\n"
+            f"       Fix the path or leave empty to train from scratch.",
+            file=sys.stderr,
+        )
+        return False
 
     return True
 

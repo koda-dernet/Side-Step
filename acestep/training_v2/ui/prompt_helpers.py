@@ -8,6 +8,7 @@ Rich fallback to plain ``input()``.
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -256,6 +257,83 @@ def ask(
                 return val
             except (ValueError, TypeError):
                 print(f"  Invalid input, expected {type_fn.__name__}")
+
+
+def _check_path_writable(p: Path, *, for_directory: bool = True) -> Optional[str]:
+    """Check that a path is writable. Returns None if OK, error message otherwise.
+
+    For directory paths: ensure dir (or parent if creating) exists and is writable.
+    Probes by creating a temp file then deleting it.
+    Returns error string for PermissionError/OSError. Returns None for other
+    exceptions (assume OK) to avoid blocking users on quirky filesystems.
+    """
+    target = p if for_directory else p.parent
+    target = target.resolve()
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / ".sidestep_probe"
+        probe.write_text("", encoding="utf-8")
+        try:
+            probe.unlink(missing_ok=True)
+        except OSError:
+            # Write succeeded; unlink may fail on Windows (antivirus lock).
+            # Writability is proven, so treat as OK.
+            logging.getLogger(__name__).debug(
+                "Could not remove probe file %s (antivirus lock?); assuming writable",
+                probe,
+            )
+        return None
+    except PermissionError:
+        return f"Permission denied: cannot write to {target}"
+    except OSError as e:
+        return f"Cannot write to {target}: {e}"
+    except Exception as e:
+        logging.getLogger(__name__).debug(
+            "Path writability check failed (assuming OK): %s", e
+        )
+        return None  # Assume OK on unknown errors (e.g. network drives)
+
+
+def ask_output_path(
+    label: str,
+    default: Optional[str] = None,
+    required: bool = True,
+    allow_back: bool = False,
+    *,
+    for_file: bool = False,
+) -> str:
+    """Ask for an output path (directory or file), validating writability.
+
+    Ensures parent directories can be created and the target location is writable.
+    For file paths (e.g. estimate JSON), checks the parent directory.
+
+    Args:
+        label: Prompt text.
+        default: Default value.
+        required: If True, empty input is rejected.
+        allow_back: If True, typing 'b'/'back' raises GoBack.
+        for_file: If True, treat path as a file (validate parent dir writability).
+
+    Raises:
+        GoBack: When allow_back is True and user types 'b'/'back'.
+    """
+    while True:
+        val = ask(label, default=default, required=required, allow_back=allow_back)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            return "" if not required else (val if val is not None else "")
+        p = Path(val).expanduser()
+        err = _check_path_writable(p, for_directory=not for_file)
+        if err is None:
+            try:
+                return str(p.resolve(strict=False))
+            except Exception:
+                return str(p)
+        if is_rich_active() and console is not None:
+            console.print(f"  [red]{_esc(err)}[/]")
+            console.print("  [dim]Choose a different path or ensure you have write permissions.[/]")
+        else:
+            print(f"  {err}")
+            print("  Choose a different path or ensure you have write permissions.")
 
 
 def ask_path(

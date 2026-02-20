@@ -17,6 +17,7 @@ from acestep.training_v2.ui.prompt_helpers import (
     _esc,
     ask,
     ask_path,
+    ask_output_path,
     menu,
     native_path,
     section,
@@ -185,10 +186,11 @@ def _print_not_found(path: str) -> None:
 
 def _step_output(a: dict) -> None:
     """Output directory for tensor files."""
-    a["tensor_output"] = ask(
+    a["tensor_output"] = ask_output_path(
         "Output directory for .pt tensor files",
         default=a.get("tensor_output"),
-        required=True, allow_back=True,
+        required=True,
+        allow_back=True,
     )
 
 
