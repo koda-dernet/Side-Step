@@ -18,30 +18,6 @@ my_audio/
 └── track4.flac
 ```
 
-**Optional but recommended:** Create a dataset JSON file with metadata for each track. This gives the model more information to learn from (captions, lyrics, genre, BPM, etc.):
-
-```json
-[
-  {
-    "audio_path": "./track1.wav",
-    "caption": "Energetic rock with distorted guitars and driving drums",
-    "genre": "Rock",
-    "bpm": 140,
-    "custom_tag": "mystyle"
-  },
-  {
-    "audio_path": "./track2.wav",
-    "caption": "Mellow acoustic folk song with fingerpicked guitar",
-    "genre": "Folk",
-    "bpm": 95
-  }
-]
-```
-
-Save this as `my_dataset.json` in the same directory as your audio files.
-
-For full details on all available fields, see [[Dataset Preparation]].
-
 ---
 
 ## Step 2: Preprocess
