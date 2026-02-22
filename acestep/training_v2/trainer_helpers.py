@@ -218,7 +218,14 @@ def restore_rng_state(rng_state: Dict[str, Any], current_device: Any = None) -> 
         random.setstate(rng_state["python"])
         restored.append("python_rng")
     if "torch_cpu" in rng_state:
-        torch.random.set_rng_state(rng_state["torch_cpu"])
+        t = rng_state["torch_cpu"]
+        # torch.random.set_rng_state() requires a CPU ByteTensor; checkpoint may have
+        # loaded it onto CUDA via map_location=module.device
+        if isinstance(t, torch.Tensor):
+            t = t.cpu()
+            if t.dtype != torch.uint8:
+                t = t.to(torch.uint8)
+        torch.random.set_rng_state(t)
         restored.append("torch_cpu_rng")
     if "cuda_rng" in rng_state and torch.cuda.is_available():
         saved_idx = rng_state.get("cuda_device", 0)
