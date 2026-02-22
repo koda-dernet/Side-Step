@@ -294,8 +294,11 @@ def run_basic_training_loop(
 
                 # Periodic CUDA cache cleanup to prevent intra-epoch
                 # memory fragmentation on consumer GPUs.
-                if torch.cuda.is_available() and global_step % cfg.log_every == 0:
-                    torch.cuda.empty_cache()
+                if global_step % cfg.log_every == 0:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    elif hasattr(torch, 'mps') and torch.mps.is_available():
+                        torch.mps.empty_cache()
 
         # Flush remainder
         if accumulation_step > 0:
@@ -404,6 +407,8 @@ def run_basic_training_loop(
         # temporaries are also freed.
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        elif hasattr(torch, 'mps') and torch.mps.is_available():
+            torch.mps.empty_cache()
 
     # -- Sanity check: did we actually train? ----------------------------
     if global_step == 0:

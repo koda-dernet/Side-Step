@@ -211,12 +211,13 @@ def _pass1_light(
         load_silence_latent,
         unload_models,
         _resolve_dtype,
+        _normalize_dtype,
     )
     from acestep.training_v2._vendor.preprocess_audio import load_audio_stereo
     from acestep.training_v2._vendor.preprocess_text import encode_text
     from acestep.training_v2._vendor.preprocess_lyrics import encode_lyrics
 
-    dtype = _resolve_dtype(precision)
+    dtype = _normalize_dtype(_resolve_dtype(precision))
 
     logger.info("[Side-Step] Pass 1/2: Loading VAE + Text Encoder ...")
     vae = load_vae(checkpoint_dir, device, precision)
@@ -265,7 +266,7 @@ def _pass1_light(
                         target_db=target_db, target_lufs=target_lufs
                     )
 
-                audio = audio.unsqueeze(0).to(device=device, dtype=vae.dtype)
+                audio = audio.unsqueeze(0).to(device=device, dtype=_normalize_dtype(vae.dtype))
 
                 # 2. VAE encode (tiled for long audio)
                 with torch.no_grad():
@@ -348,6 +349,8 @@ def _pass1_light(
                 del lyric_hs, lyric_mask
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                elif hasattr(torch, 'mps') and torch.mps.is_available():
+                    torch.mps.empty_cache()
 
                 intermediates.append(tmp_path)
                 logger.info("[Side-Step] Pass 1 OK: %s", af.name)
@@ -391,6 +394,7 @@ def _pass2_heavy(
         load_decoder_for_training,
         unload_models,
         _resolve_dtype,
+        _normalize_dtype,
     )
     from acestep.training_v2._vendor.preprocess_encoder import run_encoder
     from acestep.training_v2._vendor.preprocess_context import build_context_latents
@@ -419,7 +423,7 @@ def _pass2_heavy(
                 # Move tensors directly to model device/dtype (single .to()
                 # avoids creating throwaway intermediate GPU copies).
                 model_device = next(model.parameters()).device
-                model_dtype = next(model.parameters()).dtype
+                model_dtype = _normalize_dtype(next(model.parameters()).dtype)
 
                 text_hs = data["text_hidden_states"].to(model_device, dtype=model_dtype)
                 text_mask = data["text_attention_mask"].to(model_device, dtype=model_dtype)
@@ -487,6 +491,8 @@ def _pass2_heavy(
                 del encoder_hs, encoder_mask, context_latents, data
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                elif hasattr(torch, 'mps') and torch.mps.is_available():
+                    torch.mps.empty_cache()
 
                 # Remove intermediate
                 tmp_path.unlink(missing_ok=True)

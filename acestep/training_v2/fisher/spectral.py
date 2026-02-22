@@ -54,6 +54,8 @@ def compute_spectral_complexity(
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            elif hasattr(torch, 'mps') and torch.mps.is_available():
+                torch.mps.empty_cache()
 
         if (idx + 1) % 50 == 0 or idx == total - 1:
             logger.debug("Spectral analysis: %d/%d modules done", idx + 1, total)

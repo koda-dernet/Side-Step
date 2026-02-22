@@ -91,8 +91,6 @@ def _normalize_device_type(device: Any) -> str:
 def _select_compute_dtype(device_type: str) -> torch.dtype:
     if device_type in ("cuda", "xpu"):
         return torch.bfloat16
-    if device_type == "mps":
-        return torch.float16
     return torch.float32
 
 
