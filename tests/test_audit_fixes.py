@@ -314,6 +314,5 @@ class TestCudaFreeMb(unittest.TestCase):
             result = _cuda_free_mb(999)
             self.assertIsNone(result)
 
-
 if __name__ == "__main__":
     unittest.main()

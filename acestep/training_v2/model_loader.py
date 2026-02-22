@@ -139,6 +139,15 @@ def _resolve_dtype(precision: str) -> torch.dtype:
     return mapping.get(precision, torch.bfloat16)
 
 
+def _normalize_dtype(dtype: torch.dtype) -> torch.dtype:
+    """Depending on platform, dtype may need to be force-casted due to limitations (eg: MPS does not support fp16)
+    Because PyTorch MPS backend sucks, have to ensure tensors are float32 if using MPS
+    """
+    if hasattr(torch, 'mps') and torch.mps.is_available():
+        return torch.float32
+    return dtype
+
+
 def read_model_config(checkpoint_dir: str | Path, variant: str) -> Dict[str, Any]:
     """Read and return the model ``config.json`` as a dict.
 
@@ -180,7 +189,7 @@ def load_decoder_for_training(
     from transformers import AutoModel
 
     model_dir = _resolve_model_dir(checkpoint_dir, variant)
-    dtype = _resolve_dtype(precision)
+    dtype = _normalize_dtype(_resolve_dtype(precision))
 
     logger.info("[INFO] Loading model from %s (variant=%s, dtype=%s)", model_dir, variant, dtype)
 
@@ -254,7 +263,7 @@ def load_preprocessing_models(
     from diffusers.models import AutoencoderOobleck
 
     ckpt = Path(checkpoint_dir)
-    dtype = _resolve_dtype(precision)
+    dtype = _normalize_dtype(_resolve_dtype(precision))
     result: Dict[str, Any] = {}
 
     # 1. Full model (needed for condition encoder)
@@ -307,6 +316,8 @@ def cleanup_preprocessing_models(models: Dict[str, Any]) -> None:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    elif hasattr(torch, 'mps') and torch.mps.is_available():
+        torch.mps.empty_cache()
     logger.info("[OK] Preprocessing models cleaned up")
 
 
@@ -330,7 +341,7 @@ def load_vae(
     if not vae_path.is_dir():
         raise FileNotFoundError(f"VAE directory not found: {vae_path}")
 
-    dtype = _resolve_dtype(precision)
+    dtype = _normalize_dtype(_resolve_dtype(precision))
     vae = AutoencoderOobleck.from_pretrained(str(vae_path))
     vae = vae.to(device=device, dtype=dtype)
     vae.eval()
@@ -356,7 +367,7 @@ def load_text_encoder(
     if not text_path.is_dir():
         raise FileNotFoundError(f"Text encoder directory not found: {text_path}")
 
-    dtype = _resolve_dtype(precision)
+    dtype = _normalize_dtype(_resolve_dtype(precision))
     tokenizer = AutoTokenizer.from_pretrained(str(text_path))
     encoder = AutoModel.from_pretrained(str(text_path))
     encoder = encoder.to(device=device, dtype=dtype)
@@ -412,7 +423,7 @@ def load_silence_latent(
             f"(checked root and variant subdirectories)"
         )
 
-    dtype = _resolve_dtype(precision)
+    dtype = _normalize_dtype(_resolve_dtype(precision))
     sl = torch.load(str(sl_path), weights_only=True).transpose(1, 2)
     sl = sl.to(device=device, dtype=dtype)
     logger.info("[OK] silence_latent loaded from %s", sl_path)

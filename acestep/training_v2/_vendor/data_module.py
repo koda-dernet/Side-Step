@@ -213,10 +213,7 @@ class PreprocessedTensorDataset(Dataset):
             ("context_latents", context_latents),
         ]:
             if torch.isnan(_tens).any() or torch.isinf(_tens).any():
-                logger.warning(
-                    "[Side-Step] NaN/Inf in '%s' of %s -- replacing with zeros",
-                    _name, tensor_path,
-                )
+                logger.warning(f"[Side-Step] NaN/Inf in '{_name}' of {tensor_path} -- replacing with zeros")
                 _tens.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
 
         # Random chunking: slice a window from T-aligned tensors

@@ -262,6 +262,8 @@ def run_fisher_analysis(
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    elif hasattr(torch, 'mps') and torch.mps.is_available():
+        torch.mps.empty_cache()
 
     # Enable gradient checkpointing -- critical for VRAM.
     # Try multiple approaches since the bare model (no PEFT/Fabric wrappers)
