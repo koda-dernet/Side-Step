@@ -15,6 +15,7 @@ Input modes:
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -37,6 +38,7 @@ from acestep.training_v2.preprocess_vae import (
 )
 from acestep.training_v2.audio_duration import detect_max_duration as _detect_max_duration
 from acestep.training_v2.audio_normalize import normalize_audio as _normalize_audio
+from acestep.training_v2.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,9 @@ def preprocess_audio_files(
     dev = gpu.device
     prec = gpu.precision
 
+    output_dir = normalize_path(output_dir) or str(output_dir).strip()
+    audio_dir = (normalize_path(audio_dir) or str(audio_dir).strip()) if audio_dir else None
+
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
@@ -162,6 +167,18 @@ def preprocess_audio_files(
     )
 
     failed = pass1_failed + pass2_failed
+
+    # Write manifest.json with relative paths (portable across renames/moves on Windows)
+    pt_files = sorted(out_path.glob("*.pt"))
+    if pt_files:
+        manifest = {
+            "samples": [f.name for f in pt_files],
+            "metadata": {"source": "side-step-preprocess", "num_samples": len(pt_files)},
+        }
+        manifest_path = out_path / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        logger.info("[Side-Step] Wrote manifest.json (%d samples)", len(pt_files))
+
     result = {
         "processed": processed,
         "failed": failed,

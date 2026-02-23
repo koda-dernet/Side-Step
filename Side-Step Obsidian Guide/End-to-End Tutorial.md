@@ -47,7 +47,7 @@ uv run train.py fixed \
     --tensor-output ./my_tensors
 ```
 
-After preprocessing, you will have a `my_tensors/` directory containing `.pt` files and a `manifest.json`. These tensors work for both LoRA and LoKR training -- you only need to preprocess once.
+After preprocessing, you will have a `my_tensors/` directory containing `.pt` files and a `manifest.json`. The manifest uses relative paths, so it remains valid if you rename or move the folder (e.g. on Windows after a project rename). These tensors work for both LoRA and LoKR training -- you only need to preprocess once.
 
 ---
 
@@ -63,6 +63,8 @@ uv run train.py fixed \
     --output-dir ./output/my_lora \
     --epochs 100
 ```
+
+**Important:** Use `--dataset-dir` with your **preprocessed tensor folder** (`my_tensors` from Step 2), not the raw audio folder. Training expects `.pt` files, not `.mp3`/`.wav`. If you see "No valid samples found", check that you pointed to the tensor output directory.
 
 This uses the `recommended` defaults (rank 64, cosine LR schedule, AdamW optimizer). To use a preset instead:
 

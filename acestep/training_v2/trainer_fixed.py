@@ -26,6 +26,7 @@ from typing import Any, Dict, Generator, Optional, Tuple
 import torch
 import torch.nn as nn
 from acestep.training_v2.optim import build_optimizer, build_scheduler
+from acestep.training_v2.path_utils import normalize_path
 from acestep.training_v2._vendor.data_module import PreprocessedDataModule
 
 _MAX_CONSECUTIVE_NAN = 10  # halt training after this many NaN/Inf losses in a row
@@ -116,7 +117,11 @@ class FixedLoRATrainer:
 
         try:
             # -- Validate ---------------------------------------------------
-            ds_dir = Path(cfg.dataset_dir)
+            dataset_dir_raw = cfg.dataset_dir
+            if not dataset_dir_raw or not str(dataset_dir_raw).strip():
+                yield TrainingUpdate(0, 0.0, "[FAIL] Dataset directory is empty or not set", kind="fail")
+                return
+            ds_dir = Path(normalize_path(dataset_dir_raw) or str(dataset_dir_raw).strip())
             if not ds_dir.is_dir():
                 yield TrainingUpdate(0, 0.0, f"[FAIL] Dataset directory not found: {ds_dir}", kind="fail")
                 return
@@ -148,7 +153,7 @@ class FixedLoRATrainer:
                 num_workers = 0
 
             data_module = PreprocessedDataModule(
-                tensor_dir=cfg.dataset_dir,
+                tensor_dir=str(ds_dir),
                 batch_size=cfg.batch_size,
                 num_workers=num_workers,
                 pin_memory=cfg.pin_memory,
@@ -161,19 +166,43 @@ class FixedLoRATrainer:
 
             if len(data_module.train_dataset) == 0:
                 fail_msg = "[FAIL] No valid samples found in dataset directory"
+                # Unwrap Subset from random_split to access PreprocessedTensorDataset attrs
                 ds = data_module.train_dataset
+                while hasattr(ds, "dataset"):
+                    ds = ds.dataset
                 manifest_path = getattr(ds, "manifest_path", None)
                 manifest_error = getattr(ds, "manifest_error", None)
                 fallback_used = bool(getattr(ds, "manifest_fallback_used", False))
+                manifest_loaded = bool(getattr(ds, "manifest_loaded", False))
+                sample_paths = getattr(ds, "sample_paths", [])
+
+                # Always include resolved dataset path for verification
+                resolved = str(ds_dir.resolve())
+                fail_msg += f"\n       Dataset dir: {resolved}"
 
                 if manifest_error:
                     fail_msg += f"\n       {manifest_error}"
+                elif manifest_loaded and sample_paths and not fallback_used:
+                    # Manifest loaded but all paths invalid (e.g. folder renamed)
+                    missing_preview = [p for p in sample_paths if not Path(p).exists()][:3]
+                    fail_msg += (
+                        "\n       manifest.json paths don't exist (e.g. folder renamed?)."
+                        "\n       Try deleting manifest.json to fall back to directory scan, or re-run preprocessing."
+                    )
+                    if missing_preview:
+                        fail_msg += "\n       Missing path preview: " + ", ".join(
+                            Path(p).name for p in missing_preview
+                        )
                 elif manifest_path and Path(manifest_path).is_file() and fallback_used:
                     fail_msg += (
-                        "\n       manifest.json could not be used; fallback scan found no valid .pt files"
+                        "\n       manifest.json could not be used; fallback scan found no valid .pt files."
+                        "\n       Point to the preprocessed tensor folder (--tensor-output from preprocessing), not the raw audio folder."
                     )
                 elif manifest_path and not Path(manifest_path).is_file():
-                    fail_msg += "\n       manifest.json not found and directory contains no valid .pt files"
+                    fail_msg += (
+                        "\n       manifest.json not found and directory contains no valid .pt files."
+                        "\n       Point to the preprocessed tensor folder (--tensor-output from preprocessing), not the raw audio folder."
+                    )
 
                 yield TrainingUpdate(0, 0.0, fail_msg, kind="fail")
                 return

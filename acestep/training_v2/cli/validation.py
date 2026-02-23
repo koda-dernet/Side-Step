@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from acestep.training_v2.cli.args import VARIANT_DIR_MAP
+from acestep.training_v2.path_utils import normalize_path
 
 
 def validate_paths(args: argparse.Namespace) -> bool:
@@ -57,13 +58,17 @@ def validate_paths(args: argparse.Namespace) -> bool:
 
     # Dataset dir
     ds_dir = getattr(args, "dataset_dir", None)
-    if ds_dir is not None and not Path(ds_dir).is_dir():
-        print(
-            f"[FAIL] Dataset directory not found: {ds_dir}\n"
-            f"       Tip: it must contain preprocessed .pt files (or a valid manifest.json).",
-            file=sys.stderr,
-        )
-        return False
+    if ds_dir is not None:
+        normalized = normalize_path(ds_dir) or str(ds_dir).strip()
+        if normalized:
+            args.dataset_dir = normalized
+        if not Path(normalized or ds_dir).is_dir():
+            print(
+                f"[FAIL] Dataset directory not found: {normalized or ds_dir}\n"
+                f"       Tip: it must contain preprocessed .pt files (or a valid manifest.json).",
+                file=sys.stderr,
+            )
+            return False
 
     # Resume path: fail if explicitly set but missing
     resume = getattr(args, "resume_from", None)

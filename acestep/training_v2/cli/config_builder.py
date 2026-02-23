@@ -14,6 +14,7 @@ from typing import Tuple, Union
 
 from acestep.training_v2.configs import LoRAConfigV2, LoKRConfigV2, TrainingConfigV2
 from acestep.training_v2.gpu_utils import detect_gpu
+from acestep.training_v2.path_utils import normalize_path
 from acestep.training_v2.cli.args import VARIANT_DIR_MAP
 from acestep.training_v2.cli.validation import resolve_target_modules
 
@@ -246,7 +247,7 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
         data_proportion=data_proportion,
         model_variant=args.model_variant,
         checkpoint_dir=args.checkpoint_dir,
-        dataset_dir=args.dataset_dir,
+        dataset_dir=normalize_path(args.dataset_dir) or (args.dataset_dir or "").strip(),
         device=gpu_info.device,
         precision=gpu_info.precision,
         resume_from=args.resume_from,

@@ -13,6 +13,8 @@ from typing import Optional, List, Dict, Any
 from loguru import logger
 
 import torch
+
+from acestep.training_v2.path_utils import normalize_path
 from torch.utils.data import Dataset, DataLoader
 
 try:
@@ -102,10 +104,10 @@ class PreprocessedTensorDataset(Dataset):
                 Values below 60 (e.g. 30) may reduce training quality for
                 full-length inference -- use with caution.
         """
-        self.tensor_dir = tensor_dir
+        self.tensor_dir = normalize_path(tensor_dir) or str(tensor_dir).strip()
         self.chunk_duration = chunk_duration
         self.sample_paths = []
-        self.manifest_path = os.path.join(tensor_dir, "manifest.json")
+        self.manifest_path = os.path.join(self.tensor_dir, "manifest.json")
         self.manifest_error: Optional[str] = None
         self.manifest_loaded: bool = False
         self.manifest_fallback_used: bool = False
@@ -121,7 +123,7 @@ class PreprocessedTensorDataset(Dataset):
                         f"'samples' must be a list in manifest.json, got {type(samples).__name__}"
                     )
                 normalized = [
-                    self._normalize_manifest_path(sample, tensor_dir) for sample in samples
+                    self._normalize_manifest_path(sample, self.tensor_dir) for sample in samples
                 ]
                 self.sample_paths = [p for p in normalized if p]
                 self.manifest_loaded = True
@@ -131,18 +133,34 @@ class PreprocessedTensorDataset(Dataset):
                     "Windows tip: escape backslashes (\\\\) or use forward slashes (/)."
                 )
                 logger.error(self.manifest_error)
-                self.sample_paths = self._scan_tensor_dir(tensor_dir)
+                self.sample_paths = self._scan_tensor_dir(self.tensor_dir)
                 self.manifest_fallback_used = True
             except Exception as exc:
                 self.manifest_error = f"Failed to read manifest.json: {exc}"
                 logger.error(self.manifest_error)
-                self.sample_paths = self._scan_tensor_dir(tensor_dir)
+                self.sample_paths = self._scan_tensor_dir(self.tensor_dir)
                 self.manifest_fallback_used = True
         else:
-            self.sample_paths = self._scan_tensor_dir(tensor_dir)
+            self.sample_paths = self._scan_tensor_dir(self.tensor_dir)
 
         # Validate paths
         self.valid_paths = [p for p in self.sample_paths if os.path.exists(p)]
+
+        # Fallback: manifest loaded but all paths invalid (e.g. folder renamed) -- try directory scan
+        if (
+            self.manifest_loaded
+            and len(self.valid_paths) == 0
+            and len(self.sample_paths) > 0
+        ):
+            scanned = self._scan_tensor_dir(self.tensor_dir)
+            if scanned:
+                logger.warning(
+                    "manifest.json paths invalid (e.g. folder renamed); using directory scan (%d .pt files)",
+                    len(scanned),
+                )
+                self.sample_paths = scanned
+                self.valid_paths = [p for p in scanned if os.path.exists(p)]
+                self.manifest_fallback_used = True
 
         if len(self.valid_paths) != len(self.sample_paths):
             missing = len(self.sample_paths) - len(self.valid_paths)
@@ -160,7 +178,7 @@ class PreprocessedTensorDataset(Dataset):
         if self.chunk_duration is not None:
             chunk_frames = int(self.chunk_duration * self._latent_fps)
             chunk_info = f", chunk={self.chunk_duration}s (~{chunk_frames} frames)"
-        logger.info(f"PreprocessedTensorDataset: {len(self.valid_paths)} samples from {tensor_dir}{chunk_info}")
+        logger.info(f"PreprocessedTensorDataset: {len(self.valid_paths)} samples from {self.tensor_dir}{chunk_info}")
 
     def _detect_latent_fps(self) -> float:
         """Probe the first sample to compute latent frames-per-second."""
@@ -334,7 +352,7 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
         if LIGHTNING_AVAILABLE:
             super().__init__()
 
-        self.tensor_dir = tensor_dir
+        self.tensor_dir = normalize_path(tensor_dir) or str(tensor_dir).strip()
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
