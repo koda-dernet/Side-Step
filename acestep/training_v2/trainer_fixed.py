@@ -578,6 +578,7 @@ class FixedLoRATrainer:
             epoch_time = time.time() - epoch_start
             avg_epoch_loss = epoch_loss / max(num_updates, 1)
             tb.log_epoch_loss(avg_epoch_loss, epoch + 1)
+            tb.flush()
 
             # -- Best-model tracking (MA5) ----------------------------------
             # Activate tracking once we pass the warmup threshold

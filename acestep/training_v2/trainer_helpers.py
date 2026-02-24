@@ -235,7 +235,14 @@ def restore_rng_state(rng_state: Dict[str, Any], current_device: Any = None) -> 
             current_idx = dev.index if dev.index is not None else 0
         if saved_idx == current_idx:
             try:
-                torch.cuda.set_rng_state(rng_state["cuda_rng"], current_idx)
+                cuda_t = rng_state["cuda_rng"]
+                # torch.cuda.set_rng_state() requires a CPU ByteTensor;
+                # checkpoint may have loaded it onto CUDA via map_location.
+                if isinstance(cuda_t, torch.Tensor):
+                    cuda_t = cuda_t.cpu()
+                    if cuda_t.dtype != torch.uint8:
+                        cuda_t = cuda_t.to(torch.uint8)
+                torch.cuda.set_rng_state(cuda_t, current_idx)
                 restored.append("cuda_rng")
             except Exception as exc:
                 logger.warning("[WARN] Could not restore CUDA RNG: %s", exc)
