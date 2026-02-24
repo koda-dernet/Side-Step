@@ -80,6 +80,70 @@ class TestParseTxtMetadata(unittest.TestCase):
             os.unlink(path)
 
 
+    def test_windows_bom_and_crlf(self):
+        """UTF-8 BOM + CRLF line endings (Windows Notepad) parse correctly."""
+        from acestep.training_v2.dataset_builder import parse_txt_metadata
+
+        # BOM + CRLF content simulating a Windows-created .txt
+        raw = (
+            b"\xef\xbb\xbf"  # UTF-8 BOM
+            b"caption: A cool jazz track\r\n"
+            b"genre: Jazz\r\n"
+            b"bpm: 120\r\n"
+            b"key: Am\r\n"
+            b"lyrics:\r\n"
+            b"[Verse 1]\r\n"
+            b"Hello world\r\n"
+        )
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            f.write(raw)
+            f.flush()
+            path = Path(f.name)
+
+        try:
+            meta = parse_txt_metadata(path)
+            self.assertEqual(meta.get("caption"), "A cool jazz track")
+            self.assertEqual(meta.get("genre"), "Jazz")
+            self.assertEqual(meta.get("bpm"), "120")
+            self.assertEqual(meta.get("key"), "Am")
+            self.assertIn("[Verse 1]", meta.get("lyrics", ""))
+            self.assertIn("Hello world", meta.get("lyrics", ""))
+        finally:
+            os.unlink(path)
+
+    def test_leading_whitespace_on_key_lines(self):
+        """Keys with minor leading whitespace still parse as keys."""
+        from acestep.training_v2.dataset_builder import parse_txt_metadata
+
+        content = "  caption: Indented caption\n  genre: Rock\n  bpm: 90\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(content)
+            f.flush()
+            path = Path(f.name)
+
+        try:
+            meta = parse_txt_metadata(path)
+            self.assertEqual(meta.get("caption"), "Indented caption")
+            self.assertEqual(meta.get("genre"), "Rock")
+            self.assertEqual(meta.get("bpm"), "90")
+        finally:
+            os.unlink(path)
+
+    def test_bom_only_file_returns_empty(self):
+        """A file containing only a BOM (no actual content) returns {}."""
+        from acestep.training_v2.dataset_builder import parse_txt_metadata
+
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            f.write(b"\xef\xbb\xbf")
+            f.flush()
+            path = Path(f.name)
+
+        try:
+            self.assertEqual(parse_txt_metadata(path), {})
+        finally:
+            os.unlink(path)
+
+
 class TestLoadSidecarMetadata(unittest.TestCase):
     """Verify auto-detection of metadata file conventions."""
 

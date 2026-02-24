@@ -28,14 +28,16 @@ logger = logging.getLogger(__name__)
 def parse_txt_metadata(path: Path) -> Dict[str, str]:
     """Parse a ``key: value`` text file into a dict.
 
-    Handles multi-line values (e.g. lyrics spanning many lines).
-    Keys are normalised to lowercase.  Returns ``{}`` if the file
-    does not exist or is empty.
+    Handles multi-line values (e.g. lyrics spanning many lines),
+    UTF-8 BOM (common on Windows), CRLF line endings, and minor
+    leading whitespace on key lines.  Keys are normalised to
+    lowercase.  Returns ``{}`` if the file does not exist or is empty.
     """
     if not path.exists():
         return {}
-    content = path.read_text(encoding="utf-8")
-    if not content.strip():
+    # utf-8-sig transparently strips a leading BOM if present.
+    content = path.read_text(encoding="utf-8-sig", errors="replace").strip()
+    if not content:
         return {}
 
     meta: Dict[str, str] = {}
@@ -43,17 +45,19 @@ def parse_txt_metadata(path: Path) -> Dict[str, str]:
     current_lines: List[str] = []
 
     for line in content.splitlines():
-        stripped = line.rstrip()
-        # New key: line starts with "word:" at column 0 (not indented,
-        # not a lyrics section marker like [Verse 1])
-        if ":" in stripped and not stripped.startswith(" ") and not stripped.startswith("["):
+        # Left-strip for key detection so minor leading whitespace
+        # (e.g. from editors that auto-indent) doesn't break parsing.
+        lstripped = line.lstrip()
+        # New key: contains ':', is not a lyrics section marker like
+        # [Verse 1], and is not a tab-indented continuation line.
+        if ":" in lstripped and not lstripped.startswith("["):
             if current_key is not None:
                 meta[current_key] = "\n".join(current_lines).strip()
-            key, value = stripped.split(":", 1)
+            key, value = lstripped.split(":", 1)
             current_key = key.strip().lower()
             current_lines = [value.strip()] if value.strip() else []
         elif current_key is not None:
-            current_lines.append(stripped)
+            current_lines.append(line.rstrip())
 
     if current_key is not None:
         meta[current_key] = "\n".join(current_lines).strip()
@@ -62,11 +66,14 @@ def parse_txt_metadata(path: Path) -> Dict[str, str]:
 
 
 def _read_text_file(path: Path) -> str:
-    """Read and strip a text file, returning ``""`` if missing."""
+    """Read and strip a text file, returning ``""`` if missing.
+
+    Uses ``utf-8-sig`` to transparently handle a Windows BOM.
+    """
     if not path.exists():
         return ""
     try:
-        return path.read_text(encoding="utf-8").strip()
+        return path.read_text(encoding="utf-8-sig", errors="replace").strip()
     except Exception:
         return ""
 
