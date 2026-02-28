@@ -1,0 +1,719 @@
+/* ============================================================
+   Side-Step GUI — Layout
+   Workspace shell: top bar, main area, console strip
+   ============================================================ */
+
+/* --- Welcome / Onboarding overlay --- */
+.welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+}
+.welcome-overlay.hidden { display: none; pointer-events: none; }
+.welcome-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 8px);
+  padding: var(--space-xl, 32px);
+  max-width: 560px;
+  width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.welcome-card__header {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--space-md);
+}
+
+/* --- Workspace grid --- */
+.workspace {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ============================================================
+   Top Bar
+   ============================================================ */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface);
+  border-bottom: var(--border-w) solid var(--border);
+  user-select: none;
+  z-index: 10;
+  min-height: 42px;
+  /* -webkit-app-region removed: frameless=False uses system decorations;
+     drag regions blocked clicks in pywebview/Qt WebEngine */
+}
+
+.topbar__logo {
+  font-weight: bold;
+  color: var(--primary);
+  font-size: var(--font-size-lg);
+  white-space: nowrap;
+  letter-spacing: 1.5px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.topbar__version {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  font-weight: normal;
+  padding: 1px 5px;
+  border: var(--border-w) solid var(--border-subtle);
+  border-radius: var(--radius);
+  letter-spacing: 0;
+}
+
+.topbar__modes {
+  display: flex;
+  gap: 2px;
+}
+
+.topbar__mode {
+  padding: var(--space-xs) var(--space-sm);
+  background: transparent;
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
+  position: relative;
+}
+.topbar__mode:hover {
+  color: var(--text);
+  background: var(--primary-dim);
+}
+.topbar__mode.active {
+  color: var(--primary);
+  background: var(--panel);
+  border-color: var(--primary);
+}
+.topbar__mode .kbd {
+  margin-left: 2px;
+  opacity: 0.3;
+  transition: opacity var(--transition-slow);
+}
+.topbar__mode:hover .kbd {
+  opacity: 0.7;
+}
+/* Monitor tab breathes green during training */
+.topbar__mode.training {
+  animation: breathe 2s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%, 100% { color: var(--success); }
+  50%      { color: rgba(76, 175, 80, 0.35); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.topbar__status-chip--training {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.topbar__spacer {
+  flex: 1;
+}
+
+/* Segment divider between topbar groups */
+.topbar__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-subtle);
+  flex-shrink: 0;
+}
+
+/* Training status chip in topbar */
+.topbar__status-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--radius);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.topbar__status-chip--idle {
+  background: var(--border);
+  color: var(--muted);
+}
+.topbar__status-chip--training {
+  background: var(--primary);
+  color: var(--bg);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.topbar__status-chip--error {
+  background: var(--error);
+  color: var(--bg);
+}
+.topbar__status-chip--complete {
+  background: var(--success);
+  color: var(--bg);
+}
+
+.topbar__gpu {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+/* Gear icon (Settings) */
+.topbar__gear {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius);
+  transition: color var(--transition-base), background var(--transition-base);
+  line-height: 1;
+  margin-left: var(--space-sm);
+}
+.topbar__gear:hover {
+  color: var(--text);
+  background: var(--primary-dim);
+}
+
+/* macOS-style traffic light window controls */
+.topbar__traffic {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: var(--space-xs);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.traffic {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.15s;
+}
+.traffic svg {
+  width: 8px;
+  height: 8px;
+  color: transparent;
+  transition: color 0.15s;
+}
+.traffic--close  { background: var(--error); }      /* coral #f07178 */
+.traffic--min    { background: var(--accent); }      /* accent cyan */
+.traffic--max    { background: var(--primary); }      /* cyan #5ccfe6 */
+/* Dim dots when topbar is not hovered */
+.topbar:not(:hover) .traffic--close,
+.topbar:not(:hover) .traffic--min,
+.topbar:not(:hover) .traffic--max {
+  background: var(--border);
+}
+/* Show glyphs on group hover */
+.topbar__traffic:hover .traffic svg { color: rgba(0,0,0,0.6); }
+.traffic:hover { filter: brightness(1.2); }
+.traffic:active { filter: brightness(0.8); }
+
+/* ============================================================
+   Settings Slide-out Panel (global, from right)
+   ============================================================ */
+.settings-panel {
+  position: fixed;
+  top: 0;
+  right: -460px;
+  width: 460px;
+  height: 100vh;
+  background: var(--panel);
+  border-left: var(--border-w) solid var(--border);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  transition: right 0.25s ease;
+}
+.settings-panel.open {
+  right: 0;
+}
+.settings-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.settings-panel__title {
+  font-weight: bold;
+  color: var(--text-bold);
+  font-size: var(--font-size-lg);
+}
+.settings-panel__close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+}
+.settings-panel__close:hover { color: var(--text); }
+.settings-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-lg);
+}
+
+/* ============================================================
+   Main Content Area
+   ============================================================ */
+.main {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-lg);
+}
+
+/* Mode panels — only active one is visible */
+.mode-panel {
+  display: none;
+}
+.mode-panel.active {
+  display: block;
+}
+
+/* Two-column layout for Configure modes */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: var(--space-lg);
+  align-items: start;
+}
+.two-col__left {
+  min-width: 0;
+}
+.two-col__right {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Single column for simpler layouts */
+.single-col {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* Monitor 2-panel horizontal split */
+.monitor-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: var(--space-lg);
+  align-items: start;
+}
+.monitor-grid > * {
+  min-width: 0;
+}
+
+/* Lab sub-navigation */
+.lab-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: var(--space-lg);
+  border-bottom: var(--border-w) solid var(--border);
+  padding-bottom: var(--space-sm);
+}
+.lab-nav__item {
+  padding: var(--space-xs) var(--space-sm);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.lab-nav__item:hover {
+  color: var(--text);
+}
+.lab-nav__item.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.lab-panel {
+  display: none;
+}
+.lab-panel.active {
+  display: block;
+}
+
+/* ============================================================
+   Console Strip (bottom)
+   ============================================================ */
+.console {
+  background: var(--surface);
+  border-top: var(--border-w) solid var(--border);
+  padding: 0 var(--space-lg);
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0;
+  cursor: pointer;
+  user-select: none;
+  min-height: 32px;
+  transition: max-height 0.2s ease;
+  overflow: hidden;
+}
+.console.expanded {
+  flex-direction: column;
+  align-items: stretch;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--space-sm) var(--space-lg);
+}
+
+/* Status bar segments */
+.console__segment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 var(--space-md);
+  height: 32px;
+  border-right: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.console__segment:first-child {
+  padding-left: 0;
+}
+.console__segment:last-child {
+  border-right: none;
+  margin-left: auto;
+}
+.console__segment--mode {
+  font-weight: bold;
+  color: var(--primary);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.console__segment--center {
+  flex: 1;
+  min-width: 0;
+}
+.console__segment--right {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+.console__line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.console__line--info  { color: var(--primary); }
+.console__line--step  { color: var(--text); }
+.console__line--epoch { color: var(--text-bold); font-weight: bold; }
+.console__line--ckpt  { color: var(--success); }
+.console__line--warn  { color: var(--warning); }
+.console__line--fail  { color: var(--error); }
+
+/* ============================================================
+   Sidecar Editor (slide-out panel from right)
+   ============================================================ */
+.sidecar-editor {
+  position: fixed;
+  top: 0;
+  right: -440px;
+  width: 440px;
+  height: 100vh;
+  background: var(--panel);
+  border-left: var(--border-w) solid var(--border);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: right 0.25s ease;
+}
+.sidecar-editor.open {
+  right: 0;
+}
+.sidecar-editor__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.sidecar-editor__title {
+  font-weight: bold;
+  color: var(--primary);
+}
+.sidecar-editor__close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.sidecar-editor__close:hover {
+  color: var(--error);
+}
+.sidecar-editor__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-lg);
+}
+
+/* ============================================================
+   Modal Overlay
+   ============================================================ */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.6);
+  align-items: center;
+  justify-content: center;
+}
+.modal.open {
+  display: flex;
+}
+/* File browser must float above welcome overlay (z-index 9999) */
+#file-browser-modal.open {
+  z-index: 10000;
+}
+.modal__content {
+  background: var(--panel);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  width: 90%;
+  max-width: 640px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: var(--border-w) solid var(--border);
+}
+.modal__title {
+  font-weight: bold;
+  color: var(--primary);
+}
+.modal__close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.modal__close:hover {
+  color: var(--error);
+}
+.modal__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-lg);
+}
+.modal__footer {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+  padding: var(--space-md) var(--space-lg);
+  border-top: var(--border-w) solid var(--border);
+}
+
+/* ============================================================
+   File Browser (inside modal — redesigned)
+   ============================================================ */
+.file-browser__list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  contain: content;
+}
+.file-browser__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text);
+  border-bottom: var(--border-w) solid var(--border-subtle);
+  transition: background 0.05s ease;
+  will-change: background-color;
+}
+.file-browser__item:hover {
+  background: var(--elevated);
+}
+.file-browser__item:last-child {
+  border-bottom: none;
+}
+.file-browser__item--dir {
+  color: var(--primary);
+}
+.file-browser__item--dir:hover {
+  color: var(--accent);
+}
+.file-browser__item--file {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.6;
+}
+.fb-icon {
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  width: 16px;
+  text-align: center;
+}
+.fb-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: var(--space-sm);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  min-height: 20px;
+}
+.fb-breadcrumb__seg {
+  color: var(--primary);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: var(--radius);
+  transition: background 0.1s;
+}
+.fb-breadcrumb__seg:hover {
+  background: var(--primary-dim);
+  color: var(--accent);
+}
+.fb-breadcrumb__sep {
+  color: var(--muted);
+  user-select: none;
+}
+.fb-error {
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(240, 113, 120, 0.08);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  color: var(--error);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-sm);
+}
+.fb-selected-hint {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fb-empty {
+  padding: var(--space-lg);
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ============================================================
+   Toast Notifications
+   ============================================================ */
+.toast-container {
+  position: fixed;
+  top: var(--space-lg);
+  right: var(--space-lg);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  pointer-events: none;
+}
+.toast {
+  background: var(--panel);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-md) var(--space-lg);
+  font-size: var(--font-size-base);
+  color: var(--text-bold);
+  pointer-events: auto;
+  animation: toast-in 0.2s ease;
+  max-width: 440px;
+  min-width: 260px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+.toast__msg { flex: 1; }
+.toast__close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.toast__close:hover { color: var(--text); }
+.toast--ok     { border-left: 4px solid var(--success); }
+.toast--warn   { border-left: 4px solid var(--warning); }
+.toast--error  { border-left: 4px solid var(--error); }
+.toast--info   { border-left: 4px solid var(--primary); }
+.toast.fade-out {
+  animation: toast-out 0.3s ease forwards;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(20px); }
+}
+
+/* ============================================================
+   Responsive: collapse two-col below 1024px
+   ============================================================ */
+@media (max-width: 1024px) {
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+  .two-col__right {
+    position: static;
+  }
+  .monitor-grid {
+    grid-template-columns: 1fr;
+  }
+  .sidecar-editor {
+    width: 100%;
+    right: -100%;
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "_comment": "Single source of truth for GUI field defaults. Core training defaults must stay aligned with sidestep_engine/training_defaults.py and CLI argparse defaults.",
+
+  "full-model-variant":       "turbo",
+  "full-adapter-type":        "lora",
+
+  "full-rank":                "64",
+  "full-alpha":               "128",
+  "full-dropout":             "0.1",
+
+  "full-lokr-dim":            "64",
+  "full-lokr-alpha":          "128",
+  "full-lokr-factor":         "-1",
+
+  "full-loha-dim":            "64",
+  "full-loha-alpha":          "128",
+  "full-loha-factor":         "-1",
+
+  "full-oft-block-size":      "64",
+  "full-oft-eps":             "6e-5",
+
+  "full-attention-type":      "both",
+  "full-projections":         "q_proj k_proj v_proj o_proj",
+  "full-self-projections":    "q_proj k_proj v_proj o_proj",
+  "full-cross-projections":   "q_proj k_proj v_proj o_proj",
+  "full-target-mlp":          true,
+  "full-bias":                "none",
+
+  "full-lr":                  "3e-4",
+  "full-batch":               "1",
+  "full-grad-accum":          "4",
+  "full-epochs":              "1000",
+  "full-warmup":              "100",
+  "full-max-steps":           "0",
+
+  "full-shift":               "3.0",
+  "full-inference-steps":     "8",
+  "full-cfg-dropout":         "0.15",
+  "full-loss-weighting":      "none",
+  "full-snr-gamma":           "5.0",
+
+  "full-offload-encoder":     true,
+  "full-grad-ckpt-ratio":     "1.0",
+  "full-chunk-duration":      "0",
+  "full-chunk-decay-every":   "10",
+
+  "full-optimizer":           "adamw8bit",
+  "full-scheduler":           "cosine",
+  "full-scheduler-formula":   "",
+
+  "full-device":              "auto",
+  "full-precision":           "auto",
+
+  "full-save-every":          "50",
+  "full-log-every":           "10",
+  "full-log-heavy-every":     "50",
+  "full-save-best":           true,
+  "full-save-best-after":     "200",
+  "full-early-stop":          "0",
+  "full-save-best-every-n-steps": "0",
+
+  "full-resume-from":         "",
+  "full-strict-resume":       true,
+  "full-log-dir":             "",
+
+  "full-weight-decay":        "0.01",
+  "full-max-grad-norm":       "1.0",
+  "full-seed":                "42",
+  "full-dataset-repeats":     "1",
+
+  "full-warmup-start-factor": "0.1",
+  "full-cosine-eta-min":      "0.01",
+  "full-cosine-restarts":     "4",
+
+  "full-ema-decay":           "0",
+  "full-val-split":           "0",
+  "full-adaptive-timestep":   "0",
+
+  "full-timestep-mu":         "-0.4",
+  "full-timestep-sigma":      "1.0",
+
+  "full-num-workers":         "4",
+  "full-prefetch-factor":     "2",
+  "full-pin-memory":          true,
+  "full-persistent-workers":  true,
+
+  "settings-checkpoint-dir":  "./checkpoints",
+  "settings-adapters-dir":    "./trained_adapters",
+  "settings-tensors-dir":     "./preprocessed_tensors",
+  "settings-audio-dir":       "./my_audio"
+}

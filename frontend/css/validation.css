@@ -1,0 +1,76 @@
+/* ============================================================
+   Validation & Warning Styles
+   Field-level error/warning messages, locked field state.
+   ============================================================ */
+
+/* Inline error text (shown below invalid inputs) */
+.field-error {
+  display: none;
+  font-size: var(--font-size-sm);
+  color: var(--error);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* Inline warning text (non-blocking, advisory) */
+.field-warning {
+  display: none;
+  font-size: var(--font-size-sm);
+  color: var(--warning);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* Red border on invalid inputs */
+input.invalid,
+select.invalid {
+  border-color: var(--error) !important;
+  box-shadow: 0 0 0 1px var(--error);
+}
+
+/* Cyan left-border on modified (non-default) inputs */
+input.modified,
+select.modified {
+  border-left: 3px solid var(--primary);
+}
+
+/* Yellow border on warned inputs */
+input.warned,
+select.warned {
+  border-color: var(--warning) !important;
+}
+
+/* Locked fields (PP++ lock, resume lock) */
+.field-locked input,
+.field-locked select {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+.field-locked .form-group__label {
+  opacity: 0.5;
+}
+.field-locked-badge {
+  display: inline-block;
+  font-size: var(--font-size-2xs);
+  color: var(--warning);
+  margin-left: 6px;
+  font-weight: normal;
+}
+
+/* Required field marker */
+.form-group__label.required::after {
+  content: ' *';
+  color: var(--error);
+  font-weight: normal;
+}
+
+/* Icon replacements (no emoji) */
+.icon-ok { color: var(--success); font-weight: bold; }
+.icon-ok::before { content: '[ok]'; }
+.icon-x { font-weight: bold; }
+.icon-x::before { content: 'x'; }
+.icon-warn { color: var(--warning); font-weight: bold; }
+.icon-warn::before { content: '[!]'; }
+.icon-gear::before { content: '[=]'; }
+.icon-dir::before { content: '/'; }

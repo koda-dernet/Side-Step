@@ -1,0 +1,5 @@
+reviews:
+  auto_review:
+    enabled: true
+    max_files_to_review: 500
+  profile: assertive
