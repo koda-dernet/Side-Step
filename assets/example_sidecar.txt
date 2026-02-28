@@ -1,0 +1,39 @@
+# Side-Step Sidecar Metadata Example
+#
+# Place a .txt file next to each audio file with the SAME name:
+#   my_song.wav  →  my_song.txt
+#
+# All fields are optional. Side-Step will use sensible defaults
+# for anything you leave out (e.g. caption derived from filename,
+# lyrics set to [Instrumental]).
+#
+# These values are used to build the text prompt that the model
+# trains on — they are NOT stored as raw key: value pairs in the
+# tensor. The format matches upstream ACE-Step exactly.
+#
+# ── Required by the model (highly recommended) ──────────────────
+caption: A dreamy lo-fi ambient track with warm pads and soft rain
+#
+# ── Musical metadata (improves prompt quality) ──────────────────
+genre: ambient, lo-fi
+bpm: 85
+key: C minor
+signature: 4/4
+#
+# ── Lyrics (leave out or set to [Instrumental] for instrumentals)
+# Multi-line: everything after "lyrics:" until the next key or EOF.
+lyrics:
+[Verse]
+Raindrops on the window pane
+Soft echoes down the lane
+
+[Chorus]
+Drifting through the haze
+Lost in purple days
+#
+# ── Advanced / optional ─────────────────────────────────────────
+# is_instrumental: false
+# duration: 237
+# custom_tag: my_lora_trigger
+# prompt_override: caption
+# repeat: 2

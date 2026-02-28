@@ -3,32 +3,28 @@
 .SYNOPSIS
     Side-Step Easy Installer for Windows.
 .DESCRIPTION
-    Downloads and installs Side-Step + ACE-Step 1.5 side-by-side using
-    uv (the fast Python package manager).  Handles:
+    Downloads and installs Side-Step using uv (the fast Python
+    package manager).  Handles:
       - uv installation (if missing)
       - Python 3.11 (via uv)
-      - ACE-Step 1.5 clone (for model checkpoints and optional vanilla mode)
-      - Side-Step clone + dependency sync (standalone training toolkit)
+      - Side-Step clone + dependency sync
       - CUDA 12.8 PyTorch wheels (automatic via pyproject.toml)
-      - Model checkpoint download
+      - Model checkpoint download (from HuggingFace)
 .NOTES
-    Run from any directory.  Creates two sibling folders in the current
-    directory:
+    Run from any directory.  Creates a folder in the current directory:
 
-        ./ACE-Step-1.5/     (base repo -- checkpoints, vanilla support)
         ./Side-Step/         (standalone training toolkit)
 
     Requirements:
       - Windows 10/11
       - NVIDIA GPU with CUDA support (for training)
       - Git installed and on PATH
-      - ~15 GB free disk (models + deps)
+      - ~12 GB free disk (models + deps)
 #>
 
 param(
     [string]$InstallDir = ".",
-    [switch]$SkipModels,
-    [switch]$SkipACEStep
+    [switch]$SkipModels
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,7 +44,7 @@ Write-Host "  ███████ ██ ██   ██ █████   █
 Write-Host "       ██ ██ ██   ██ ██                 ██    ██    ██      ██" -ForegroundColor Cyan
 Write-Host "  ███████ ██ ██████  ███████       ███████    ██    ███████ ██" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Standalone Installer (v0.9.0-beta)" -ForegroundColor Green
+Write-Host "  Standalone Installer (v1.0.0-beta)" -ForegroundColor Green
 Write-Host ""
 
 # ── Pre-flight: Git ──────────────────────────────────────────────────────
@@ -102,25 +98,8 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
     }
 }
 
-# ── Clone or verify ACE-Step 1.5 ────────────────────────────────────────
-$aceDir = Join-Path $InstallDir "ACE-Step-1.5"
-
-if (-not $SkipACEStep) {
-    Write-Step "Setting up ACE-Step 1.5 (for checkpoints and optional vanilla mode)"
-
-    if (Test-Path $aceDir) {
-        Write-Ok "ACE-Step directory exists: $aceDir"
-    } else {
-        Write-Host "  Cloning ACE-Step 1.5..."
-        git clone "https://github.com/ace-step/ACE-Step-1.5.git" $aceDir
-        Write-Ok "Cloned to $aceDir"
-    }
-} else {
-    Write-Warn "Skipping ACE-Step clone (--SkipACEStep). Vanilla training will not be available."
-}
-
 # ── Clone or verify Side-Step ────────────────────────────────────────────
-Write-Step "Setting up Side-Step (standalone training toolkit)"
+Write-Step "Setting up Side-Step"
 
 $sideDir = Join-Path $InstallDir "Side-Step"
 if (Test-Path $sideDir) {
@@ -156,50 +135,32 @@ try {
     exit 1
 }
 
-# ── Optional: install ACE-Step deps (for vanilla mode + generation) ──────
-if (-not $SkipACEStep -and (Test-Path $aceDir)) {
-    Write-Step "Installing ACE-Step dependencies (for vanilla mode and generation)"
-    Write-Host "  This is optional but enables vanilla training and the Gradio UI.`n"
-
-    try {
-        Set-Location $aceDir
-        uv sync
-        Write-Ok "ACE-Step dependencies installed"
-    } catch {
-        Write-Warn "ACE-Step dependency sync failed."
-        Write-Host "  Side-Step training still works standalone."
-        Write-Host "  Re-run later if you need ACE-Step generation UI/extra tooling:"
-        Write-Host "    cd $aceDir && uv sync"
-    }
-    Set-Location $sideDir
-}
-
 # ── Download model checkpoints ───────────────────────────────────────────
-if (-not $SkipModels -and (Test-Path $aceDir)) {
+$checkpointsDir = Join-Path $sideDir "checkpoints"
+
+if (-not $SkipModels) {
     Write-Step "Downloading model checkpoints"
 
-    $checkpointsDir = Join-Path $aceDir "checkpoints"
     if (Test-Path (Join-Path $checkpointsDir "acestep-v15-turbo")) {
         Write-Ok "Checkpoints already downloaded"
     } else {
-        Write-Host "  This downloads ~8 GB of model weights.`n"
+        Write-Host "  This downloads ~8 GB of model weights from HuggingFace.`n"
         try {
-            Set-Location $aceDir
-            uv run acestep-download
-            Write-Ok "Model checkpoints downloaded"
+            Set-Location $sideDir
+            uv run huggingface-cli download ACE-Step/ACE-Step-v1-5-turbo --local-dir (Join-Path $checkpointsDir "acestep-v15-turbo")
+            uv run huggingface-cli download ACE-Step/ACE-Step-v1-5-base --local-dir (Join-Path $checkpointsDir "acestep-v15-base")
+            Write-Ok "Model checkpoints downloaded to $checkpointsDir"
         } catch {
-            Write-Warn "Automatic download failed. You can download manually later with:"
-            Write-Host "    cd $aceDir && uv run acestep-download"
+            Write-Warn "Automatic download failed. You can download manually later:"
+            Write-Host "    uv run huggingface-cli download ACE-Step/ACE-Step-v1-5-turbo --local-dir checkpoints/acestep-v15-turbo"
+            Write-Host "    uv run huggingface-cli download ACE-Step/ACE-Step-v1-5-base --local-dir checkpoints/acestep-v15-base"
         }
-        Set-Location $sideDir
     }
-} elseif ($SkipModels) {
-    Write-Warn "Skipping model download (--SkipModels)."
-    Write-Host "  Download later from the ACE-Step directory:"
-    Write-Host "    cd $aceDir && uv run acestep-download"
 } else {
-    Write-Warn "No ACE-Step directory -- cannot download models."
-    Write-Host "  Download them manually or re-run without --SkipACEStep."
+    Write-Warn "Skipping model download (--SkipModels)."
+    Write-Host "  Download later with:"
+    Write-Host "    cd $sideDir"
+    Write-Host "    uv run huggingface-cli download ACE-Step/ACE-Step-v1-5-turbo --local-dir checkpoints/acestep-v15-turbo"
 }
 
 # ── Summary ──────────────────────────────────────────────────────────────
@@ -208,27 +169,26 @@ Write-Host "============================================================" -Foreg
 Write-Host "  Installation complete!" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Side-Step:   $sideDir"
-if (-not $SkipACEStep) {
-    Write-Host "  ACE-Step:    $aceDir"
-}
+Write-Host "  Side-Step:    $sideDir"
+Write-Host "  Checkpoints:  $checkpointsDir"
 Write-Host ""
-Write-Host "  Quick start (from Side-Step directory):"
+Write-Host "  Quick start:"
 Write-Host "    cd `"$sideDir`""
-Write-Host "    uv run python train.py              # Interactive wizard (first run = setup)"
-Write-Host "    uv run python train.py fixed --help # CLI help"
+Write-Host "    sidestep.bat              # Pick wizard or GUI"
+Write-Host "    sidestep.bat --gui        # Launch GUI directly"
+Write-Host "    sidestep.bat fixed --help # CLI help"
+Write-Host ""
+Write-Host "  Or use uv directly:"
+Write-Host "    uv run sidestep"
+Write-Host ""
+Write-Host "  Alternative (pip users):"
+Write-Host "    pip install -r requirements.txt"
+Write-Host "    python train.py"
 Write-Host ""
 Write-Host "  IMPORTANT:"
 Write-Host "    - Never rename checkpoint folders"
 Write-Host "    - First run will ask where your checkpoints are"
-Write-Host "    - Fine-tune training requires the original base model too"
 Write-Host ""
-if (-not $SkipACEStep) {
-    Write-Host "  Generate music (from ACE-Step directory):"
-    Write-Host "    cd `"$aceDir`""
-    Write-Host "    uv run acestep --share              # Gradio UI"
-    Write-Host ""
-}
 Write-Host "  If you get CUDA errors, check:"
 Write-Host "    uv run python -c `"import torch; print(torch.cuda.is_available())`""
 Write-Host ""

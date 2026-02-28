@@ -1,0 +1,58 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  Side-Step — Standalone LoRA/LoKR Fine-Tuning Toolkit       ║
+# ║  Install: pip install -r requirements.txt                   ║
+# ╚══════════════════════════════════════════════════════════════╝
+#
+# NOTE: uv is the recommended package manager (handles PyTorch
+# CUDA wheels automatically). If using pip, install PyTorch with
+# CUDA 12.8 first: https://pytorch.org/get-started/locally/
+
+# ── Core ML ───────────────────────────────────────────────────
+transformers>=4.51.0,<4.58.0
+diffusers
+lightning>=2.0.0
+peft>=0.18.0
+accelerate>=1.12.0
+safetensors
+einops>=0.8.1
+
+# ── Audio loading & normalization ─────────────────────────────
+torchcodec>=0.9.1
+soundfile>=0.13.1
+pyloudnorm>=0.1.0
+
+# ── Model runtime ────────────────────────────────────────────
+vector-quantize-pytorch>=1.27.15
+torchao>=0.14.1,<0.16.0
+
+# ── Logging / monitoring ─────────────────────────────────────
+loguru>=0.7.3
+tensorboard>=2.20.0
+
+# ── CLI ───────────────────────────────────────────────────────
+rich>=13.0.0
+
+# ── AI sidecar enrichment (captions + lyrics) ────────────────
+lyricsgenius>=3.0.1
+google-genai>=1.0.0
+openai>=1.54.0
+
+# ── Adapter libraries ────────────────────────────────────────
+lycoris-lora>=2.0.0
+bitsandbytes>=0.45.0
+prodigyopt>=1.1.2
+
+# ── GUI ───────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+nvidia-ml-py>=12.0.0
+pywebview>=5.0
+# On Linux, also install Qt backend for native window:
+#   pip install qtpy PyQt6 PyQt6-WebEngine
+# On Windows, pywebview uses built-in Edge — no extras needed.
+
+# ── Flash Attention 2 (optional — faster on Ampere+ GPUs) ────
+# Requires CUDA compute capability >= 8.0 (RTX 3090+).
+# With uv: installed automatically from prebuilt wheels.
+# With pip: pip install flash-attn (may compile from source).
+# flash-attn

@@ -1,0 +1,2579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Side-Step — Training Workspace</title>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/palette.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/validation.css">
+</head>
+<body>
+
+<!-- ============================================================
+     Welcome / Onboarding Modal (first-run)
+     ============================================================ -->
+<div class="welcome-overlay" id="welcome-overlay">
+  <div class="welcome-card">
+    <div class="welcome-card__header">
+      <span style="font-size:var(--font-size-3xl);font-weight:700;color:var(--primary);">Welcome to Side-Step</span>
+      <span style="font-size:var(--font-size-sm);color:var(--muted);margin-top:2px;">BETA 1 — Music LoRA Training Toolkit</span>
+    </div>
+    <p style="color:var(--fg);font-size:var(--font-size-sm);margin-bottom:var(--space-md);">
+      Let's set up the essentials. You can always change these later in Settings.
+    </p>
+    <div class="section-header" style="margin-bottom:var(--space-sm);">Directories</div>
+    <div class="form-group">
+      <label class="form-group__label">Checkpoint directory</label>
+      <div class="input-with-browse">
+        <input class="input" type="text" id="welcome-checkpoint-dir" placeholder="./checkpoints">
+        <button class="btn btn--sm browse-btn" data-target="welcome-checkpoint-dir">Browse</button>
+      </div>
+      <div class="hint">Where ACE-Step model weights live (turbo / base / sft subfolders)</div>
+    </div>
+    <div class="form-group">
+      <label class="form-group__label">Source audio directory</label>
+      <div class="input-with-browse">
+        <input class="input" type="text" id="welcome-audio-dir" placeholder="./my_audio">
+        <button class="btn btn--sm browse-btn" data-target="welcome-audio-dir">Browse</button>
+      </div>
+      <div class="hint">Folder with your raw audio files (.wav, .mp3, .flac)</div>
+    </div>
+    <div class="form-group">
+      <label class="form-group__label">Preprocessed tensors directory</label>
+      <div class="input-with-browse">
+        <input class="input" type="text" id="welcome-tensors-dir" placeholder="./preprocessed_tensors">
+        <button class="btn btn--sm browse-btn" data-target="welcome-tensors-dir">Browse</button>
+      </div>
+      <div class="hint">Where preprocessed .pt tensors will be stored</div>
+    </div>
+    <div class="section-header" style="margin-top:var(--space-md);margin-bottom:var(--space-sm);">API Keys <span style="color:var(--muted);font-weight:normal;font-size:var(--font-size-sm);">(optional — for AI captions)</span></div>
+    <div class="form-group">
+      <label class="form-group__label">Gemini API Key</label>
+      <input class="input" type="password" id="welcome-gemini-key" placeholder="AIza...">
+      <div class="hint">Free tier available at <code>aistudio.google.com</code> — used for AI-generated captions</div>
+    </div>
+    <div class="form-group">
+      <label class="form-group__label">OpenAI API Key</label>
+      <input class="input" type="password" id="welcome-openai-key" placeholder="sk-...">
+      <div class="hint">Alternative caption provider (any OpenAI-compatible endpoint)</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--space-lg);">
+      <a href="#" id="welcome-skip" style="color:var(--muted);font-size:var(--font-size-sm);">Skip for now</a>
+      <button class="btn btn--primary" id="welcome-save">Get Started</button>
+    </div>
+  </div>
+</div>
+
+<div class="workspace">
+
+  <!-- ============================================================
+       Top Bar
+       ============================================================ -->
+  <header class="topbar">
+    <span class="topbar__logo">░▒▓ SIDE-STEP <span class="topbar__version">v1.0-beta</span></span>
+    <span class="topbar__divider"></span>
+    <nav class="topbar__modes">
+      <button class="topbar__mode active" data-mode="ez">Ez Mode <span class="kbd">⌥1</span></button>
+      <button class="topbar__mode" data-mode="full">Advanced <span class="kbd">⌥2</span></button>
+      <button class="topbar__mode" data-mode="monitor">Monitor <span class="kbd">⌥3</span></button>
+      <button class="topbar__mode" data-mode="lab">Lab <span class="kbd">⌥4</span></button>
+    </nav>
+    <span class="topbar__spacer"></span>
+    <span class="topbar__status-chip topbar__status-chip--idle" id="topbar-status-chip">Idle</span>
+    <span class="topbar__divider"></span>
+    <div class="topbar__gpu" id="topbar-gpu" data-gpu-count="1">
+      <span id="topbar-gpu-name">GPU: detecting...</span>
+      <span id="topbar-gpu-vram">-- / -- GB</span>
+    </div>
+    <span class="topbar__divider"></span>
+    <button class="topbar__gear" id="btn-open-settings" title="Settings">[=]</button>
+  </header>
+
+  <!-- ============================================================
+       Main Content
+       ============================================================ -->
+  <main class="main">
+
+    <!-- ========================================================
+         EZ MODE
+         ======================================================== -->
+    <div id="mode-ez" class="mode-panel active">
+      <div class="single-col">
+
+        <!-- ASCII Banner — click to cycle: BlurVision → TUI drop-shadow → Compact -->
+        <div id="logo-container" style="cursor: pointer; user-select: none;" title="Click to change logo style">
+          <pre class="ascii-banner logo-variant active" id="logo-blurvision"> ░▒▓███████▓▒░▒▓█▓▒░▒▓███████▓▒░░▒▓████████▓▒░░▒▓███████▓▒░▒▓████████▓▒░▒▓████████▓▒░▒▓███████▓▒░
+░▒▓█▓▒░      ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░         ░▒▓█▓▒░   ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░
+░▒▓█▓▒░      ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░         ░▒▓█▓▒░   ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░
+ ░▒▓██████▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓██████▓▒░  ░▒▓██████▓▒░   ░▒▓█▓▒░   ░▒▓██████▓▒░ ░▒▓███████▓▒░
+       ░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░             ░▒▓█▓▒░  ░▒▓█▓▒░   ░▒▓█▓▒░      ░▒▓█▓▒░
+       ░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░             ░▒▓█▓▒░  ░▒▓█▓▒░   ░▒▓█▓▒░      ░▒▓█▓▒░
+░▒▓███████▓▒░░▒▓█▓▒░▒▓███████▓▒░░▒▓████████▓▒░▒▓███████▓▒░   ░▒▓█▓▒░   ░▒▓████████▓▒░▒▓█▓▒░</pre>
+          <pre class="ascii-banner logo-variant" id="logo-tui" style="display:none;"> ███████╗██╗██████╗ ███████╗    ███████╗████████╗███████╗██████╗
+ ██╔════╝██║██╔══██╗██╔════╝    ██╔════╝╚══██╔══╝██╔════╝██╔══██╗
+ ███████╗██║██║  ██║█████╗█████╗███████╗   ██║   █████╗  ██████╔╝
+ ╚════██║██║██║  ██║██╔══╝╚════╝╚════██║   ██║   ██╔══╝  ██╔═══╝
+ ███████║██║██████╔╝███████╗    ███████║   ██║   ███████╗██║
+ ╚══════╝╚═╝╚═════╝ ╚══════╝    ╚══════╝   ╚═╝   ╚══════╝╚═╝</pre>
+          <pre class="ascii-banner logo-variant" id="logo-compact" style="display:none;">
+  ░▒▓ S I D E · S T E P ▓▒░</pre>
+        </div>
+        <div class="ascii-motto motto-breathe" id="ez-motto">"Side-Step: The 17-Hour Speedrun."</div>
+
+        <!-- --- Get Started --- -->
+        <div class="section-header">Get Started</div>
+
+        <!-- Model Variant (populated from Settings checkpoint dir) -->
+        <div class="form-group">
+          <label class="form-group__label">
+            Model
+            <span class="help-icon" data-help="help-ez-variant">?</span>
+          </label>
+          <select class="select model-picker" id="ez-model-variant">
+            <option value="turbo" selected>turbo (fast, 8 steps)</option>
+            <option value="base">base (quality, 50 steps)</option>
+            <option value="sft">sft (prompted, 50 steps)</option>
+          </select>
+          <div class="detect" id="ez-checkpoint-detect"></div>
+          <div class="field-warning" id="warn-non-base-ez" style="display:none;">
+            <strong>Not recommended.</strong> Training on the <strong>base</strong> variant produces the best LoRAs. LoRAs trained on base transfer to turbo/sft at inference time.
+          </div>
+          <div id="help-ez-variant" class="help-panel">
+            <h4>What is this?</h4>
+            <p>Which base model to fine-tune. Available variants are auto-detected from your checkpoint directory.</p>
+            <ul>
+              <li><code>turbo</code> — Fast inference (8 steps). Best for most use cases.</li>
+              <li><code>base</code> — Higher quality, slower (50 steps). Better for complex music.</li>
+              <li><code>sft</code> — Supervised fine-tune, follows text prompts more closely.</li>
+            </ul>
+            <p><em>Can't find your model? Check your checkpoint directory in Settings.</em></p>
+            <span class="badge badge--speed">Speed: turbo=fast, base/sft=slower inference</span>
+            <span class="badge badge--quality">Quality: base slightly higher ceiling</span>
+          </div>
+        </div>
+
+        <!-- Dataset Folder (picker scanning Settings tensors dir) -->
+        <div class="form-group">
+          <label class="form-group__label required">
+            Dataset
+            <span class="help-icon" data-help="help-ez-dataset">?</span>
+          </label>
+          <select class="select dataset-picker" id="ez-dataset-dir">
+            <option value="">Select a dataset...</option>
+          </select>
+          <div class="detect" id="ez-dataset-detect"></div>
+          <div id="help-ez-dataset" class="help-panel">
+            <h4>What is this?</h4>
+            <p>Select a dataset folder. Side-Step scans your configured directories:</p>
+            <ul>
+              <li><strong>Preprocessed .pt tensors</strong> — from your tensors directory</li>
+              <li><strong>Audio files</strong> (.wav, .mp3, .flac) — will be auto-preprocessed before training</li>
+            </ul>
+            <p><em>Can't find your dataset? Check your directory paths in Settings.</em></p>
+            <span class="badge badge--neutral">VRAM: None</span>
+            <span class="badge badge--quality">Quality: More data = better generalization</span>
+          </div>
+        </div>
+
+        <!-- --- Adapter Type --- -->
+        <div class="section-header">Adapter Type</div>
+
+        <div class="adapter-cards" id="ez-adapter-cards">
+          <label class="adapter-card selected">
+            <input type="radio" name="ez-adapter" value="lora" checked>
+            <div class="adapter-card__name">LoRA <span class="adapter-card__tag adapter-card__tag--rec">Recommended</span></div>
+            <div class="adapter-card__desc">Low-Rank Adaptation (PEFT). Stable, well-tested.</div>
+          </label>
+          <label class="adapter-card">
+            <input type="radio" name="ez-adapter" value="dora">
+            <div class="adapter-card__name">DoRA</div>
+            <div class="adapter-card__desc">Weight-Decomposed LoRA. PP++ compatible.</div>
+          </label>
+          <label class="adapter-card">
+            <input type="radio" name="ez-adapter" value="lokr">
+            <div class="adapter-card__name">LoKR</div>
+            <div class="adapter-card__desc">Kronecker factorization (LyCORIS). Compact.</div>
+          </label>
+          <label class="adapter-card">
+            <input type="radio" name="ez-adapter" value="loha">
+            <div class="adapter-card__name">LoHA <span class="adapter-card__tag adapter-card__tag--exp">Experimental</span></div>
+            <div class="adapter-card__desc">Hadamard product (LyCORIS).</div>
+          </label>
+          <label class="adapter-card">
+            <input type="radio" name="ez-adapter" value="oft">
+            <div class="adapter-card__name">OFT <span class="adapter-card__tag adapter-card__tag--exp">Experimental</span></div>
+            <div class="adapter-card__desc">Orthogonal fine-tuning.</div>
+          </label>
+        </div>
+
+        <!-- Smart Defaults + Start Training -->
+        <div class="panel" style="margin-top: var(--space-lg);">
+          <div class="panel__title">Smart Defaults</div>
+          <p style="color: var(--muted); margin-bottom: var(--space-sm);">
+            Everything else uses recommended values. <a href="#" class="ez-to-full-link">Change them in Advanced</a>
+            · <a href="#" id="ez-load-preset" class="u-text-primary">Load preset</a>
+          </p>
+          <div class="form-row" style="font-size: var(--font-size-sm);" id="ez-defaults-row">
+            <div><span class="u-text-muted">Rank:</span> <span class="ez-default-val u-text-secondary" data-field="full-rank" style="cursor: pointer;">64</span></div>
+            <div><span class="u-text-muted">Alpha:</span> <span class="ez-default-val u-text-secondary" data-field="full-alpha" style="cursor: pointer;">128</span></div>
+            <div><span class="u-text-muted">LR:</span> <span class="ez-default-val u-text-secondary" data-field="full-lr" style="cursor: pointer;">1e-4</span></div>
+            <div><span class="u-text-muted">Epochs:</span> <span class="ez-default-val u-text-secondary" data-field="full-epochs" style="cursor: pointer;">100</span></div>
+            <div><span class="u-text-muted">Batch:</span> <span class="ez-default-val u-text-secondary" data-field="full-batch" style="cursor: pointer;">1 × 4</span></div>
+            <div><span class="u-text-muted">Warmup:</span> <span class="ez-default-val u-text-secondary" data-field="full-warmup" style="cursor: pointer;">100</span></div>
+          </div>
+
+          <div class="section-group" style="margin-top: var(--space-md);">
+            <button class="section-group__toggle">Show what will be used (18 settings)</button>
+            <div class="section-group__body" id="ez-review-body">
+              <div class="review-table__group">Model</div>
+              <div class="review-table__row"><span class="review-table__key">Variant</span><span class="review-table__val" id="ez-rev-variant">turbo</span></div>
+              <div class="review-table__row"><span class="review-table__key">Checkpoint</span><span class="review-table__val" id="ez-rev-ckpt">./checkpoints</span></div>
+              <div class="review-table__group">Adapter</div>
+              <div class="review-table__row"><span class="review-table__key">Type</span><span class="review-table__val" id="ez-rev-adapter">LoRA</span></div>
+              <div class="review-table__row"><span class="review-table__key">Rank</span><span class="review-table__val" id="ez-rev-rank">64</span></div>
+              <div class="review-table__row"><span class="review-table__key">Alpha</span><span class="review-table__val" id="ez-rev-alpha">128</span></div>
+              <div class="review-table__row"><span class="review-table__key">Dropout</span><span class="review-table__val" id="ez-rev-dropout">0.1</span></div>
+              <div class="review-table__row"><span class="review-table__key">Attention</span><span class="review-table__val" id="ez-rev-attention">both</span></div>
+              <div class="review-table__row"><span class="review-table__key">Target MLP</span><span class="review-table__val" id="ez-rev-mlp">yes</span></div>
+              <div class="review-table__group">Training</div>
+              <div class="review-table__row"><span class="review-table__key">Learning rate</span><span class="review-table__val" id="ez-rev-lr">1e-4</span></div>
+              <div class="review-table__row"><span class="review-table__key">Batch size</span><span class="review-table__val" id="ez-rev-batch">1</span></div>
+              <div class="review-table__row"><span class="review-table__key">Grad accum</span><span class="review-table__val" id="ez-rev-grad-accum">4</span></div>
+              <div class="review-table__row"><span class="review-table__key">Epochs</span><span class="review-table__val" id="ez-rev-epochs">100</span></div>
+              <div class="review-table__row"><span class="review-table__key">Warmup steps</span><span class="review-table__val" id="ez-rev-warmup">100</span></div>
+              <div class="review-table__group">VRAM</div>
+              <div class="review-table__row"><span class="review-table__key">Checkpointing</span><span class="review-table__val" id="ez-rev-ckpt-mode">full</span></div>
+              <div class="review-table__row"><span class="review-table__key">Offload encoder</span><span class="review-table__val" id="ez-rev-offload">yes</span></div>
+              <div class="review-table__group">Logging</div>
+              <div class="review-table__row"><span class="review-table__key">Save every</span><span class="review-table__val" id="ez-rev-save-every">10 epochs</span></div>
+              <div class="review-table__row"><span class="review-table__key">Save best</span><span class="review-table__val" id="ez-rev-save-best">yes</span></div>
+              <div class="review-table__row"><span class="review-table__key">Optimizer</span><span class="review-table__val" id="ez-rev-optimizer">adamw</span></div>
+            </div>
+          </div>
+
+          <!-- Compact VRAM estimate -->
+          <div style="display: flex; align-items: center; gap: var(--space-md); margin-top: var(--space-md); padding: var(--space-sm) var(--space-md); background: var(--panel); border-radius: var(--radius); font-size: var(--font-size-sm);">
+            <span style="color: var(--muted);">VRAM:</span>
+            <span id="ez-vram-estimate">--</span>
+            <span style="color: var(--muted);">/</span>
+            <span id="ez-vram-total">--</span>
+            <span id="ez-vram-status">calculating...</span>
+          </div>
+
+          <div class="ez-start-row">
+            <button class="btn btn--success btn--lg vram-action" id="btn-start-ez">Start Training</button>
+            <div id="ez-start-hint" class="u-text-error" style="display:none;font-size:var(--font-size-sm);margin-top:var(--space-xs);"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================================
+         ADVANCED MODE
+         ======================================================== -->
+    <div id="mode-full" class="mode-panel">
+      <div class="two-col">
+        <div class="two-col__left">
+
+          <!-- --- Required --- -->
+          <div class="section-header">Required</div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-group__label required">
+                Model
+                <span class="help-icon" data-help="help-full-model">?</span>
+              </label>
+              <select class="select model-picker" id="full-model-variant">
+                <option value="turbo" selected>turbo</option>
+                <option value="base">base</option>
+                <option value="sft">sft</option>
+              </select>
+              <div id="help-full-model" class="help-panel">
+                <p>Auto-detected from your checkpoint directory.</p>
+                <p><em>Can't find your model? Check Settings.</em></p>
+              </div>
+              <div class="field-warning" id="warn-non-base-full" style="display:none;">
+                <strong>Not recommended.</strong> Training on the <strong>base</strong> variant produces the best LoRAs. LoRAs trained on base transfer to turbo/sft at inference time.
+              </div>
+              <div id="full-strategy-banner" style="font-size: var(--font-size-sm); color: var(--muted); margin-top: var(--space-xs);">Turbo — discrete 8-step sampling, no CFG</div>
+            </div>
+            <div class="form-group">
+              <label class="form-group__label">Adapter type <span class="help-icon" data-help="help-full-adapter">?</span></label>
+              <select class="select" id="full-adapter-type">
+                <option value="lora" selected>LoRA</option>
+                <option value="dora">DoRA</option>
+                <option value="lokr">LoKR</option>
+                <option value="loha">LoHA</option>
+                <option value="oft">OFT</option>
+              </select>
+              <div id="help-full-adapter" class="help-panel">
+                <h4>Adapter Types</h4>
+                <p><strong>LoRA:</strong> The standard. Adds small trainable matrices to attention layers. Best balance of quality, speed, and VRAM.</p>
+                <p><strong>DoRA:</strong> LoRA with weight-decomposed direction learning. Slightly better quality, same VRAM.</p>
+                <p><strong>LoKR:</strong> Kronecker product decomposition. Smaller file sizes, good for constrained setups.</p>
+                <p><strong>LoHA:</strong> Hadamard product decomposition. Alternative to LoKR with different expressiveness trade-offs.</p>
+                <p><strong>OFT:</strong> Orthogonal fine-tuning. Experimental — preserves the model's internal geometry. Untested on audio.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-group__label required">
+              Dataset
+              <span class="help-icon" data-help="help-full-dataset">?</span>
+            </label>
+            <select class="select dataset-picker" id="full-dataset-dir">
+              <option value="">Select a dataset...</option>
+            </select>
+            <div class="detect" id="full-dataset-detect"></div>
+            <div id="help-full-dataset" class="help-panel">
+              <p>Datasets found in your configured tensors and audio directories.</p>
+              <p><em>Can't find your dataset? Check Settings.</em></p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-group__label">Run name <span class="help-icon" data-help="help-full-run-name">?</span></label>
+            <input class="input has-default" type="text" id="full-run-name" value="lora_turbo" data-default="lora_turbo">
+            <div id="help-full-run-name" class="help-panel">
+              <p><strong>Simple:</strong> A human-readable name for this training run. Used in file paths, logs, and the History tab to identify your experiment.</p>
+              <p>Auto-generated from adapter type + model variant. A timestamp is appended when training starts to prevent overwriting previous runs.</p>
+            </div>
+            <div class="hint">Auto-generated from adapter + model. Timestamp added at start.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-group__label">Resume from checkpoint <span class="help-icon" data-help="help-full-resume">?</span></label>
+            <div class="input-with-browse">
+              <input class="input" type="text" id="full-resume-from" placeholder="Leave empty to start fresh">
+              <button class="btn btn--sm browse-btn" data-target="full-resume-from">Browse</button>
+            </div>
+            <div id="help-full-resume" class="help-panel">
+              <p><strong>Simple:</strong> Point this to a previous checkpoint folder to continue training from where you left off. The optimizer state, epoch counter, and learning rate schedule all resume from the saved state.</p>
+              <p>Leave empty to start a brand new training run from scratch.</p>
+            </div>
+            <div class="hint u-text-warning">Legacy resume — for richer resume with LR/epoch override, use Lab > History > Resume Selected.</div>
+          </div>
+          <div class="form-group" id="strict-resume-group" style="display: none;">
+            <label class="toggle">
+              <input type="checkbox" id="full-strict-resume" checked>
+              <span class="toggle__track"></span>
+              Strict resume (abort on state mismatch)
+            </label>
+          </div>
+
+          <!-- --- Adapter Settings (swapped per adapter type) --- -->
+          <div class="section-header" id="full-adapter-section-title">LoRA Settings</div>
+
+          <!-- LoRA / DoRA fields -->
+          <div id="adapter-fields-lora" class="adapter-fields">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-group__label">
+                  Rank
+                  <span class="help-icon" data-help="help-full-rank">?</span>
+                </label>
+                <input class="input has-default vram-input" type="number" id="full-rank" value="64" data-default="64" data-validate="gte:1 int">
+                <div class="field-error"></div>
+                <div id="help-full-rank" class="help-panel">
+                  <h4>What is Rank?</h4>
+                  <p><strong>Simple:</strong> How much the AI can learn. Higher = more capacity, more VRAM.</p>
+                  <p><strong>Think of it like:</strong> A notebook with more pages. 16 = slim notebook, 128 = thick textbook.</p>
+                  <ul>
+                    <li><code>16</code> — Quick experiments, 1-5 songs</li>
+                    <li><code>64</code> — Recommended default</li>
+                    <li><code>128</code> — Large datasets (50+ songs)</li>
+                  </ul>
+                  <span class="badge badge--vram">VRAM: Higher = More</span>
+                  <span class="badge badge--quality">Quality: Higher = Better (with enough data)</span>
+                  <span class="badge badge--speed">Speed: Minimal impact</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">Alpha <span class="help-icon" data-help="help-full-alpha">?</span></label>
+                <input class="input has-default" type="number" id="full-alpha" value="128" data-default="128" data-validate="gte:1 int">
+                <div class="field-error"></div>
+                <div id="help-full-alpha" class="help-panel">
+                  <h4>What is Alpha?</h4>
+                  <p><strong>Simple:</strong> Controls how strongly the adapter's learned changes are applied. Higher alpha = stronger effect per training step.</p>
+                  <p><strong>Rule of thumb:</strong> Set to 2× your rank value. So rank 64 → alpha 128.</p>
+                  <p>Changing alpha is like adjusting the volume knob on what the adapter learned. Too low and changes barely register; too high and things get unstable.</p>
+                  <span class="badge badge--neutral">VRAM: None</span>
+                  <span class="badge badge--quality">Quality: Keep at 2× rank unless experimenting</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">Dropout <span class="help-icon" data-help="help-full-dropout">?</span></label>
+                <input class="input has-default" type="number" id="full-dropout" value="0.1" step="0.01" data-default="0.1" data-validate="range:0:1">
+                <div class="field-error"></div>
+                <div id="help-full-dropout" class="help-panel">
+                  <h4>What is Dropout?</h4>
+                  <p><strong>Simple:</strong> Randomly disables a fraction of adapter connections during each training step, forcing the model to be more robust and not memorize specific patterns.</p>
+                  <p><strong>Think of it like:</strong> Studying for an exam by covering random parts of your notes — it forces deeper understanding.</p>
+                  <ul>
+                    <li><code>0.0</code> — No dropout (may overfit on small datasets)</li>
+                    <li><code>0.1</code> — Recommended default</li>
+                    <li><code>0.2</code> — Stronger regularization for very small datasets</li>
+                  </ul>
+                  <span class="badge badge--neutral">VRAM: None</span>
+                  <span class="badge badge--quality">Quality: Prevents overfitting</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LoKR fields -->
+          <div id="adapter-fields-lokr" class="adapter-fields" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-group__label">Linear dimension <span class="help-icon" data-help="help-lokr-dim">?</span></label>
+                <div id="help-lokr-dim" class="help-panel">
+                  <p><strong>Simple:</strong> Equivalent to LoRA's rank but for the Kronecker product decomposition. Controls how many trainable parameters the adapter has.</p>
+                  <p>Higher values = more expressive but more VRAM and larger file sizes.</p>
+                  <span class="badge badge--vram">VRAM: Higher = More</span>
+                </div>
+                <input class="input has-default vram-input" type="number" id="full-lokr-dim" value="64" data-default="64" data-validate="gte:1 int">
+                <div class="field-error"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">Linear alpha <span class="help-icon" data-help="help-lokr-alpha">?</span></label>
+                <div id="help-lokr-alpha" class="help-panel">
+                  <p><strong>Simple:</strong> Scaling factor for LoKR, same concept as LoRA alpha. Controls how strongly the adapter's learned changes are applied.</p>
+                  <p>Note: alpha only affects scaling when "decompose both" is enabled. With default settings, LyCORIS sets scale=1 regardless of alpha.</p>
+                </div>
+                <input class="input has-default" type="number" id="full-lokr-alpha" value="128" data-default="128" data-validate="gte:1 int">
+                <div class="field-error"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">Factor (-1=auto) <span class="help-icon" data-help="help-lokr-factor">?</span></label>
+                <div id="help-lokr-factor" class="help-panel">
+                  <p><strong>Simple:</strong> Controls the Kronecker factorization ratio. -1 lets LyCORIS auto-determine the best split.</p>
+                  <p>Positive values force a specific factor size. Only change if you understand Kronecker product dimensions.</p>
+                </div>
+                <input class="input has-default" type="number" id="full-lokr-factor" value="-1" data-default="-1" data-validate="gte:-1 int">
+                <div class="field-error"></div>
+              </div>
+            </div>
+            <div class="hint u-text-warning" id="lokr-alpha-hint" style="margin-bottom: var(--space-sm);">Note: alpha only affects scaling when "decompose both" is enabled. With default settings, LyCORIS sets scale=1.</div>
+            <div class="section-group">
+              <button class="section-group__toggle">LoKR Advanced</button>
+              <div class="section-group__body">
+                <div class="form-row">
+                  <div class="form-group"><label class="toggle"><input type="checkbox" id="full-lokr-decompose-both"><span class="toggle__track"></span>Decompose both factors</label></div>
+                  <div class="form-group"><label class="toggle"><input type="checkbox" id="full-lokr-use-tucker"><span class="toggle__track"></span>Tucker decomposition</label></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label class="toggle"><input type="checkbox" id="full-lokr-use-scalar"><span class="toggle__track"></span>Scalar scaling</label></div>
+                  <div class="form-group"><label class="toggle"><input type="checkbox" id="full-lokr-weight-decompose"><span class="toggle__track"></span>DoRA-style weight decompose</label></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LoHA fields -->
+          <div id="adapter-fields-loha" class="adapter-fields" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-group__label">Linear dimension <span class="help-icon" data-help="help-loha-dim">?</span></label>
+                <div id="help-loha-dim" class="help-panel">
+                  <p><strong>Simple:</strong> Same as LoRA rank but for the Hadamard product decomposition. Controls adapter capacity.</p>
+                  <span class="badge badge--vram">VRAM: Higher = More</span>
+                </div>
+                <input class="input has-default vram-input" type="number" id="full-loha-dim" value="64" data-default="64" data-validate="gte:1 int">
+                <div class="field-error"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">Linear alpha <span class="help-icon" data-help="help-loha-alpha">?</span></label>
+                <div id="help-loha-alpha" class="help-panel">
+                  <p><strong>Simple:</strong> Scaling factor, same concept as LoRA alpha. Usually set to 2× dimension.</p>
+                </div>
+                <input class="input has-default" type="number" id="full-loha-alpha" value="128" data-default="128" data-validate="gte:1 int">
+                <div class="field-error"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">Factor (-1=auto) <span class="help-icon" data-help="help-loha-factor">?</span></label>
+                <div id="help-loha-factor" class="help-panel">
+                  <p><strong>Simple:</strong> Controls Hadamard factorization dimensions. -1 = auto. Only change if you understand the decomposition math.</p>
+                </div>
+                <input class="input has-default" type="number" id="full-loha-factor" value="-1" data-default="-1" data-validate="gte:-1 int">
+                <div class="field-error"></div>
+              </div>
+            </div>
+            <div class="section-group">
+              <button class="section-group__toggle">LoHA Advanced</button>
+              <div class="section-group__body">
+                <div class="form-row">
+                  <div class="form-group"><label class="toggle"><input type="checkbox" id="full-loha-use-tucker"><span class="toggle__track"></span>Tucker decomposition</label></div>
+                  <div class="form-group"><label class="toggle"><input type="checkbox" id="full-loha-use-scalar"><span class="toggle__track"></span>Scalar scaling</label></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- OFT fields -->
+          <div id="adapter-fields-oft" class="adapter-fields" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-group__label">Block size <span class="help-icon" data-help="help-oft-block">?</span></label>
+                <div id="help-oft-block" class="help-panel">
+                  <p><strong>Simple:</strong> Size of the orthogonal blocks used to transform weight matrices. Smaller blocks = more fine-grained control but more parameters.</p>
+                  <p>64 is a reasonable default. This is an experimental adapter type for audio — results may vary.</p>
+                  <span class="badge badge--vram">VRAM: Smaller = More</span>
+                </div>
+                <input class="input has-default vram-input" type="number" id="full-oft-block-size" value="64" data-default="64" data-validate="gte:1 int">
+                <div class="field-error"></div>
+                <div class="hint">Smaller = more expressive but more parameters</div>
+              </div>
+            </div>
+            <div style="padding: 6px 10px; background: rgba(255,200,0,0.08); border: 1px solid var(--warning); border-radius: var(--radius); margin-bottom: var(--space-sm); font-size: var(--font-size-sm); color: var(--warning);">
+              [!] Experimental -- Orthogonal fine-tuning. Untested on audio DiT.
+            </div>
+            <div class="section-group">
+              <button class="section-group__toggle">OFT Advanced</button>
+              <div class="section-group__body">
+                <div class="form-row">
+                  <div class="form-group"><label class="toggle"><input type="checkbox" id="full-oft-coft"><span class="toggle__track"></span>Constrained OFT (Cayley projection)</label></div>
+                  <div class="form-group">
+                    <label class="form-group__label">Epsilon <span class="help-icon" data-help="help-oft-eps">?</span></label>
+                    <div id="help-oft-eps" class="help-panel">
+                      <p><strong>Simple:</strong> Numerical stability constant for the Cayley projection in Constrained OFT. Prevents division-by-zero. Only relevant when COFT is enabled.</p>
+                    </div>
+                    <input class="input has-default" type="text" id="full-oft-eps" value="6e-5" data-default="6e-5" data-validate="gt:0">
+                    <div class="field-error"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Shared adapter targeting (all adapters) -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-group__label">Attention type <span class="help-icon" data-help="help-full-attn-type">?</span></label>
+              <div id="help-full-attn-type" class="help-panel">
+                <p><strong>Simple:</strong> Which attention layers the adapter trains on.</p>
+                <p><strong>Both:</strong> Trains on self-attention (how audio relates to itself) and cross-attention (how audio relates to text prompts). Best quality, most parameters.</p>
+                <p><strong>Self only:</strong> Audio learns internal patterns. Good for timbre/style.</p>
+                <p><strong>Cross only:</strong> Audio learns how to respond to text. Good for prompt adherence.</p>
+              </div>
+              <select class="select" id="full-attention-type">
+                <option value="both" selected>Both (self + cross)</option>
+                <option value="self">Self-attention only</option>
+                <option value="cross">Cross-attention only</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-group__label">Projections <span class="help-icon" data-help="help-full-projs">?</span></label>
+              <div id="help-full-projs" class="help-panel">
+                <p><strong>Simple:</strong> Which sub-matrices inside each attention layer get adapter weights. Each projection handles a different part of how the model pays attention.</p>
+                <p><strong>q_proj</strong> (query) — what to look for. <strong>k_proj</strong> (key) — what to match against. <strong>v_proj</strong> (value) — what information to extract. <strong>o_proj</strong> (output) — how to combine results.</p>
+                <p>All four checked is the default and gives the most expressive adapter. Unchecking some reduces parameters and VRAM.</p>
+              </div>
+              <input type="hidden" id="full-projections" value="q_proj k_proj v_proj o_proj" data-default="q_proj k_proj v_proj o_proj">
+              <input type="hidden" id="full-self-projections" value="q_proj k_proj v_proj o_proj">
+              <input type="hidden" id="full-cross-projections" value="q_proj k_proj v_proj o_proj">
+              <!-- Single-layer mode (self or cross only) -->
+              <div class="proj-chips" id="proj-chips">
+                <label class="proj-chip active"><input type="checkbox" value="q_proj" checked>q_proj</label>
+                <label class="proj-chip active"><input type="checkbox" value="k_proj" checked>k_proj</label>
+                <label class="proj-chip active"><input type="checkbox" value="v_proj" checked>v_proj</label>
+                <label class="proj-chip active"><input type="checkbox" value="o_proj" checked>o_proj</label>
+              </div>
+              <!-- Both-layer mode (self + cross independently) -->
+              <div id="proj-chips-split" style="display: none;">
+                <div style="font-size: var(--font-size-sm); color: var(--muted); margin-bottom: 2px;">Self-attention</div>
+                <div class="proj-chips" id="proj-chips-self">
+                  <label class="proj-chip active"><input type="checkbox" value="q_proj" checked>q_proj</label>
+                  <label class="proj-chip active"><input type="checkbox" value="k_proj" checked>k_proj</label>
+                  <label class="proj-chip active"><input type="checkbox" value="v_proj" checked>v_proj</label>
+                  <label class="proj-chip active"><input type="checkbox" value="o_proj" checked>o_proj</label>
+                </div>
+                <div style="font-size: var(--font-size-sm); color: var(--muted); margin-top: var(--space-xs); margin-bottom: 2px;">Cross-attention</div>
+                <div class="proj-chips" id="proj-chips-cross">
+                  <label class="proj-chip active"><input type="checkbox" value="q_proj" checked>q_proj</label>
+                  <label class="proj-chip active"><input type="checkbox" value="k_proj" checked>k_proj</label>
+                  <label class="proj-chip active"><input type="checkbox" value="v_proj" checked>v_proj</label>
+                  <label class="proj-chip active"><input type="checkbox" value="o_proj" checked>o_proj</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="pp-adapter-lock-hint" class="u-text-warning" style="display: none; font-size: var(--font-size-sm); margin-bottom: var(--space-xs);">Locked by PP++ -- fisher map controls module targeting</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="toggle">
+                <input type="checkbox" id="full-target-mlp" checked>
+                <span class="toggle__track"></span>
+                Target MLP layers <span class="help-icon" data-help="help-full-mlp">?</span>
+              </label>
+              <div id="help-full-mlp" class="help-panel">
+                <p><strong>Simple:</strong> Also trains the feed-forward (MLP) layers alongside attention. MLPs handle local feature transformations — turning raw patterns into higher-level representations.</p>
+                <p>Enabling this roughly doubles adapter parameters and VRAM usage but can improve quality, especially for learning complex timbres or production styles.</p>
+                <span class="badge badge--vram">VRAM: ~2x adapter size</span>
+                <span class="badge badge--quality">Quality: Better for complex styles</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-group__label">Bias training <span class="help-icon" data-help="help-full-bias">?</span></label>
+              <div id="help-full-bias" class="help-panel">
+                <p><strong>none:</strong> Don't train any bias parameters (default, lowest VRAM).</p>
+                <p><strong>all:</strong> Train all bias parameters in the model, not just the adapter's.</p>
+                <p><strong>lora_only:</strong> Only train bias parameters in adapter-targeted layers.</p>
+                <p>Bias terms are tiny offsets added to each layer. Training them adds minimal VRAM but can sometimes improve fine-tuning quality.</p>
+              </div>
+              <select class="select" id="full-bias">
+                <option value="none" selected>none</option>
+                <option value="all">all</option>
+                <option value="lora_only">lora_only</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- --- Training --- -->
+          <div class="section-header">Training</div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-group__label">
+                Learning rate
+                <span class="help-icon" data-help="help-full-lr">?</span>
+              </label>
+              <input class="input has-default" type="text" id="full-lr" value="3e-4" data-default="3e-4" data-validate="gt:0 lte:1">
+              <div class="field-error"></div>
+              <div class="field-warning" id="warn-pp-lr"></div>
+              <div id="prodigy-lr-hint" class="u-text-warning" style="display: none; font-size: var(--font-size-sm); margin-top: 2px;">Prodigy auto-tunes LR. Start around 0.1 (not 1e-4).</div>
+              <div id="help-full-lr" class="help-panel">
+                <h4>What is Learning Rate?</h4>
+                <p><strong>Simple:</strong> How big a step the AI takes when learning. Too big = chaos. Too small = takes forever.</p>
+                <ul>
+                  <li><code>1e-4</code> — Standard default, safe</li>
+                  <li><code>5e-5</code> — More stable, use with PP++</li>
+                  <li><code>2e-4</code> — Faster, riskier</li>
+                </ul>
+                <span class="badge badge--neutral">VRAM: None</span>
+                <span class="badge badge--quality">Quality: Critical tuning parameter</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-group__label">Batch size <span class="help-icon" data-help="help-full-batch">?</span></label>
+              <input class="input has-default vram-input" type="number" id="full-batch" value="1" data-default="1" data-validate="gte:1 int">
+              <div class="field-error"></div>
+              <div id="help-full-batch" class="help-panel">
+                <p><strong>Simple:</strong> How many audio samples the GPU processes at once. Higher = faster but uses more VRAM.</p>
+                <p>For music LoRA training, batch size 1 is typical because audio samples are large. Use grad accum to simulate larger batches without extra VRAM.</p>
+                <span class="badge badge--vram">VRAM: Higher = Much more</span>
+                <span class="badge badge--speed">Speed: Higher = Faster per epoch</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-group__label">Grad accum <span class="help-icon" data-help="help-full-grad-accum">?</span></label>
+              <input class="input has-default" type="number" id="full-grad-accum" value="4" data-default="4" data-validate="gte:1 int">
+              <div class="field-error"></div>
+              <div id="help-full-grad-accum" class="help-panel">
+                <p><strong>Simple:</strong> Accumulates gradients over N steps before updating weights. Simulates a larger batch size without using extra VRAM.</p>
+                <p><strong>Effective batch = batch_size × grad_accum.</strong> So batch 1 × accum 4 = effective batch of 4.</p>
+                <p>Higher values give smoother, more stable training but each epoch takes the same time.</p>
+                <span class="badge badge--neutral">VRAM: None</span>
+                <span class="badge badge--quality">Quality: Higher = Smoother gradients</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-group__label">Epochs <span class="help-icon" data-help="help-full-epochs">?</span></label>
+              <input class="input has-default" type="number" id="full-epochs" value="1000" data-default="1000" data-validate="gte:1 int">
+              <div class="field-error"></div>
+              <div id="help-full-epochs" class="help-panel">
+                <p><strong>Simple:</strong> How many times the model sees every song in your dataset. One epoch = one full pass through all your audio.</p>
+                <p>More epochs = more learning, but too many causes overfitting (the model memorizes instead of generalizing).</p>
+                <ul><li><code>50–100</code> — Quick experiment</li><li><code>200–500</code> — Typical for quality results</li><li><code>1000+</code> — Large datasets, watch for overfitting</li></ul>
+                <span class="badge badge--speed">Speed: Direct multiplier on total training time</span>
+              </div>
+              <div id="step-estimate-hint" style="font-size: var(--font-size-sm); color: var(--muted);"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-group__label">Warmup steps <span class="help-icon" data-help="help-full-warmup">?</span></label>
+              <input class="input has-default" type="number" id="full-warmup" value="100" data-default="100" data-validate="gte:0 int">
+              <div class="field-error"></div>
+              <div id="help-full-warmup" class="help-panel">
+                <p><strong>Simple:</strong> Gradually ramps up the learning rate from near-zero to your target LR over this many steps. Prevents the model from getting shocked by large updates at the start.</p>
+                <p><strong>Rule of thumb:</strong> 5–10% of your total training steps. 100 is a safe default for most runs.</p>
+                <span class="badge badge--neutral">VRAM: None</span>
+                <span class="badge badge--quality">Quality: Stabilizes early training</span>
+              </div>
+              <div class="field-warning" id="warn-resume-warmup"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-group__label">Max steps (0=off) <span class="help-icon" data-help="help-full-max-steps">?</span></label>
+              <input class="input has-default" type="number" id="full-max-steps" value="0" data-default="0" data-validate="gte:0 int">
+              <div class="field-error"></div>
+              <div id="help-full-max-steps" class="help-panel">
+                <p><strong>Simple:</strong> Hard cap on total training steps regardless of epochs. 0 = no cap (use epochs to control duration).</p>
+                <p>Useful when you want time-based budgeting instead of epoch-based. One step = one batch processed.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-group__label">Dataset repeats <span class="help-icon" data-help="help-full-repeats">?</span></label>
+              <input class="input has-default" type="number" id="full-dataset-repeats" value="1" data-default="1" data-validate="gte:1 int">
+              <div class="field-error"></div>
+              <div id="help-full-repeats" class="help-panel">
+                <p><strong>Simple:</strong> Duplicates your dataset N times per epoch. Useful for very small datasets (1–3 songs) where each epoch is too short for meaningful learning.</p>
+                <p>With 2 songs and repeats=5, each epoch processes 10 samples instead of 2, giving the optimizer more gradient steps before the scheduler advances.</p>
+                <span class="badge badge--neutral">VRAM: None</span>
+                <span class="badge badge--speed">Speed: Linear multiplier on epoch duration</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dataset step estimate (computed by JS) -->
+          <div id="full-step-estimate" style="font-size: var(--font-size-sm); color: var(--muted); margin-bottom: var(--space-md);">
+            <span id="full-step-estimate-text"></span>
+            <span id="full-warmup-warning" class="u-text-warning" style="display: none;"></span>
+          </div>
+
+          <!-- --- Collapsed: Model-derived Settings --- -->
+          <div class="section-group">
+            <button class="section-group__toggle">Flow Matching & CFG</button>
+            <div class="section-group__body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Noise shift <span class="help-icon" data-help="help-full-shift">?</span></label>
+                  <input class="input has-default" type="text" id="full-shift" value="3.0" data-default="3.0" data-validate="gt:0">
+                  <div class="field-error"></div>
+                  <div id="help-full-shift" class="help-panel">
+                    <p><strong>Simple:</strong> Controls how much noise is added during flow-matching training. Higher shift = more emphasis on denoising from heavy noise, which turbo models need.</p>
+                    <p>Auto-set from your model variant. Don't change unless you know what you're doing.</p>
+                  </div>
+                  <div class="hint">turbo=3.0, base/sft=1.0 (auto-set from model)</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Inference steps <span class="help-icon" data-help="help-full-inf-steps">?</span></label>
+                  <input class="input has-default" type="number" id="full-inference-steps" value="8" data-default="8" data-validate="gte:1 int">
+                  <div class="field-error"></div>
+                  <div id="help-full-inf-steps" class="help-panel">
+                    <p><strong>Simple:</strong> How many denoising steps the model uses when generating audio. Only relevant for validation/preview during training.</p>
+                    <p>Turbo uses 8 discrete steps; base/sft use 50 continuous steps. Auto-set from your model.</p>
+                  </div>
+                  <div class="hint">turbo=8, base/sft=50 (auto-set from model)</div>
+                </div>
+              </div>
+              <div id="cfg-settings-group">
+                <div class="form-row">
+                  <div class="form-group" id="cfg-dropout-group">
+                    <label class="form-group__label">CFG dropout <span class="help-icon" data-help="help-full-cfg">?</span> <span style="color: var(--muted); font-size: var(--font-size-sm);">(base/sft only)</span></label>
+                    <input class="input has-default" type="number" id="full-cfg-dropout" value="0.15" step="0.01" data-default="0.15" data-validate="range:0:1">
+                    <div class="field-error"></div>
+                    <div id="help-full-cfg" class="help-panel">
+                      <p><strong>Simple:</strong> Randomly drops the text prompt during training so the model learns both conditioned and unconditioned generation. This enables classifier-free guidance at inference time.</p>
+                      <p>Only used by base/sft models. Turbo doesn't use CFG. Default 0.15 means 15% of samples train without text.</p>
+                    </div>
+                  </div>
+                  <div class="form-group" id="loss-weighting-group">
+                    <label class="form-group__label">Loss weighting <span class="help-icon" data-help="help-full-loss-wt">?</span> <span style="color: var(--muted); font-size: var(--font-size-sm);">(base/sft only)</span></label>
+                    <div id="help-full-loss-wt" class="help-panel">
+                      <p><strong>none:</strong> All timesteps contribute equally to the loss. Standard approach.</p>
+                      <p><strong>min_snr:</strong> Reduces loss contribution from very noisy or very clean timesteps, focusing training on the "informative middle" where the model learns most. Requires setting SNR gamma.</p>
+                      <p>Only relevant for base/sft models that use continuous timestep sampling.</p>
+                    </div>
+                    <select class="select" id="full-loss-weighting">
+                      <option value="none" selected>none</option>
+                      <option value="min_snr">min_snr</option>
+                    </select>
+                  </div>
+                  <div class="form-group" id="snr-gamma-group" style="display: none;">
+                    <label class="form-group__label">SNR gamma <span class="help-icon" data-help="help-full-snr">?</span></label>
+                    <div id="help-full-snr" class="help-panel">
+                      <p><strong>Simple:</strong> Clipping threshold for min-SNR loss weighting. Controls how aggressively noisy timesteps are down-weighted.</p>
+                      <p>5.0 is the paper's recommended default. Lower values clip more aggressively.</p>
+                    </div>
+                    <input class="input has-default" type="number" id="full-snr-gamma" value="5.0" step="0.1" data-default="5.0" data-validate="gt:0">
+                    <div class="field-error"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- --- Collapsed: VRAM Savings --- -->
+          <div class="section-group">
+            <button class="section-group__toggle">VRAM Savings</button>
+            <div class="section-group__body">
+              <div class="form-group">
+                <label class="toggle">
+                  <input type="checkbox" id="full-offload-encoder" class="vram-input" checked>
+                  <span class="toggle__track"></span>
+                  Offload encoder to CPU <span class="help-icon" data-help="help-full-offload">?</span>
+                </label>
+                <div id="help-full-offload" class="help-panel">
+                  <p><strong>Simple:</strong> Moves the text encoder to CPU RAM after it encodes your prompts, freeing GPU VRAM for the actual training. The encoder is only used once per sample to convert text → embeddings.</p>
+                  <p>This is essentially free VRAM savings with zero speed impact. Leave enabled unless you have a specific reason not to.</p>
+                  <span class="badge badge--vram">VRAM: Saves ~2-4 GB</span>
+                  <span class="badge badge--speed">Speed: No impact</span>
+                </div>
+                <div class="hint">Frees ~2-4 GB VRAM with zero speed impact.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">Gradient checkpointing ratio <span class="help-icon" data-help="help-full-ckpt-ratio">?</span></label>
+                <div style="display: flex; gap: var(--space-sm); align-items: center; margin-bottom: var(--space-xs);">
+                  <button class="btn btn--sm ckpt-preset active" data-ratio="1.0" aria-pressed="true">Full (1.0)</button>
+                  <button class="btn btn--sm ckpt-preset" data-ratio="0.5" aria-pressed="false">Half (0.5)</button>
+                  <button class="btn btn--sm ckpt-preset" data-ratio="0.0" aria-pressed="false">Off (0.0)</button>
+                </div>
+                <input class="input has-default vram-input" type="number" id="full-grad-ckpt-ratio" value="1.0" step="0.1" min="0" max="1" data-default="1.0" data-validate="range:0:1">
+                <div class="field-error"></div>
+                <div id="help-full-ckpt-ratio" class="help-panel">
+                  <p><strong>Simple:</strong> Trades compute speed for VRAM savings by recomputing intermediate values instead of storing them all in memory.</p>
+                  <p><strong>Think of it like:</strong> Instead of keeping every draft of an essay, you only keep a few and rewrite the rest when needed. Slower, but uses way less desk space.</p>
+                  <ul><li><code>1.0</code> — Maximum VRAM savings (checkpoints all layers)</li><li><code>0.5</code> — Balanced (checkpoints half the layers)</li><li><code>0.0</code> — Off (fastest but uses most VRAM)</li></ul>
+                  <span class="badge badge--vram">VRAM: 1.0 saves ~4-6 GB</span>
+                  <span class="badge badge--speed">Speed: ~15-25% slower at 1.0</span>
+                </div>
+                <div class="hint">0.0=off, 0.5=half layers, 1.0=all layers. Higher saves more VRAM.</div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Chunk duration (0=off) <span class="help-icon" data-help="help-full-chunk">?</span></label>
+                  <input class="input has-default vram-input" type="number" id="full-chunk-duration" value="0" data-default="0" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                  <div class="field-warning" id="warn-chunk-short"></div>
+                  <div id="help-full-chunk" class="help-panel">
+                    <p><strong>Simple:</strong> Instead of training on the full-length audio, crops a random segment of this many seconds each step. Saves VRAM because the model processes shorter sequences.</p>
+                    <p>Set to 0 to use full-length audio (uses more VRAM). 60s is a good starting point if you need savings.</p>
+                    <span class="badge badge--vram">VRAM: 60s saves ~2-4 GB vs full-length</span>
+                    <span class="badge badge--quality">Quality: Short chunks may miss long-range structure</span>
+                  </div>
+                  <div class="hint">60s recommended if you need VRAM savings.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Chunk decay interval <span class="help-icon" data-help="help-full-chunk-decay">?</span></label>
+                  <div id="help-full-chunk-decay" class="help-panel">
+                    <p><strong>Simple:</strong> Every N epochs, the chunk sampler gradually shifts which sections of each song it covers, ensuring the model eventually sees all parts of every track.</p>
+                    <p>0 = off (random chunks every step). 10 = decay coverage every 10 epochs.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-chunk-decay-every" value="10" data-default="10" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                  <div class="hint">Coverage decay epochs (0=off)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- --- Collapsed: Optimizer & Scheduler --- -->
+          <div class="section-group">
+            <button class="section-group__toggle">Optimizer & Scheduler</button>
+            <div class="section-group__body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Optimizer <span class="help-icon" data-help="help-full-optim">?</span></label>
+                  <div id="help-full-optim" class="help-panel">
+                    <p><strong>AdamW:</strong> The standard. Reliable, well-understood. Uses ~2× model memory for optimizer states.</p>
+                    <p><strong>AdamW 8-bit:</strong> Same algorithm but stores states in 8-bit precision. Saves ~30% VRAM with negligible quality impact.</p>
+                    <p><strong>AdaFactor:</strong> Uses almost no extra memory by computing running statistics on-the-fly. Good for extreme VRAM constraints.</p>
+                    <p><strong>Prodigy:</strong> Automatically tunes the learning rate during training. Set LR to ~0.1 and let it find the right value. Experimental but promising.</p>
+                  </div>
+                  <select class="select vram-input" id="full-optimizer">
+                    <option value="adamw">AdamW (standard)</option>
+                    <option value="adamw8bit">AdamW 8-bit (saves ~30%)</option>
+                    <option value="adafactor">AdaFactor (minimal state)</option>
+                    <option value="prodigy">Prodigy (auto-tune LR)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Scheduler <span class="help-icon" data-help="help-full-sched">?</span></label>
+                  <div id="help-full-sched" class="help-panel">
+                    <p><strong>Simple:</strong> Controls how the learning rate changes over time after warmup.</p>
+                    <p><strong>Cosine:</strong> Smoothly decreases LR following a cosine curve. Best default choice.</p>
+                    <p><strong>Linear:</strong> Steady decrease from max to zero.</p>
+                    <p><strong>Constant:</strong> Never changes. Simple but may overshoot late in training.</p>
+                    <p><strong>Custom formula:</strong> Write your own LR schedule using math expressions.</p>
+                  </div>
+                  <select class="select" id="full-scheduler">
+                    <option value="cosine" selected>Cosine</option>
+                    <option value="linear">Linear</option>
+                    <option value="constant">Constant</option>
+                    <option value="constant_with_warmup">Constant + warmup</option>
+                    <option value="cosine_restarts">Cosine with restarts</option>
+                    <option value="custom">Custom formula</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group" id="scheduler-formula-group" style="display: none;">
+                <label class="form-group__label">Custom LR formula (post-warmup)</label>
+                <select class="select" id="formula-template" style="margin-bottom: var(--space-xs); font-size: var(--font-size-sm);">
+                  <option value="">Start from template...</option>
+                  <option value="base_lr * 0.5 * (1 + cos(pi * progress))">Cosine decay</option>
+                  <option value="max(1e-6, base_lr * 0.5 * (1 + cos(pi * progress)))">Cosine with floor</option>
+                  <option value="base_lr if progress &lt; 0.3 else base_lr * 0.5 * (1 + cos(pi * (progress - 0.3) / 0.7))">Constant then cosine</option>
+                  <option value="base_lr * 0.5 ** (epoch // 10)">Step decay (halve every 10 epochs)</option>
+                  <option value="max(1e-5, base_lr * (1 - progress))">Linear with floor</option>
+                </select>
+                <input class="input" type="text" id="full-scheduler-formula" placeholder="e.g. cos(progress * pi) * 0.5 + 0.5">
+                <div class="field-warning" id="warn-scheduler-formula"></div>
+                <div class="hint">Variables: step, total_steps, progress (0-1), epoch, base_lr. Functions: cos, sin, exp, log, sqrt, min, max, clamp</div>
+                <div id="formula-preview" style="margin-top: var(--space-sm); position: relative; height: 140px; padding-bottom: 14px; display: none;">
+                  <span style="position: absolute; left: 0; top: 0; font-size: 9px; color: var(--muted);" id="formula-y-max"></span>
+                  <span style="position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-size: 9px; color: var(--muted);" id="formula-y-mid"></span>
+                  <span style="position: absolute; left: 0; bottom: 14px; font-size: 9px; color: var(--muted);">0</span>
+                  <!-- Top axis: steps (auto-filled by JS) -->
+                  <span style="position: absolute; left: 50%; top: -2px; transform: translateX(-50%); font-size: 8px; color: var(--muted);" id="formula-top-label">LR over training</span>
+                  <!-- Bottom axis: epochs -->
+                  <span style="position: absolute; left: 0; bottom: 0; font-size: 8px; color: var(--border);" id="formula-epoch-0">ep 0</span>
+                  <span style="position: absolute; left: 25%; bottom: 0; font-size: 8px; color: var(--border); transform: translateX(-50%);" id="formula-epoch-25"></span>
+                  <span style="position: absolute; left: 50%; bottom: 0; font-size: 8px; color: var(--border); transform: translateX(-50%);" id="formula-epoch-50"></span>
+                  <span style="position: absolute; left: 75%; bottom: 0; font-size: 8px; color: var(--border); transform: translateX(-50%);" id="formula-epoch-75"></span>
+                  <span style="position: absolute; right: 0; bottom: 0; font-size: 8px; color: var(--muted);" id="formula-epoch-100"></span>
+                  <svg style="width: 100%; height: 100%;" preserveAspectRatio="none" viewBox="0 0 200 120">
+                    <g id="formula-grid" stroke="var(--border-subtle)" stroke-width="0.5" vector-effect="non-scaling-stroke">
+                      <line x1="0" y1="30" x2="200" y2="30" opacity="0.5" />
+                      <line x1="0" y1="60" x2="200" y2="60" opacity="0.5" />
+                      <line x1="0" y1="90" x2="200" y2="90" opacity="0.5" />
+                      <line x1="50" y1="0" x2="50" y2="120" opacity="0.3" />
+                      <line x1="100" y1="0" x2="100" y2="120" opacity="0.3" />
+                      <line x1="150" y1="0" x2="150" y2="120" opacity="0.3" />
+                    </g>
+                    <polyline id="formula-preview-line" fill="none" stroke="var(--primary)" stroke-width="1.5" vector-effect="non-scaling-stroke" points="" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- --- Collapsed: Device & Precision --- -->
+          <div class="section-group">
+            <button class="section-group__toggle">Device & Precision</button>
+            <div class="section-group__body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Device <span class="help-icon" data-help="help-full-device">?</span></label>
+                  <div id="help-full-device" class="help-panel">
+                    <p><strong>auto:</strong> Automatically picks the best available GPU (recommended).</p>
+                    <p><strong>cuda / cuda:0 / cuda:1:</strong> Specific NVIDIA GPU. Use cuda:1 if you have multiple GPUs and want the second one.</p>
+                    <p><strong>mps:</strong> Apple Silicon GPU (M1/M2/M3). Experimental support.</p>
+                    <p><strong>cpu:</strong> CPU-only training. Extremely slow — only for debugging.</p>
+                  </div>
+                  <select class="select" id="full-device">
+                    <option value="auto" selected>auto</option>
+                    <option value="cuda">cuda</option>
+                    <option value="cuda:0">cuda:0</option>
+                    <option value="cuda:1">cuda:1</option>
+                    <option value="mps">mps</option>
+                    <option value="cpu">cpu</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Precision <span class="help-icon" data-help="help-full-precision">?</span></label>
+                  <div id="help-full-precision" class="help-panel">
+                    <p><strong>auto:</strong> Uses bf16 on Ampere+ GPUs (RTX 30xx/40xx), fp16 on older GPUs.</p>
+                    <p><strong>bf16:</strong> Brain float16. Best for training — larger dynamic range, fewer NaN issues. Requires Ampere+ GPU.</p>
+                    <p><strong>fp16:</strong> Standard half-precision. Works on all modern GPUs but can overflow with large loss values.</p>
+                    <p><strong>fp32:</strong> Full precision. Uses 2× VRAM. Only useful for debugging precision issues.</p>
+                  </div>
+                  <select class="select" id="full-precision">
+                    <option value="auto" selected>auto</option>
+                    <option value="bf16">bf16</option>
+                    <option value="fp16">fp16</option>
+                    <option value="fp32">fp32</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- --- Collapsed: Logging & Checkpoints --- -->
+          <div class="section-group">
+            <button class="section-group__toggle">Logging & Checkpoints</button>
+            <div class="section-group__body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Save every N epochs <span class="help-icon" data-help="help-full-save-every">?</span></label>
+                  <div id="help-full-save-every" class="help-panel">
+                    <p><strong>Simple:</strong> Creates a checkpoint every N epochs so you can resume or roll back. Each checkpoint saves the full adapter weights + optimizer state.</p>
+                    <p>10 is a good default. Lower values = more checkpoints (more disk space) but finer rollback granularity.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-save-every" value="50" data-default="50" data-validate="gte:1 int">
+                  <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Log every N steps <span class="help-icon" data-help="help-full-log-every">?</span></label>
+                  <div id="help-full-log-every" class="help-panel">
+                    <p><strong>Simple:</strong> How often to write loss values to TensorBoard and the training monitor chart. Lower = more granular graphs but slightly more I/O overhead.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-log-every" value="10" data-default="10" data-validate="gte:1 int">
+                  <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Log grad norms every N steps <span class="help-icon" data-help="help-full-log-heavy">?</span></label>
+                  <div id="help-full-log-heavy" class="help-panel">
+                    <p><strong>Simple:</strong> Logs per-layer gradient norm statistics to TensorBoard. Useful for diagnosing training instability (exploding/vanishing gradients).</p>
+                    <p>0 = disabled. 50 = every 50 steps. This is relatively expensive to compute, so don't set it too low.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-log-heavy-every" value="50" data-default="50" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                  <div class="hint">0 = disabled. Logs gradient norm statistics.</div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="toggle">
+                    <input type="checkbox" id="full-save-best" checked>
+                    <span class="toggle__track"></span>
+                    Auto-save best model (smoothed loss)
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Save best: start after epoch <span class="help-icon" data-help="help-full-save-best-after">?</span></label>
+                  <div id="help-full-save-best-after" class="help-panel">
+                    <p><strong>Simple:</strong> Don't start tracking "best model" until after this many epochs. Early epochs are noisy and the loss jumps around — saving a "best" from epoch 3 is meaningless.</p>
+                    <p>200 is a safe default for most runs. For short experiments (50-100 epochs), lower this to ~20.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-save-best-after" value="200" data-default="200" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                  <div class="hint">Skip early noisy epochs before comparing losses.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Early stop patience (0=off) <span class="help-icon" data-help="help-full-early-stop">?</span></label>
+                  <div id="help-full-early-stop" class="help-panel">
+                    <p><strong>Simple:</strong> Automatically stops training if the loss hasn't improved for N consecutive epochs. Prevents wasting GPU time once the model has converged.</p>
+                    <p>0 = disabled (train for the full epoch count). 20-50 is typical if you want auto-stopping.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-early-stop" value="0" data-default="0" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                  <div class="hint">Stop if no improvement for N epochs.</div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">TensorBoard log directory <span class="help-icon" data-help="help-full-log-dir">?</span></label>
+                <div id="help-full-log-dir" class="help-panel">
+                  <p><strong>Simple:</strong> Where TensorBoard event files are written. Leave empty to auto-create a <code>runs/</code> subfolder inside your output directory.</p>
+                  <p>Only change this if you want all runs to log to a shared location for easier comparison in TensorBoard.</p>
+                </div>
+                <div class="input-with-browse">
+                  <input class="input" type="text" id="full-log-dir" placeholder="(auto: {output_dir}/runs)">
+                  <button class="btn btn--sm browse-btn" data-target="full-log-dir">Browse</button>
+                </div>
+                <div class="hint">Leave empty to use default. Only change for shared TensorBoard locations.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- --- Collapsed: All the Levers --- -->
+          <div class="section-group">
+            <button class="section-group__toggle">All the Levers</button>
+            <div class="section-group__body">
+
+              <!-- Training dynamics -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin-bottom: var(--space-xs);">Training Dynamics</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Weight decay <span class="help-icon" data-help="help-full-wd">?</span></label>
+                  <div id="help-full-wd" class="help-panel">
+                    <p><strong>Simple:</strong> Gently shrinks all weights toward zero each step. Prevents any single weight from growing too large, which helps generalization.</p>
+                    <p><strong>Think of it like:</strong> A "use it or lose it" pressure — parameters that aren't actively useful get pushed toward zero.</p>
+                    <p>0.01 is the standard default. Higher = stronger regularization. Set to 0 to disable.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-weight-decay" value="0.01" step="0.001" data-default="0.01" data-validate="gte:0">
+                  <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Max grad norm <span class="help-icon" data-help="help-full-grad-norm">?</span></label>
+                  <div id="help-full-grad-norm" class="help-panel">
+                    <p><strong>Simple:</strong> Clips gradient magnitudes to prevent "exploding gradients" that can destabilize training. If the total gradient norm exceeds this value, all gradients are scaled down proportionally.</p>
+                    <p>1.0 is the standard default. Lower values = more aggressive clipping = more stable but potentially slower learning.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-max-grad-norm" value="1.0" step="0.1" data-default="1.0" data-validate="gt:0">
+                  <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Seed <span class="help-icon" data-help="help-full-seed">?</span></label>
+                  <div id="help-full-seed" class="help-panel">
+                    <p><strong>Simple:</strong> Random number seed for reproducibility. Using the same seed + same config + same data should produce identical results.</p>
+                    <p>42 is just a convention (from Hitchhiker's Guide). Any integer works. Change it to run a different "dice roll" of the same experiment.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-seed" value="42" data-default="42" data-validate="int">
+                  <div class="field-error"></div>
+                </div>
+              </div>
+              <!-- Optimizer internals -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Optimizer Internals</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Warmup start factor <span class="help-icon" data-help="help-full-wsf">?</span></label>
+                  <div id="help-full-wsf" class="help-panel">
+                    <p><strong>Simple:</strong> The fraction of your base learning rate that warmup begins at. LR starts at <code>base_lr × factor</code> and ramps up to <code>base_lr</code> over warmup steps.</p>
+                    <p>0.1 means warmup starts at 10% of your target LR. Lower = gentler ramp.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-warmup-start-factor" value="0.1" step="0.01" data-default="0.1" data-validate="gt:0 lte:1">
+                  <div class="field-error"></div>
+                  <div class="hint">LR starts at base_lr x this</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Cosine eta_min ratio <span class="help-icon" data-help="help-full-eta-min">?</span></label>
+                  <div id="help-full-eta-min" class="help-panel">
+                    <p><strong>Simple:</strong> The minimum learning rate the cosine scheduler decays to, as a fraction of base LR. So 0.01 means LR bottoms out at 1% of its peak.</p>
+                    <p>Lower values let the LR decay more aggressively. 0 = decay all the way to zero.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-cosine-eta-min" value="0.01" step="0.001" data-default="0.01" data-validate="range:0:1">
+                  <div class="field-error"></div>
+                  <div class="hint">LR decays to base_lr x this</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Cosine restarts count <span class="help-icon" data-help="help-full-restarts">?</span></label>
+                  <div id="help-full-restarts" class="help-panel">
+                    <p><strong>Simple:</strong> How many times the cosine schedule resets ("warm restarts") during training. Only used with the "Cosine with restarts" scheduler.</p>
+                    <p>4 restarts over 400 epochs = the LR resets every 100 epochs. Each restart can help escape local minima.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-cosine-restarts" value="4" data-default="4" data-validate="gte:1 int">
+                  <div class="field-error"></div>
+                </div>
+              </div>
+
+              <!-- Experimental enhancements -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Experimental Enhancements</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">EMA decay (0=off) <span class="help-icon" data-help="help-full-ema">?</span></label>
+                  <div id="help-full-ema" class="help-panel">
+                    <p><strong>Simple:</strong> Keeps a smoothed "shadow copy" of your adapter weights. At save time, the shadow copy (which averages out training noise) is used instead of the raw weights.</p>
+                    <p><strong>Think of it like:</strong> Instead of using today's noisy snapshot, use a running average of the last many days. Produces more stable final adapters.</p>
+                    <p>0 = disabled. 0.9999 = slow averaging (typical). 0.999 = faster averaging.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-ema-decay" value="0" step="0.0001" data-default="0" data-validate="range:0:0.9999">
+                  <div class="field-error"></div>
+                  <div class="hint">Smoothed adapter weights. 0.9999=typical, 0.999=faster.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Validation split (0=off) <span class="help-icon" data-help="help-full-val">?</span></label>
+                  <div id="help-full-val" class="help-panel">
+                    <p><strong>Simple:</strong> Holds out a fraction of your dataset for overfitting detection. The model never trains on the held-out data — it only evaluates on it to see if it's memorizing vs. generalizing.</p>
+                    <p>0.1 = hold out 10% of songs. If validation loss starts rising while training loss keeps falling, you're overfitting.</p>
+                    <p>Only useful with 10+ songs. With tiny datasets, every sample matters for training.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-val-split" value="0" step="0.01" data-default="0" data-validate="range:0:0.5">
+                  <div class="field-error"></div>
+                  <div class="hint">0.1 = hold out 10% for overfitting detection</div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" id="adaptive-timestep-group">
+                  <label class="form-group__label">Adaptive timestep ratio <span class="help-icon" data-help="help-full-adaptive">?</span> <span style="color: var(--muted); font-size: var(--font-size-sm);">(base/sft only)</span></label>
+                  <div id="help-full-adaptive" class="help-panel">
+                    <p><strong>Simple:</strong> Biases timestep sampling toward regions where the model has high loss ("hard" noise levels). Instead of uniform sampling, the model spends more time on timesteps it struggles with.</p>
+                    <p>0 = disabled (uniform sampling). 0.3 = mix 30% adaptive + 70% base distribution. Only works with base/sft (continuous timestep) models.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-adaptive-timestep" value="0" step="0.01" data-default="0" data-validate="range:0:1">
+                  <div class="field-error"></div>
+                  <div class="hint">0=off, 0.3=recommended. Focuses training on hard regions.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Step-level best check (0=epoch only) <span class="help-icon" data-help="help-full-step-best">?</span></label>
+                  <div id="help-full-step-best" class="help-panel">
+                    <p><strong>Simple:</strong> Check for a new best model every N steps instead of only at epoch boundaries. Useful for very long epochs where you want finer-grained best-model tracking.</p>
+                    <p>0 = only check at epoch end (default). 500 = also check every 500 steps within each epoch.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-save-best-every-n-steps" value="0" data-default="0" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                </div>
+              </div>
+
+              <!-- Flow matching math -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Flow Matching Math</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Timestep mu <span class="help-icon" data-help="help-full-ts-mu">?</span></label>
+                  <div id="help-full-ts-mu" class="help-panel">
+                    <p><strong>Simple:</strong> Center of the logit-normal distribution used to sample noise timesteps. Controls where most training samples land on the noise schedule.</p>
+                    <p>Negative values bias toward cleaner samples; positive values bias toward noisier. Auto-set from model config — don't change unless experimenting.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-timestep-mu" value="-0.4" step="0.1" data-default="-0.4">
+                  <div class="field-warning" id="warn-timestep-mu"></div>
+                  <div class="hint">From model config. Changes sampling distribution.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Timestep sigma <span class="help-icon" data-help="help-full-ts-sigma">?</span></label>
+                  <div id="help-full-ts-sigma" class="help-panel">
+                    <p><strong>Simple:</strong> Spread of the logit-normal timestep distribution. Higher = more uniform sampling across all noise levels; lower = more concentrated around mu.</p>
+                    <p>1.0 is the default. Reducing to 0.5 focuses training on a narrower band of noise levels.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-timestep-sigma" value="1.0" step="0.1" data-default="1.0" data-validate="gt:0">
+                  <div class="field-error"></div>
+                  <div class="field-warning" id="warn-timestep-sigma"></div>
+                </div>
+              </div>
+
+              <!-- Data loading -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Data Loading</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Num workers <span class="help-icon" data-help="help-full-workers">?</span></label>
+                  <div id="help-full-workers" class="help-panel">
+                    <p><strong>Simple:</strong> Number of CPU threads used to load and prepare data in parallel while the GPU trains. More workers = data is ready faster, preventing GPU idle time.</p>
+                    <p>4 is a safe default. Set to 0 for single-threaded loading (useful for debugging). Don't exceed your CPU core count.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-num-workers" value="4" data-default="4" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Prefetch factor <span class="help-icon" data-help="help-full-prefetch">?</span></label>
+                  <div id="help-full-prefetch" class="help-panel">
+                    <p><strong>Simple:</strong> How many batches each worker pre-loads into memory ahead of time. Higher = smoother data pipeline but uses more RAM.</p>
+                    <p>2 is the PyTorch default and works well for most setups.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-prefetch-factor" value="2" data-default="2" data-validate="gte:1 int">
+                  <div class="field-error"></div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="toggle">
+                    <input type="checkbox" id="full-pin-memory" checked>
+                    <span class="toggle__track"></span>
+                    Pin memory <span class="help-icon" data-help="help-full-pin">?</span>
+                  </label>
+                  <div id="help-full-pin" class="help-panel">
+                    <p><strong>Simple:</strong> Allocates data in page-locked (pinned) CPU memory, which speeds up CPU→GPU transfers. Slightly increases RAM usage but improves data loading throughput.</p>
+                    <p>Leave enabled unless you're running out of system RAM.</p>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="toggle">
+                    <input type="checkbox" id="full-persistent-workers" checked>
+                    <span class="toggle__track"></span>
+                    Keep workers alive <span class="help-icon" data-help="help-full-persist">?</span>
+                  </label>
+                  <div id="help-full-persist" class="help-panel">
+                    <p><strong>Simple:</strong> Keeps data-loading worker processes running between epochs instead of restarting them. Avoids the overhead of re-spawning processes every epoch.</p>
+                    <p>Leave enabled unless workers are leaking memory (very rare).</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Output override -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Output</div>
+              <div class="form-group">
+                <label class="form-group__label">Output directory override <span class="help-icon" data-help="help-full-output">?</span></label>
+                <div id="help-full-output" class="help-panel">
+                  <p><strong>Simple:</strong> Override the auto-generated output path. By default, Side-Step saves to <code>{adapters_dir}/{adapter_type}/{run_name}/</code>.</p>
+                  <p>Only use this if you need a specific location. Leave empty for the standard auto-derived path.</p>
+                </div>
+                <div class="input-with-browse">
+                  <input class="input" type="text" id="full-output-dir" placeholder="(auto: {adapters_dir}/{adapter}/{run_name}/)">
+                  <button class="btn btn--sm browse-btn" data-target="full-output-dir">Browse</button>
+                </div>
+                <div class="hint">Leave empty to use auto-derived path.</div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right column: reactive panels -->
+        <div class="two-col__right">
+
+          <!-- VRAM Budget -->
+          <div class="panel" id="vram-panel">
+            <div class="panel__title">VRAM Budget</div>
+            <div class="vram-bar" id="vram-bar">
+              <div class="vram-bar__segment vram-bar__segment--model" id="vram-seg-model" style="width: 40%"></div>
+              <div class="vram-bar__segment vram-bar__segment--act" id="vram-seg-act" style="width: 25%"></div>
+              <div class="vram-bar__segment vram-bar__segment--opt" id="vram-seg-opt" style="width: 10%"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: var(--font-size-sm); margin-bottom: var(--space-sm);">
+              <span style="color: var(--success);" id="vram-estimated">~11.7 GB estimated</span>
+              <span style="color: var(--muted);" id="vram-available">/ 15.6 GB available</span>
+            </div>
+            <div class="vram-bar__legend" id="vram-legend">
+              <span><span class="vram-bar__legend-dot" style="background: var(--primary);"></span><span id="vram-lbl-model">Model 6.2G</span></span>
+              <span><span class="vram-bar__legend-dot" style="background: var(--accent);"></span><span id="vram-lbl-act">Activations 3.9G</span></span>
+              <span><span class="vram-bar__legend-dot" style="background: var(--error);"></span><span id="vram-lbl-opt">Optimizer 1.6G</span></span>
+            </div>
+          </div>
+
+          <!-- Review Summary -->
+          <div class="panel" id="full-review-panel">
+            <div class="panel__title">Review</div>
+            <div id="full-review-content">
+              <div class="review-table__group" data-jump="full-model-variant" style="cursor:pointer;">Model</div>
+              <div class="review-table__row"><span class="review-table__key">Variant</span><span class="review-table__val" id="rev-variant">turbo</span></div>
+              <div class="review-table__row"><span class="review-table__key">Checkpoint</span><span class="review-table__val" id="rev-ckpt">./checkpoints</span></div>
+              <div class="review-table__group" data-jump="full-adapter-type" style="cursor:pointer;">Adapter</div>
+              <div class="review-table__row"><span class="review-table__key">Type</span><span class="review-table__val" id="rev-adapter">LoRA</span></div>
+              <div class="review-table__row"><span class="review-table__key">Rank</span><span class="review-table__val" id="rev-rank">64</span></div>
+              <div class="review-table__row"><span class="review-table__key">Alpha</span><span class="review-table__val" id="rev-alpha">128</span></div>
+              <div class="review-table__row"><span class="review-table__key">Dropout</span><span class="review-table__val" id="rev-dropout">0.1</span></div>
+              <div class="review-table__row"><span class="review-table__key">Targeting</span><span class="review-table__val" id="rev-targeting">both + MLP</span></div>
+              <div class="review-table__group" data-jump="full-lr" style="cursor:pointer;">Training</div>
+              <div class="review-table__row"><span class="review-table__key">LR</span><span class="review-table__val" id="rev-lr">1e-4</span></div>
+              <div class="review-table__row"><span class="review-table__key">Batch</span><span class="review-table__val" id="rev-batch">1 × 4 = 4</span></div>
+              <div class="review-table__row"><span class="review-table__key">Epochs</span><span class="review-table__val" id="rev-epochs">100</span></div>
+              <div class="review-table__row"><span class="review-table__key">Warmup</span><span class="review-table__val" id="rev-warmup">100 steps</span></div>
+              <div class="review-table__row"><span class="review-table__key">Max steps</span><span class="review-table__val" id="rev-max-steps">off</span></div>
+              <div class="review-table__row"><span class="review-table__key">Dataset repeats</span><span class="review-table__val" id="rev-repeats">1×</span></div>
+              <div class="review-table__group" data-jump="full-offload-encoder" style="cursor:pointer;">VRAM</div>
+              <div class="review-table__row"><span class="review-table__key">Grad ckpt ratio</span><span class="review-table__val" id="rev-ckpt-mode">full</span></div>
+              <div class="review-table__row"><span class="review-table__key">Offload encoder</span><span class="review-table__val" id="rev-offload">yes</span></div>
+              <div class="review-table__row"><span class="review-table__key">Chunk duration</span><span class="review-table__val" id="rev-chunk">off</span></div>
+              <div class="review-table__group" data-jump="full-optimizer" style="cursor:pointer;">Optimizer</div>
+              <div class="review-table__row"><span class="review-table__key">Optimizer</span><span class="review-table__val" id="rev-optimizer">adamw</span></div>
+              <div class="review-table__row"><span class="review-table__key">Scheduler</span><span class="review-table__val" id="rev-scheduler">cosine</span></div>
+              <div class="review-table__row"><span class="review-table__key">Weight decay</span><span class="review-table__val" id="rev-weight-decay">0.01</span></div>
+              <div class="review-table__row"><span class="review-table__key">Max grad norm</span><span class="review-table__val" id="rev-grad-norm">1.0</span></div>
+              <div class="review-table__group" data-jump="full-save-every" style="cursor:pointer;">Saving</div>
+              <div class="review-table__row"><span class="review-table__key">Save every</span><span class="review-table__val" id="rev-save-every">10 epochs</span></div>
+              <div class="review-table__row"><span class="review-table__key">Save best</span><span class="review-table__val" id="rev-save-best">yes</span></div>
+              <div class="review-table__row"><span class="review-table__key">Resume from</span><span class="review-table__val" id="rev-resume">--</span></div>
+            </div>
+            <div style="margin-top: var(--space-lg); display: flex; flex-direction: column; align-items: center; gap: var(--space-xs);">
+              <div style="display:flex; gap:var(--space-sm);">
+                <button class="btn btn--success vram-action" id="btn-start-full">Start Training</button>
+                <button class="btn btn--sm" id="btn-export-cli" title="Copy CLI command to clipboard">Export CLI</button>
+              </div>
+              <div id="full-start-hint" class="u-text-error" style="display:none;font-size:var(--font-size-sm);text-align:center;"></div>
+            </div>
+          </div>
+
+          <!-- CLI Export Panel (hidden until clicked) -->
+          <div class="panel" id="cli-export-panel" style="display: none;">
+            <div class="panel__title">Reproducible CLI Command</div>
+            <pre class="log-viewer" id="cli-export-content" style="max-height: 200px; font-size: 11px; user-select: all;"></pre>
+            <button class="btn btn--sm" id="btn-copy-cli" style="margin-top: var(--space-sm);">Copy to Clipboard</button>
+          </div>
+
+          <!-- Dataset Info -->
+          <div class="panel" id="full-dataset-panel">
+            <div class="panel__title">Dataset</div>
+            <div style="font-size: var(--font-size-sm);" id="full-dataset-info">
+              <div style="color: var(--muted);">No dataset selected</div>
+              <div id="full-pp-status" style="display: none;"></div>
+            </div>
+            <div id="full-ppplus-toggle-row" style="display: none; margin-top: var(--space-xs);">
+              <label class="toggle">
+                <input type="checkbox" id="full-use-ppplus" checked>
+                <span class="toggle__track"></span>
+                Use PP++ ranks for this run
+              </label>
+            </div>
+            <div class="field-warning" id="warn-pp-compat" style="margin-top: var(--space-xs);"></div>
+            <div id="full-pp-run" style="display: none; margin-top: var(--space-sm);">
+              <button class="btn btn--sm" id="btn-full-run-ppplus">Run PP++ Analysis</button>
+            </div>
+          </div>
+
+          <!-- Preset -->
+          <div class="panel">
+            <div class="panel__title">Preset</div>
+            <div style="display: flex; gap: var(--space-sm);">
+              <button class="btn btn--sm" style="flex: 1;" id="btn-load-preset">Load</button>
+              <button class="btn btn--sm" style="flex: 1;" id="btn-save-preset">Save current</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================
+         MONITOR MODE
+         ======================================================== -->
+    <div id="mode-monitor" class="mode-panel">
+
+      <!-- Idle state (no training) -->
+      <div id="monitor-idle" class="single-col" style="text-align: center; padding-top: 80px;">
+        <div style="color: var(--muted); font-size: var(--font-size-lg);">
+          No training in progress.
+        </div>
+        <div style="color: var(--muted); margin-top: var(--space-md);">
+          Configure a run and click "Start Training" to begin.
+        </div>
+        <div style="margin-top: var(--space-lg);">
+          <button class="btn btn--primary" id="btn-monitor-to-ez">Go to Ez Mode</button>
+        </div>
+      </div>
+
+      <!-- Active training state -->
+      <div id="monitor-active" style="display: none;">
+
+        <!-- Run header -->
+        <div style="margin-bottom: var(--space-lg);">
+          <div style="font-size: var(--font-size-xl); font-weight: bold; color: var(--text-bold);" id="monitor-run-name">
+            --
+          </div>
+          <div style="font-size: var(--font-size-sm); color: var(--muted); margin-top: var(--space-xs);" id="monitor-output-dir">
+          </div>
+          <button class="btn btn--sm" id="btn-open-tensorboard" style="margin-top: var(--space-sm);">Open TensorBoard</button>
+        </div>
+
+        <!-- Epoch + Step progress -->
+        <div style="margin-bottom: var(--space-lg);">
+          <div class="progress-labeled">
+            <span class="progress-labeled__label" id="monitor-epoch-label">Epoch 0 / 100</span>
+            <div class="progress-labeled__bar">
+              <div class="progress"><div class="progress__fill" id="monitor-epoch-bar" style="width: 0%"></div></div>
+            </div>
+            <span class="progress-labeled__pct" id="monitor-epoch-pct">0%</span>
+            <span style="color: var(--muted); font-size: var(--font-size-sm); min-width: 80px; text-align: right;" id="monitor-eta">ETA: --</span>
+          </div>
+          <div class="progress-labeled">
+            <span class="progress-labeled__label" id="monitor-step-label">Step 0 / 0</span>
+            <div class="progress-labeled__bar">
+              <div class="progress"><div class="progress__fill progress__fill--success" id="monitor-step-bar" style="width: 0%"></div></div>
+            </div>
+            <span class="progress-labeled__pct" id="monitor-step-pct">0%</span>
+            <span style="color: var(--muted); font-size: var(--font-size-sm); min-width: 80px;"></span>
+          </div>
+        </div>
+
+        <!-- Main two-panel: Loss chart + GPU -->
+        <div class="monitor-grid">
+
+          <!-- Left: Loss chart + stats -->
+          <div>
+            <div class="panel" style="margin-bottom: var(--space-md);">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-sm);">
+                <div class="panel__title" style="margin-bottom: 0;">Loss</div>
+                <div class="chart-toolbar">
+                  <div class="chart-toolbar__group">
+                    <button class="btn btn--sm chart-toggle active" data-series="loss" aria-pressed="true">Loss</button>
+                    <button class="btn btn--sm chart-toggle active" data-series="ma5" aria-pressed="true">MA5</button>
+                    <button class="btn btn--sm chart-toggle active" data-series="lr" aria-pressed="true">LR</button>
+                  </div>
+                  <div class="chart-toolbar__group">
+                    <button class="btn btn--sm chart-axis" data-axis="step" aria-pressed="false">per Step</button>
+                    <button class="btn btn--sm chart-axis active" data-axis="epoch" aria-pressed="true">per Epoch</button>
+                  </div>
+                  <div class="chart-toolbar__group" style="display: flex; align-items: center; gap: 4px;">
+                    <span style="font-size: 10px; color: var(--muted);">Smooth</span>
+                    <input type="range" id="chart-smoothing" min="0" max="99" value="60" style="width: 60px; height: 14px; accent-color: var(--primary);">
+                    <span id="chart-smoothing-val" style="font-size: 10px; color: var(--muted); min-width: 28px;">0.6</span>
+                  </div>
+                  <div class="chart-toolbar__group">
+                    <button class="btn btn--sm chart-zoom" data-zoom="reset" title="Fit to data (reset zoom)">⊡</button>
+                  </div>
+                </div>
+              </div>
+              <div class="chart-area" style="min-height: 240px; position: relative; overflow: hidden;" id="monitor-chart-area">
+                <!-- Y-axis labels LEFT (loss scale) -->
+                <div id="monitor-y-labels" style="position: absolute; left: 0; top: 0; bottom: 20px; width: 48px; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none;"></div>
+                <!-- Y-axis labels RIGHT (LR scale) -->
+                <div id="monitor-y-labels-right" style="position: absolute; right: 0; top: 0; bottom: 20px; width: 52px; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none;"></div>
+                <!-- X-axis labels -->
+                <div id="monitor-x-labels" class="axis-label-row" style="position: absolute; left: 48px; right: 52px; bottom: 0; z-index: 2; pointer-events: none;"></div>
+                <!-- Legend (HTML) -->
+                <div id="monitor-legend" style="position: absolute; top: 6px; right: 60px; z-index: 2; display: flex; gap: 12px; font-size: 11px; font-family: var(--font-mono); pointer-events: none;">
+                  <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 16px; height: 2px; background: var(--primary);"></span><span style="color: var(--primary);">Loss</span></span>
+                  <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 16px; height: 0; border-top: 2px dashed var(--changed);"></span><span style="color: var(--changed);">MA5</span></span>
+                  <span style="display: flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 16px; height: 0; border-top: 2px dotted var(--secondary);"></span><span style="color: var(--secondary);">LR</span></span>
+                </div>
+                <!-- SVG: gridlines + data polylines -->
+                <svg style="position: absolute; left: 48px; top: 0; right: 52px; bottom: 20px; width: calc(100% - 100px); height: calc(100% - 20px);" preserveAspectRatio="none" id="monitor-loss-svg">
+                  <g id="monitor-grid-lines"></g>
+                  <polyline id="monitor-loss-raw" fill="none" stroke="var(--primary)" stroke-width="1" vector-effect="non-scaling-stroke" opacity="0.2" points="" />
+                  <polyline id="monitor-loss-line" fill="none" stroke="var(--primary)" stroke-width="1.2" vector-effect="non-scaling-stroke" points="" />
+                  <polyline id="monitor-ma-line" fill="none" stroke="var(--changed)" stroke-width="1" stroke-dasharray="4,4" vector-effect="non-scaling-stroke" opacity="0.7" points="" />
+                  <polyline id="monitor-lr-line" fill="none" stroke="var(--secondary)" stroke-width="0.9" stroke-dasharray="2,3" vector-effect="non-scaling-stroke" opacity="0.85" points="" />
+                </svg>
+                <!-- Drag-zoom overlay (shown while dragging) -->
+                <div id="chart-drag-overlay" style="display:none; position:absolute; background:rgba(92,207,230,0.12); border:1px solid var(--primary); pointer-events:none; z-index:4;"></div>
+                <!-- Crosshair + tooltip -->
+                <div id="chart-crosshair" style="display:none; position:absolute; top:0; bottom:20px; width:1px; background:var(--muted); opacity:0.5; pointer-events:none; z-index:3;"></div>
+                <div id="chart-tooltip" style="display:none; position:absolute; z-index:5; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:4px 8px; font-size:10px; font-family:var(--font-mono); pointer-events:none; white-space:nowrap;"></div>
+              </div>
+            </div>
+
+            <!-- Stats row -->
+            <div class="stats-row" style="margin-bottom: var(--space-lg);">
+              <div class="stat"><div class="stat__label">Current Loss</div><div class="stat__value" id="monitor-loss">--</div></div>
+              <div class="stat"><div class="stat__label">Best Loss</div><div class="stat__value stat__value--success" id="monitor-best-loss">--</div></div>
+              <div class="stat"><div class="stat__label">Best Epoch</div><div class="stat__value" id="monitor-best-epoch">--</div></div>
+              <div class="stat"><div class="stat__label">Learning Rate</div><div class="stat__value" id="monitor-lr">--</div></div>
+              <div class="stat"><div class="stat__label">MA5</div><div class="stat__value" id="monitor-ma5">--</div></div>
+            </div>
+
+            <!-- Controls (toggled, never destroyed) -->
+            <div id="monitor-controls" style="display: flex; gap: var(--space-md); margin-bottom: var(--space-lg);">
+              <button class="btn btn--danger" id="btn-stop">Stop Training</button>
+              <button class="btn" id="btn-open-output">Open Output Dir</button>
+              <span style="color: var(--muted); font-size: var(--font-size-sm); align-self: center;">Stop is irreversible — use Resume from History to continue.</span>
+            </div>
+
+            <!-- Completion banner (shown after training ends, hidden on new run) -->
+            <div id="monitor-completion" style="display: none; margin-bottom: var(--space-lg);"></div>
+
+            <!-- Log viewer -->
+            <div class="panel">
+              <div class="panel__title">Training Log</div>
+              <div class="log-viewer" id="monitor-log">
+                <div class="log-entry log-entry--info">  [info]  Waiting for training to start...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: GPU + timing -->
+          <div>
+            <div class="panel" style="margin-bottom: var(--space-md);">
+              <div class="panel__title">GPU</div>
+              <div class="gpu-gauge">
+                <div class="gpu-gauge__row">
+                  <span class="gpu-gauge__label">VRAM</span>
+                  <div class="gpu-gauge__bar">
+                    <div class="progress"><div class="progress__fill" id="monitor-vram-bar" style="width: 0%"></div></div>
+                  </div>
+                  <span class="gpu-gauge__val" id="monitor-vram-val">-- / -- GB</span>
+                </div>
+                <div class="gpu-gauge__row">
+                  <span class="gpu-gauge__label">Util</span>
+                  <div class="gpu-gauge__bar">
+                    <div class="progress"><div class="progress__fill progress__fill--success" id="monitor-util-bar" style="width: 0%"></div></div>
+                  </div>
+                  <span class="gpu-gauge__val" id="monitor-util-val">--%</span>
+                </div>
+                <div class="gpu-gauge__extras">
+                  <span id="monitor-temp">Temp: --°C</span>
+                  <span id="monitor-power">Power: --W</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel" style="margin-bottom: var(--space-md);">
+              <div class="panel__title">Timing</div>
+              <div style="font-size: var(--font-size-sm);">
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Steps/s</span><span id="monitor-sps">--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Step time</span><span id="monitor-step-time">--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Epoch time</span><span id="monitor-epoch-time">--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Elapsed</span><span id="monitor-elapsed">--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">ETA</span><span style="color: var(--primary);" id="monitor-eta-right">--</span></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel__title">Config</div>
+              <div style="font-size: var(--font-size-sm);" id="monitor-config-summary">
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Adapter</span><span>--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Model</span><span>--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Rank</span><span>--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">LR</span><span>--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Batch</span><span>--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Checkpointing</span><span>--</span></div>
+                <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Optimizer</span><span>--</span></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================
+         LAB MODE
+         ======================================================== -->
+    <div id="mode-lab" class="mode-panel">
+
+      <nav class="lab-nav">
+        <button class="lab-nav__item active" data-lab="history">History</button>
+        <button class="lab-nav__item" data-lab="datasets">Tensor Datasets</button>
+        <button class="lab-nav__item" data-lab="dataset">Audio Library</button>
+        <button class="lab-nav__item" data-lab="preprocess">Preprocess</button>
+        <button class="lab-nav__item" data-lab="ppplus">PP++</button>
+      </nav>
+
+      <!-- History -->
+      <div id="lab-history" class="lab-panel active">
+        <div class="data-table-header">
+          <div class="section-header">Run History</div>
+          <div class="data-table-footer" id="history-count" style="margin:0;">-- runs total</div>
+        </div>
+        <table class="data-table" id="history-table">
+          <thead>
+            <tr>
+              <th>Run Name</th>
+              <th>Adapter</th>
+              <th>Model</th>
+              <th>Epochs</th>
+              <th>Best Loss</th>
+              <th>Duration</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
+        <div style="margin-top: var(--space-lg); display: flex; gap: var(--space-md);">
+          <button class="btn btn--primary btn--sm" id="btn-compare-selected" disabled>Compare Selected <span id="history-selected-count" style="color: var(--muted);"></span></button>
+          <button class="btn btn--success btn--sm" id="btn-resume-selected" disabled>Resume Selected</button>
+          <button class="btn btn--sm" id="btn-export-csv">Export as CSV</button>
+        </div>
+
+        <!-- Inline Compare (shown when Compare Selected is clicked) -->
+        <div id="history-compare-panel" style="display: none; margin-top: var(--space-lg);">
+          <!-- Hidden selectors used by history.js _runCompare -->
+          <select id="compare-run-a" style="display: none;"></select>
+          <select id="compare-run-b" style="display: none;"></select>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md);">
+            <div class="section-header" style="margin: 0;">Compare Runs</div>
+            <button class="btn btn--sm" id="btn-close-compare">x Close</button>
+          </div>
+
+          <div class="panel" style="margin-bottom: var(--space-md);">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div class="panel__title" style="margin:0;">Loss Curves (overlaid)</div>
+              <div style="display:flex;align-items:center;gap:var(--space-sm);font-size:var(--font-size-xs);color:var(--muted);">
+                <span>Smooth</span>
+                <input type="range" min="0" max="95" value="0" id="compare-smoothing" style="width:80px;">
+                <span id="compare-smoothing-val" style="font-family:var(--font-mono);min-width:28px;">0.00</span>
+                <button class="btn btn--sm" id="btn-compare-zoom-reset" title="Reset zoom">↺</button>
+              </div>
+            </div>
+            <div style="font-size:9px;color:var(--muted);margin-bottom:2px;">Drag box to zoom · Shift+drag to pan · Wheel to zoom · Double-click reset · Hover for values</div>
+            <div style="display: flex; gap: 0;">
+              <div id="compare-y-labels" style="display:flex;flex-direction:column;justify-content:space-between;padding:4px 0;min-width:44px;text-align:right;"></div>
+              <div class="chart-area" style="min-height: 200px; flex: 1; position:relative;" id="compare-chart-area">
+                <svg viewBox="0 0 400 160" style="width: 100%; height: 100%;" preserveAspectRatio="none" id="compare-loss-svg">
+                  <line x1="0" y1="40"  x2="400" y2="40"  stroke="var(--border)" stroke-width="0.5" />
+                  <line x1="0" y1="80"  x2="400" y2="80"  stroke="var(--border)" stroke-width="0.5" />
+                  <line x1="0" y1="120" x2="400" y2="120" stroke="var(--border)" stroke-width="0.5" />
+                  <polyline id="compare-raw-a" fill="none" stroke="var(--primary)" stroke-width="0.9" opacity="0.2" points="" />
+                  <polyline id="compare-raw-b" fill="none" stroke="var(--warning)" stroke-width="0.9" opacity="0.2" points="" />
+                  <polyline id="compare-line-a" fill="none" stroke="var(--primary)" stroke-width="1.3" points="" />
+                  <polyline id="compare-line-b" fill="none" stroke="var(--warning)" stroke-width="1.3" points="" />
+                  <line id="compare-end-a" x1="0" y1="0" x2="0" y2="160" stroke="var(--primary)" stroke-width="0.8" opacity="0.45" style="display:none;" />
+                  <line id="compare-end-b" x1="0" y1="0" x2="0" y2="160" stroke="var(--warning)" stroke-width="0.8" opacity="0.45" style="display:none;" />
+                </svg>
+                <div class="compare-legend">
+                  <div class="compare-legend__item">
+                    <span class="compare-legend__swatch" style="background:var(--primary);"></span>
+                    <span class="compare-legend__name u-text-primary" id="compare-legend-a" title="Run A">Run A</span>
+                  </div>
+                  <div class="compare-legend__item">
+                    <span class="compare-legend__swatch" style="background:var(--warning);"></span>
+                    <span class="compare-legend__name u-text-warning" id="compare-legend-b" title="Run B">Run B</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="compare-x-labels" class="axis-label-row" style="margin-left:44px;"></div>
+          </div>
+
+          <div style="display: flex; gap: var(--space-md);">
+            <div class="panel" style="flex: 1;">
+              <div class="panel__title">What Changed?</div>
+              <div style="font-size: var(--font-size-sm);" id="compare-summary">
+                <span style="color: var(--muted);">Select two runs to compare</span>
+              </div>
+            </div>
+            <div class="panel" style="flex: 1;">
+              <div class="panel__title">Config Diff</div>
+              <table class="data-table" id="compare-diff-table">
+                <thead><tr><th>Parameter</th><th style="color: var(--primary);">Run A</th><th style="color: var(--warning);">Run B</th></tr></thead>
+                <tbody id="compare-diff-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tensor Datasets -->
+      <div id="lab-datasets" class="lab-panel">
+        <div class="data-table-header">
+          <div class="section-header">Tensor Datasets</div>
+          <div class="data-table-header__actions">
+            <button class="btn btn--sm btn--primary" id="btn-refresh-datasets">Refresh</button>
+          </div>
+        </div>
+        <p style="color: var(--muted); font-size: var(--font-size-sm); margin-bottom: var(--space-md);">
+          Train-ready tensor versions scanned from Settings roots. Each tensor dataset can keep lineage back to source audio.
+        </p>
+
+        <table class="data-table" id="datasets-table">
+          <thead>
+            <tr>
+              <th>Tensor Version</th>
+              <th>Files</th>
+              <th>Duration</th>
+              <th>Source Audio</th>
+              <th>Location</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="datasets-tbody">
+          </tbody>
+        </table>
+
+        <div id="datasets-footer" class="data-table-footer">
+          Scanning datasets...
+        </div>
+
+        <!-- Link Audio Dialog (hidden by default) -->
+        <div id="datasets-link-dialog" style="display: none; margin-top: var(--space-lg);">
+          <div class="panel" style="border-color: var(--primary);">
+            <div class="panel__title" style="color: var(--primary);">Link Audio Folder</div>
+            <p style="font-size: var(--font-size-sm); color: var(--muted); margin-bottom: var(--space-md);">
+              Point to the original audio folder so you can browse and edit .txt sidecars from Audio Library,
+              even when training uses preprocessed tensors.
+            </p>
+            <div class="form-group">
+              <label class="form-group__label">Audio folder path</label>
+              <div class="input-with-browse">
+                <input class="input" type="text" id="datasets-link-path" placeholder="./my_audio">
+                <button class="btn btn--sm browse-btn" data-target="datasets-link-path">Browse</button>
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-sm);">
+              <button class="btn btn--primary btn--sm" id="btn-datasets-link-confirm">Link</button>
+              <button class="btn btn--sm" id="btn-datasets-link-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audio Library -->
+      <div id="lab-dataset" class="lab-panel">
+        <div class="data-table-header">
+          <div class="section-header">Audio Library</div>
+          <div class="data-table-header__actions">
+            <button class="btn btn--sm" id="btn-refresh-audio-library">Refresh</button>
+            <button class="btn btn--sm btn--primary" id="btn-gen-captions">Generate AI Captions</button>
+            <button class="btn btn--sm" id="btn-add-trigger">Add Trigger Tag to All</button>
+          </div>
+        </div>
+        <p style="color: var(--muted); font-size: var(--font-size-sm); margin-bottom: var(--space-md);">
+          Source audio lives at <strong>Settings → Audio directory</strong>. Edit sidecars and captions here before preprocessing.
+        </p>
+
+        <div class="form-group" style="margin-bottom: var(--space-md);">
+          <input class="input" type="text" id="lab-dataset-path" placeholder="Settings > Audio directory" readonly style="opacity: 0.75;">
+          <div style="font-size: var(--font-size-xs); color: var(--muted); margin-top: 4px;">Path is controlled by <strong>Settings → Audio directory</strong>.</div>
+          <div class="detect" id="lab-dataset-detect"></div>
+        </div>
+
+        <!-- Bulk actions toolbar (appears when files selected) -->
+        <div id="dataset-bulk-toolbar" class="dataset-bulk-toolbar" style="display:none;">
+          <span class="dataset-bulk-toolbar__count" id="dataset-bulk-count">0 selected</span>
+          <button class="btn btn--sm" id="dataset-bulk-trigger">Apply Trigger Tag</button>
+          <button class="btn btn--sm" id="dataset-bulk-preprocess">Preprocess Selected</button>
+          <button class="btn btn--sm" id="dataset-bulk-clear">Clear Selection</button>
+          <div id="dataset-bulk-warn" class="u-text-warning" style="display:none;font-size:var(--font-size-xs);margin-left:auto;"></div>
+        </div>
+
+        <table class="data-table" id="dataset-table">
+          <thead>
+            <tr>
+              <th>Audio File</th>
+              <th>Duration</th>
+              <th>Metadata</th>
+              <th>Genre</th>
+              <th>Tags</th>
+              <th>Trigger Tag</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="dataset-tbody"></tbody>
+        </table>
+
+        <div id="dataset-footer" class="data-table-footer">
+          -- files scanned
+        </div>
+
+        <!-- AI Caption Generation Panel -->
+        <div class="section-group" style="margin-top: var(--space-lg);">
+          <button class="section-group__toggle">AI Caption Generation</button>
+          <div class="section-group__body" id="ai-caption-panel">
+            <div class="form-row">
+              <div class="form-group" style="flex: 1;">
+                <label class="form-group__label">Caption Provider</label>
+                <select class="select" id="caption-provider">
+                  <option value="gemini" selected>Gemini</option>
+                  <option value="openai">OpenAI / Compatible</option>
+                  <option value="skip">Skip AI captions</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label class="form-group__label">Overwrite Policy</label>
+                <select class="select" id="caption-overwrite">
+                  <option value="fill_missing" selected>Fill missing only</option>
+                  <option value="overwrite_caption">Overwrite captions only</option>
+                  <option value="overwrite_all">Overwrite all fields</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- API Key status (reads from Settings) -->
+            <div style="display: flex; gap: var(--space-lg); margin-bottom: var(--space-md); font-size: var(--font-size-sm);">
+              <div>
+                <span style="color: var(--muted);">Gemini:</span>
+                <span class="api-key-badge" id="caption-gemini-badge" style="color: var(--muted);">not set</span>
+              </div>
+              <div>
+                <span style="color: var(--muted);">OpenAI:</span>
+                <span class="api-key-badge" id="caption-openai-badge" style="color: var(--muted);">not set</span>
+              </div>
+              <div>
+                <span style="color: var(--muted);">Genius:</span>
+                <span class="api-key-badge" id="caption-genius-badge" style="color: var(--muted);">not set</span>
+              </div>
+              <a href="#" id="caption-open-settings" style="color: var(--primary); font-size: var(--font-size-sm);">Configure in Settings</a>
+            </div>
+
+            <!-- Gemini model (per-run config, not a key) -->
+            <div id="caption-gemini-settings">
+              <div class="form-group">
+                <label class="form-group__label">Gemini Model</label>
+                <select class="select" id="caption-gemini-model">
+                  <option value="gemini-2.0-flash" selected>gemini-2.0-flash</option>
+                  <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+                  <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- OpenAI model (per-run, hidden by default) -->
+            <div id="caption-openai-settings" style="display: none;">
+              <div class="form-row">
+                <div class="form-group" style="flex: 1;">
+                  <label class="form-group__label">OpenAI Model</label>
+                  <input class="input" type="text" id="caption-openai-model" value="gpt-4o-mini">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                  <label class="form-group__label">Base URL (empty = default)</label>
+                  <input class="input" type="text" id="caption-openai-base" placeholder="https://api.openai.com/v1">
+                </div>
+              </div>
+            </div>
+
+            <!-- Default Artist -->
+            <div class="form-group">
+              <label class="form-group__label">Default Artist (for lyrics lookup)</label>
+              <input class="input" type="text" id="caption-default-artist" placeholder="Auto-detect from filename">
+            </div>
+
+            <!-- Batch progress -->
+            <div id="caption-batch-progress" style="display: none; margin-top: var(--space-md);">
+              <div class="progress-labeled">
+                <span class="progress-labeled__label" id="caption-progress-label">Processing 0 / 0</span>
+                <div class="progress-labeled__bar">
+                  <div class="progress"><div class="progress__fill progress__fill--success" id="caption-progress-bar" style="width: 0%"></div></div>
+                </div>
+                <span class="progress-labeled__pct" id="caption-progress-pct">0%</span>
+              </div>
+              <div class="log-viewer" id="caption-log" style="max-height: 150px; margin-top: var(--space-sm);"></div>
+              <div style="margin-top: var(--space-sm); font-size: var(--font-size-sm);">
+                <span style="color: var(--success);" id="caption-stat-written">0 written</span> ·
+                <span style="color: var(--muted);" id="caption-stat-skipped">0 skipped</span> ·
+                <span style="color: var(--error);" id="caption-stat-failed">0 failed</span>
+              </div>
+            </div>
+
+            <div style="margin-top: var(--space-md); display: flex; gap: var(--space-sm);">
+              <button class="btn btn--primary vram-action" id="btn-run-captions">Run AI Captions</button>
+              <button class="btn btn--danger" id="btn-stop-captions" style="display: none;">Stop</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preprocess (audio → tensors) -->
+      <div id="lab-preprocess" class="lab-panel">
+        <div class="section-header">Preprocess Audio to Tensors</div>
+        <p style="color: var(--muted); margin-bottom: var(--space-lg); font-size: var(--font-size-sm);">
+          Convert raw audio files into preprocessed .pt tensors for training.
+          This encodes audio through the model's VAE — required before training on raw audio.
+        </p>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">
+              Model
+              <span class="help-icon" data-help="help-pp-model">?</span>
+            </label>
+            <select class="select model-picker" id="pp-model-variant">
+              <option value="turbo" selected>turbo</option>
+              <option value="base">base</option>
+              <option value="sft">sft</option>
+            </select>
+            <div id="help-pp-model" class="help-panel">
+              <p>Auto-detected from your checkpoint directory. <em>Can't find it? Check Settings.</em></p>
+            </div>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">Normalization</label>
+            <select class="select" id="pp-normalize">
+              <option value="peak" selected>Peak (-1.0 dBFS)</option>
+              <option value="lufs">LUFS (-14 LUFS, needs pyloudnorm)</option>
+              <option value="none">None (raw audio)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 0.5;" id="pp-peak-target-group">
+            <label class="form-group__label">Target dBFS</label>
+            <input class="input" type="number" id="pp-peak-target" value="-1.0" step="0.1">
+          </div>
+          <div class="form-group" style="flex: 0.5; display: none;" id="pp-lufs-target-group">
+            <label class="form-group__label">Target LUFS</label>
+            <input class="input" type="number" id="pp-lufs-target" value="-14.0" step="0.5">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-group__label">Audio source folder</label>
+          <div class="input-with-browse">
+            <input class="input" type="text" id="pp-audio-dir" placeholder="./my_audio">
+            <button class="btn btn--sm browse-btn" data-target="pp-audio-dir">Browse</button>
+          </div>
+          <div id="pp-audio-source" class="u-text-muted" style="font-size:var(--font-size-xs);margin-top:2px;"></div>
+          <div class="detect" id="pp-audio-detect" style="margin-top: var(--space-xs);"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-group__label">Output directory</label>
+          <div style="display: flex; align-items: center; gap: var(--space-sm);">
+            <input class="input" type="text" id="pp-output-dir" readonly style="opacity: 0.7;">
+            <a href="#" id="pp-output-edit" style="font-size: var(--font-size-sm); color: var(--primary); white-space: nowrap;">Edit</a>
+            <a href="#" id="pp-output-reset" style="font-size: var(--font-size-sm); color: var(--warning); white-space: nowrap; display: none;">Reset to auto</a>
+          </div>
+          <div class="hint">Auto-derived from Settings tensors directory + audio folder name</div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">Trigger tag (optional)</label>
+            <input class="input" type="text" id="pp-trigger-tag" placeholder="e.g. suno_v4">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">Tag position</label>
+            <select class="select" id="pp-tag-position">
+              <option value="prepend" selected>Prepend</option>
+              <option value="append">Append</option>
+              <option value="replace">Replace caption</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">Genre ratio (%)</label>
+            <input class="input" type="number" id="pp-genre-ratio" min="0" max="100" value="0" placeholder="0-100" title="Percentage of samples that use genre instead of caption as the training prompt">
+          </div>
+        </div>
+
+        <!-- Duration scan results -->
+        <div id="pp-duration-scan" style="display: none; margin-top: var(--space-md);">
+          <div class="panel">
+            <div class="panel__title">Duration Scan</div>
+            <div class="log-viewer" id="pp-duration-log" style="max-height: 200px;"></div>
+            <div style="margin-top: var(--space-sm); font-size: var(--font-size-sm);">
+              <span id="pp-duration-summary" style="color: var(--muted);"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preprocess queue (shown when multiple folders are queued) -->
+        <div id="pp-queue-panel" style="display: none; margin-top: var(--space-md);">
+          <div class="panel" style="border-color: var(--primary);">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div class="panel__title" style="margin:0;color:var(--primary);">Preprocessing Queue</div>
+              <button class="btn btn--danger btn--sm" id="btn-cancel-pp-queue">Cancel Queue</button>
+            </div>
+            <div id="pp-queue-list" style="margin-top:var(--space-sm);font-size:var(--font-size-sm);"></div>
+          </div>
+        </div>
+
+        <!-- Preprocess progress -->
+        <div id="pp-progress-panel" style="display: none; margin-top: var(--space-md);">
+          <div class="progress-labeled">
+            <span class="progress-labeled__label" id="pp-progress-label">Preprocessing 0 / 0</span>
+            <div class="progress-labeled__bar">
+              <div class="progress"><div class="progress__fill progress__fill--success" id="pp-progress-bar" style="width: 0%"></div></div>
+            </div>
+            <span class="progress-labeled__pct" id="pp-progress-pct">0%</span>
+          </div>
+          <div class="log-viewer" id="pp-log" style="max-height: 150px; margin-top: var(--space-sm);"></div>
+          <button class="btn btn--danger btn--sm" id="btn-stop-preprocess" style="margin-top: var(--space-sm);">Cancel Preprocessing</button>
+        </div>
+
+        <!-- Preprocess complete -->
+        <div id="pp-complete-panel" style="display: none; margin-top: var(--space-md);">
+          <div class="panel" style="border-color: var(--success);">
+            <div class="panel__title" style="color: var(--success);">Preprocessing Complete</div>
+            <div style="font-size: var(--font-size-sm);">
+              <div id="pp-complete-summary"></div>
+              <div style="margin-top: var(--space-md); display: flex; gap: var(--space-sm);">
+                <button class="btn btn--success" id="btn-pp-chain-train">Train on these tensors</button>
+                <button class="btn" id="btn-pp-chain-ppplus">Run PP++ on these tensors</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: var(--space-lg); display: flex; gap: var(--space-md);">
+          <button class="btn btn--primary" id="btn-scan-audio">Scan Audio</button>
+          <button class="btn btn--success vram-action" id="btn-start-preprocess" disabled>Start Preprocessing</button>
+        </div>
+      </div>
+
+      <!-- PP++ (Fisher Analysis) -->
+      <div id="lab-ppplus" class="lab-panel">
+        <div class="section-header">Preprocessing++ (Adaptive Ranks)</div>
+        <p style="color: var(--muted); margin-bottom: var(--space-lg); font-size: var(--font-size-sm);">
+          Fisher Information analysis assigns adaptive per-module LoRA ranks based on how important
+          each attention module is for your specific dataset. Takes ~1-2 min. Produces a
+          <code>fisher_map.json</code> that training auto-detects.
+          <strong>Only works with LoRA and DoRA adapters.</strong>
+        </p>
+
+        <div class="form-group">
+          <label class="form-group__label">
+            Dataset (preprocessed .pt tensors)
+            <span class="help-icon" data-help="help-ppplus-dataset">?</span>
+          </label>
+          <select class="select dataset-picker" id="ppplus-dataset-dir">
+            <option value="">Select a dataset...</option>
+          </select>
+          <div class="detect" id="ppplus-dataset-detect"></div>
+          <div id="help-ppplus-dataset" class="help-panel">
+            <p>Tensor folders found in your preprocessed tensors directory.</p>
+            <p><em>Can't find your dataset? Check Settings.</em></p>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">
+              Model
+              <span class="help-icon" data-help="help-ppplus-model">?</span>
+            </label>
+            <select class="select model-picker" id="ppplus-model-variant">
+              <option value="turbo" selected>turbo</option>
+              <option value="base">base</option>
+              <option value="sft">sft</option>
+            </select>
+            <div id="help-ppplus-model" class="help-panel">
+              <p>Auto-detected from your checkpoint directory. <em>Can't find it? Check Settings.</em></p>
+            </div>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">Timestep focus</label>
+            <select class="select" id="ppplus-timestep-focus">
+              <option value="balanced" selected>Balanced</option>
+              <option value="early">Early (noise reduction)</option>
+              <option value="late">Late (detail)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">Base rank</label>
+            <input class="input" type="number" id="ppplus-base-rank" value="64">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">Rank min</label>
+            <input class="input" type="number" id="ppplus-rank-min" value="16">
+            <div class="field-warning" id="warn-ppplus-rank-min"></div>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-group__label">Rank max</label>
+            <input class="input" type="number" id="ppplus-rank-max" value="128">
+            <div class="field-warning" id="warn-ppplus-rank-max"></div>
+          </div>
+        </div>
+        <div class="field-warning" id="warn-ppplus-rank-order" style="margin-bottom: var(--space-sm);"></div>
+        <div class="field-warning" id="warn-ppplus-small-dataset" style="margin-bottom: var(--space-sm);"></div>
+        <div style="font-size: var(--font-size-sm); color: var(--muted); margin-bottom: var(--space-sm);" id="ppplus-time-estimate"></div>
+
+        <!-- PP++ Status -->
+        <div class="panel" style="margin-top: var(--space-lg);" id="ppplus-status-panel">
+          <div class="panel__title">Fisher Map Status</div>
+          <div style="font-size: var(--font-size-sm);" id="ppplus-status-content">
+            <span style="color: var(--muted);">Select a dataset folder to check for existing fisher_map.json</span>
+          </div>
+        </div>
+
+        <!-- PP++ Progress -->
+        <div id="ppplus-progress-panel" style="display: none; margin-top: var(--space-md);">
+          <div class="progress-labeled">
+            <span class="progress-labeled__label" id="ppplus-progress-label">Fisher run 0 / 0</span>
+            <div class="progress-labeled__bar">
+              <div class="progress"><div class="progress__fill" id="ppplus-progress-bar" style="width: 0%"></div></div>
+            </div>
+            <span class="progress-labeled__pct" id="ppplus-progress-pct">0%</span>
+          </div>
+          <div class="log-viewer" id="ppplus-log" style="max-height: 200px; margin-top: var(--space-sm);"></div>
+        </div>
+
+        <!-- PP++ Results -->
+        <div id="ppplus-results-panel" style="display: none; margin-top: var(--space-md);">
+          <div class="panel" style="border-color: var(--success);">
+            <div class="panel__title" style="color: var(--success);">PP++ Analysis Complete</div>
+            <div style="font-size: var(--font-size-sm);">
+              <div id="ppplus-results-summary"></div>
+              <table class="data-table" style="margin-top: var(--space-sm);">
+                <thead><tr><th>Module</th><th>Fisher Score</th><th>Spectral</th><th>Assigned Rank</th></tr></thead>
+                <tbody id="ppplus-results-tbody"></tbody>
+              </table>
+              <div style="margin-top: var(--space-md); display: flex; gap: var(--space-sm);">
+                <button class="btn btn--success" id="btn-ppplus-chain-train">Train with PP++ targeting</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: var(--space-lg); display: flex; gap: var(--space-md);">
+          <button class="btn btn--primary vram-action" id="btn-run-ppplus">Run PP++ Analysis</button>
+          <button class="btn btn--danger" id="btn-stop-ppplus" style="display: none;">Cancel</button>
+        </div>
+      </div>
+
+      <!-- (Presets and Settings removed from Lab — now global) -->
+
+    </div>
+
+  </main>
+
+  <!-- ============================================================
+       Sidecar Editor (slide-out panel)
+       ============================================================ -->
+  <div class="sidecar-editor" id="sidecar-editor">
+    <div class="sidecar-editor__header">
+      <span class="sidecar-editor__title" id="sidecar-editor-title">Edit Sidecar</span>
+      <button class="sidecar-editor__close" id="sidecar-editor-close">x</button>
+    </div>
+    <div class="sidecar-editor__body">
+      <div class="form-group">
+        <label class="form-group__label">File</label>
+        <div style="color: var(--text-bold); font-size: var(--font-size-sm);" id="sidecar-filename">--</div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Caption</label>
+        <textarea class="input" id="sidecar-caption" rows="3" placeholder="AI-generated description of the track..."></textarea>
+        <div class="hint">Main text description used for training conditioning</div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Genre</label>
+        <input class="input" type="text" id="sidecar-genre" placeholder="e.g. synthwave, lofi, metal">
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex: 1;">
+          <label class="form-group__label">BPM</label>
+          <input class="input" type="number" id="sidecar-bpm" placeholder="120">
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label class="form-group__label">Key</label>
+          <input class="input" type="text" id="sidecar-key" placeholder="e.g. C# minor">
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label class="form-group__label">Time Sig</label>
+          <input class="input" type="text" id="sidecar-signature" placeholder="e.g. 4/4">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Tags</label>
+        <input class="input" type="text" id="sidecar-tags" placeholder="e.g. dark, driving, atmospheric">
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Trigger tag</label>
+        <input class="input" type="text" id="sidecar-trigger" placeholder="e.g. suno_v4">
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Lyrics (excerpt)</label>
+        <textarea class="input" id="sidecar-lyrics" rows="4" placeholder="Paste lyrics here..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="toggle">
+          <input type="checkbox" id="sidecar-instrumental">
+          <span class="toggle__track"></span>
+          Instrumental (no lyrics)
+        </label>
+      </div>
+      <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-lg);">
+        <button class="btn btn--primary" id="sidecar-save">Save</button>
+        <button class="btn" id="sidecar-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Settings Slide-out (global, opened by gear icon)
+       ============================================================ -->
+  <div class="settings-panel" id="settings-panel">
+    <div class="settings-panel__header">
+      <span class="settings-panel__title">Settings</span>
+      <button class="settings-panel__close" id="settings-panel-close">x</button>
+    </div>
+    <div class="settings-panel__body">
+      <div class="section-header">Directories</div>
+      <div class="form-group">
+        <label class="form-group__label">Checkpoint directory</label>
+        <div class="input-with-browse">
+          <input class="input" type="text" id="settings-checkpoint-dir">
+          <button class="btn btn--sm browse-btn" data-target="settings-checkpoint-dir">Browse</button>
+        </div>
+        <div class="hint">Where model weights live (turbo, base, sft subfolders)</div>
+        <div id="settings-checkpoint-hint" style="font-size:var(--font-size-xs);margin-top:2px;"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Trained adapters directory</label>
+        <div class="input-with-browse">
+          <input class="input" type="text" id="settings-adapters-dir">
+          <button class="btn btn--sm browse-btn" data-target="settings-adapters-dir">Browse</button>
+        </div>
+        <div class="hint">Where training outputs are saved</div>
+        <div id="settings-adapters-hint" style="font-size:var(--font-size-xs);margin-top:2px;"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Preprocessed tensors directory</label>
+        <div class="input-with-browse">
+          <input class="input" type="text" id="settings-tensors-dir">
+          <button class="btn btn--sm browse-btn" data-target="settings-tensors-dir">Browse</button>
+        </div>
+        <div class="hint">Where preprocessed .pt tensor folders are stored</div>
+        <div id="settings-tensors-hint" style="font-size:var(--font-size-xs);margin-top:2px;"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Source audio directory</label>
+        <div class="input-with-browse">
+          <input class="input" type="text" id="settings-audio-dir" placeholder="./my_audio">
+          <button class="btn btn--sm browse-btn" data-target="settings-audio-dir">Browse</button>
+        </div>
+        <div class="hint">Where your raw audio files live (default for preprocessing &amp; dataset linking)</div>
+        <div id="settings-audio-hint" style="font-size:var(--font-size-xs);margin-top:2px;"></div>
+      </div>
+
+      <div class="section-header">API Keys</div>
+      <div class="form-group">
+        <label class="form-group__label">Gemini API Key</label>
+        <div style="display:flex;gap:var(--space-xs);">
+          <input class="input" type="password" id="settings-gemini-key" value="" placeholder="Not set" style="flex:1;">
+          <button class="btn btn--sm" id="btn-validate-gemini">Validate</button>
+        </div>
+        <div class="hint">Used for AI caption generation</div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Gemini Model</label>
+        <input class="input" type="text" id="settings-gemini-model" value="gemini-2.0-flash" placeholder="gemini-2.0-flash">
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">OpenAI API Key</label>
+        <div style="display:flex;gap:var(--space-xs);">
+          <input class="input" type="password" id="settings-openai-key" placeholder="Not set" style="flex:1;">
+          <button class="btn btn--sm" id="btn-validate-openai">Validate</button>
+        </div>
+        <div class="hint">Alternative caption provider (OpenAI-compatible)</div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">OpenAI Base URL</label>
+        <input class="input" type="text" id="settings-openai-base" placeholder="https://api.openai.com/v1">
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Genius API Token</label>
+        <input class="input" type="password" id="settings-genius-token" placeholder="Not set">
+        <div class="hint">For automatic lyrics fetching</div>
+      </div>
+
+      <div class="section-header">Help</div>
+      <div style="display:flex;gap:var(--space-md);font-size:var(--font-size-sm);">
+        <a href="#" id="settings-restart-tutorial">Restart Tutorial</a>
+        <a href="#" id="settings-open-keybinds">Keyboard Shortcuts</a>
+      </div>
+
+      <div style="margin-top: var(--space-lg);">
+        <button class="btn btn--primary" id="btn-save-settings">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Preset Browser Modal (shared by Ez + Full)
+       ============================================================ -->
+  <div class="modal" id="preset-browser-modal">
+    <div class="modal__content" style="max-width: 740px;">
+      <div class="modal__header">
+        <span class="modal__title">Load Preset</span>
+        <button class="modal__close" id="preset-browser-close">x</button>
+      </div>
+      <div class="modal__body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-md);" id="presets-grid"></div>
+        <div style="margin-top: var(--space-lg); display: flex; gap: var(--space-md);">
+          <button class="btn" id="btn-import-preset">Import Preset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Confirmation Modal (reusable destructive-action confirm)
+       ============================================================ -->
+  <div class="modal" id="confirm-modal">
+    <div class="modal__content" style="max-width: 500px;">
+      <div class="modal__header">
+        <span class="modal__title" id="confirm-modal-title">Confirm</span>
+        <button class="modal__close" id="confirm-modal-close">x</button>
+      </div>
+      <div class="modal__body">
+        <div id="confirm-modal-message" style="margin: 0; line-height: 1.5; word-break: break-word;"></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--danger" id="confirm-modal-yes">Delete</button>
+        <button class="btn" id="confirm-modal-no">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Save Preset Modal
+       ============================================================ -->
+  <div class="modal" id="save-preset-modal">
+    <div class="modal__content" style="max-width: 460px;">
+      <div class="modal__header">
+        <span class="modal__title">Save Preset</span>
+        <button class="modal__close" id="save-preset-close">x</button>
+      </div>
+      <div class="modal__body">
+        <div class="form-group">
+          <label class="form-group__label">Preset name</label>
+          <input class="input" type="text" id="save-preset-name" placeholder="e.g. my_lora_64" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-group__label">Description <span style="color: var(--muted); font-weight: normal;">(optional)</span></label>
+          <input class="input" type="text" id="save-preset-desc" placeholder="Short description..." autocomplete="off">
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--primary" id="save-preset-confirm">Save</button>
+        <button class="btn" id="save-preset-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       File Browser Modal (redesigned)
+       ============================================================ -->
+  <div class="modal" id="file-browser-modal">
+    <div class="modal__content" style="max-width:620px;">
+      <div class="modal__header">
+        <span class="modal__title">Browse Directory</span>
+        <button class="modal__close" id="file-browser-close">x</button>
+      </div>
+      <div class="modal__body" style="padding-bottom:0;">
+        <!-- Breadcrumb trail -->
+        <div class="fb-breadcrumb" id="file-browser-breadcrumb"></div>
+        <!-- Path input bar -->
+        <div style="display:flex;gap:var(--space-sm);margin-bottom:var(--space-sm);">
+          <input class="input" type="text" id="file-browser-path" value="/" placeholder="Type a path and press Enter" style="flex:1;font-size:var(--font-size-sm);">
+          <button class="btn btn--sm" id="file-browser-go" title="Navigate to path">Go</button>
+        </div>
+        <!-- Error state -->
+        <div id="file-browser-error" class="fb-error" style="display:none;"></div>
+        <!-- Directory listing -->
+        <div class="file-browser__list" id="file-browser-list"></div>
+      </div>
+      <div class="modal__footer" style="flex-direction:column;gap:var(--space-sm);align-items:stretch;">
+        <div style="display:flex;gap:var(--space-sm);justify-content:flex-end;">
+          <button class="btn" id="file-browser-cancel">Cancel</button>
+          <button class="btn btn--primary" id="file-browser-select">Select This Folder</button>
+        </div>
+        <div class="fb-selected-hint" id="file-browser-selected-hint"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Resume Training Modal
+       ============================================================ -->
+  <div class="modal" id="resume-modal">
+    <div class="modal__content" style="max-width: 680px;">
+      <div class="modal__header">
+        <span class="modal__title">Resume Training</span>
+        <button class="modal__close" id="resume-modal-close">x</button>
+      </div>
+      <div class="modal__body">
+        <div style="margin-bottom: var(--space-md);">
+          <div style="font-size: var(--font-size-sm); color: var(--muted);">Run:</div>
+          <div style="font-weight: bold; color: var(--text-bold);" id="resume-run-name">--</div>
+        </div>
+
+        <!-- Checkpoint picker -->
+        <div class="form-group">
+          <label class="form-group__label">Checkpoint</label>
+          <select class="select" id="resume-checkpoint-select">
+            <option value="">Scanning...</option>
+          </select>
+        </div>
+
+        <!-- Original config (read-only) -->
+        <div class="panel" style="margin-bottom: var(--space-md);">
+          <div class="panel__title">Original Configuration</div>
+          <div style="font-size: var(--font-size-sm);" id="resume-config-display">
+            <div class="review-table__row"><span class="review-table__key">Adapter</span><span class="review-table__val" id="resume-cfg-adapter">--</span></div>
+            <div class="review-table__row"><span class="review-table__key">Model</span><span class="review-table__val" id="resume-cfg-model">--</span></div>
+            <div class="review-table__row"><span class="review-table__key">Rank</span><span class="review-table__val" id="resume-cfg-rank">--</span></div>
+            <div class="review-table__row"><span class="review-table__key">LR</span><span class="review-table__val" id="resume-cfg-lr">--</span></div>
+            <div class="review-table__row"><span class="review-table__key">Batch</span><span class="review-table__val" id="resume-cfg-batch">--</span></div>
+            <div class="review-table__row"><span class="review-table__key">Optimizer</span><span class="review-table__val" id="resume-cfg-optimizer">--</span></div>
+          </div>
+        </div>
+
+        <!-- Edit mode -->
+        <div class="form-group">
+          <label class="form-group__label">Modification level</label>
+          <select class="select" id="resume-edit-mode">
+            <option value="none" selected>Resume with original settings (recommended)</option>
+            <option value="safe">Edit safe settings (epochs, LR, logging)</option>
+            <option value="all">Edit all settings (use with caution)</option>
+          </select>
+        </div>
+
+        <!-- Safe editable fields (shown when edit mode = safe or all) -->
+        <div id="resume-safe-fields" style="display: none;">
+          <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+              <label class="form-group__label">Additional epochs</label>
+              <input class="input" type="number" id="resume-extra-epochs" value="50">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label class="form-group__label">Learning rate</label>
+              <input class="input" type="text" id="resume-lr" value="1e-4">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label class="form-group__label">Save every</label>
+              <input class="input" type="number" id="resume-save-every" value="10">
+            </div>
+          </div>
+        </div>
+
+        <!-- Dangerous fields (shown when edit mode = all) -->
+        <div id="resume-danger-fields" style="display: none;">
+          <div style="padding: 6px 10px; background: rgba(255,80,80,0.1); border: 1px solid var(--error); border-radius: var(--radius); margin-bottom: var(--space-sm); font-size: var(--font-size-sm); color: var(--error);">
+            [!] Changing these may cause training instability or crashes
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+              <label class="form-group__label">Optimizer</label>
+              <select class="select" id="resume-optimizer">
+                <option value="adamw">AdamW</option>
+                <option value="adamw8bit">AdamW 8-bit</option>
+                <option value="adafactor">AdaFactor</option>
+                <option value="prodigy">Prodigy</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label class="form-group__label">Scheduler</label>
+              <select class="select" id="resume-scheduler">
+                <option value="cosine">Cosine</option>
+                <option value="linear">Linear</option>
+                <option value="constant">Constant</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--success" id="btn-resume-start">Resume Training</button>
+        <button class="btn" id="btn-resume-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Trigger Tag Bulk Modal
+       ============================================================ -->
+  <div class="modal" id="trigger-tag-modal">
+    <div class="modal__content" style="max-width: 480px;">
+      <div class="modal__header">
+        <span class="modal__title">Add Trigger Tag to All Files</span>
+        <button class="modal__close" id="trigger-tag-close">x</button>
+      </div>
+      <div class="modal__body">
+        <p style="color: var(--muted); font-size: var(--font-size-sm); margin-bottom: var(--space-md);">
+          This writes the trigger tag into every .txt sidecar in the dataset folder.
+          Existing tags will be updated. Files without sidecars will get a new .txt file.
+        </p>
+        <div class="form-group">
+          <label class="form-group__label">Trigger Tag</label>
+          <input class="input" type="text" id="bulk-trigger-tag" placeholder="e.g. suno_v4">
+        </div>
+        <div class="form-group">
+          <label class="form-group__label">Position</label>
+          <select class="select" id="bulk-trigger-position">
+            <option value="prepend" selected>Prepend (tag before caption)</option>
+            <option value="append">Append (tag after caption)</option>
+            <option value="replace">Replace (tag replaces caption)</option>
+          </select>
+        </div>
+        <div style="font-size: var(--font-size-sm); color: var(--muted);" id="bulk-trigger-preview">
+          Preview: <code>[tag] original caption text...</code>
+        </div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--primary" id="btn-bulk-trigger-apply">Apply to All Files</button>
+        <button class="btn" id="btn-bulk-trigger-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Command Palette (Ctrl+K)
+       ============================================================ -->
+  <div class="palette-backdrop" id="palette-backdrop">
+    <div class="palette">
+      <div class="palette__input-row">
+        <span class="palette__prefix">›</span>
+        <input class="palette__input" id="palette-input" type="text" placeholder="Type a command or setting..." autocomplete="off" spellcheck="false">
+      </div>
+      <div class="palette__results" id="palette-results"></div>
+      <div class="palette__footer">
+        <span><span class="kbd">Up/Down</span> navigate</span>
+        <span><span class="kbd">↵</span> execute</span>
+        <span><span class="kbd">Esc</span> close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Toast Notification
+       ============================================================ -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- ============================================================
+       Console Strip
+       ============================================================ -->
+  <footer class="console" id="console-strip">
+    <span class="console__segment console__segment--mode" id="console-mode">Ez Mode</span>
+    <span class="console__segment console__segment--center">
+      <span class="console__line" id="console-line">Ready.</span>
+    </span>
+    <span class="console__segment console__segment--right" id="console-right">bf16 · cuda</span>
+  </footer>
+
+</div>
+
+<script src="js/fallback.js"></script>
+<script src="js/app-state.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/api.js"></script>
+<script src="js/chart-interaction.js"></script>
+<script src="js/defaults.js"></script>
+<script src="js/validation.js"></script>
+<script src="js/reactivity.js"></script>
+<script src="js/reactivity-ext.js"></script>
+<script src="js/workspace-config.js"></script>
+<script src="js/workspace-setup.js"></script>
+<script src="js/workspace-charts.js"></script>
+<script src="js/workspace-datasets.js"></script>
+<script src="js/workspace-behaviors.js"></script>
+<script src="js/workspace-lab.js"></script>
+<script src="js/workspace.js"></script>
+<script src="js/api-cli.js"></script>
+<script src="js/vram.js"></script>
+<script src="js/training-chart.js"></script>
+<script src="js/training.js"></script>
+<script src="js/dataset.js"></script>
+<script src="js/history.js"></script>
+<script src="js/tutorial.js"></script>
+<script src="js/palette.js"></script>
+</body>
+</html>

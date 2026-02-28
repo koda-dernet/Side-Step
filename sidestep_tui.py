@@ -3,11 +3,17 @@
 Side-Step TUI -- Interactive Terminal Interface for ACE-Step LoRA Training
 by dernet
 
+.. deprecated:: 1.0.0-beta
+    **The TUI is DEPRECATED and will be removed in a future release.**
+    Use the CLI wizard instead: ``python train.py``
+    The CLI wizard provides the same functionality with better compatibility
+    and is the only actively maintained interface going forward.
+
 Usage:
     python sidestep_tui.py
 
-The original CLI (train.py) remains unchanged and fully functional.
-This TUI is an alternative interface that reuses the same core training modules.
+The CLI wizard (train.py) is the recommended interface.
+This TUI is kept for backward compatibility but receives no new features.
 
 Dependencies:
     pip install -r requirements-sidestep.txt
@@ -20,7 +26,7 @@ import os
 import sys
 from pathlib import Path
 
-SIDESTEP_VERSION = "0.9.0-beta"
+SIDESTEP_VERSION = "1.0.0-beta"
 
 _BANNER = r"""
   ███████ ██ ██████  ███████       ███████ ████████ ███████ ██████
@@ -31,28 +37,7 @@ _BANNER = r"""
 """
 
 
-_TORCHAO_CPP_WARN_SNIPPET = "Skipping import of cpp extensions due to incompatible torch version"
-
-
-def _install_torchao_warning_filter() -> None:
-    """Suppress one known non-fatal torchao compatibility warning."""
-    if os.getenv("SIDESTEP_DISABLE_TORCHAO_WARN_FILTER", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }:
-        return
-
-    def _drop_only_known_torchao_warning(record: logging.LogRecord) -> bool:
-        if not record.name.startswith("torchao"):
-            return True
-        try:
-            msg = record.getMessage()
-        except Exception:
-            msg = str(record.msg)
-        return _TORCHAO_CPP_WARN_SNIPPET not in msg
-
-    root_logger = logging.getLogger()
-    root_logger.addFilter(_drop_only_known_torchao_warning)
-    logging.getLogger("torchao").addFilter(_drop_only_known_torchao_warning)
+from sidestep_engine._compat import install_torchao_warning_filter
 
 
 def check_dependencies() -> list[str]:
@@ -70,8 +55,26 @@ def check_dependencies() -> list[str]:
 
 
 def main() -> int:
-    """Launch the Side-Step TUI."""
-    _install_torchao_warning_filter()
+    """Launch the Side-Step TUI.
+
+    .. deprecated:: 1.0.0-beta
+        Use ``python train.py`` instead.
+    """
+    import warnings
+    warnings.warn(
+        "The Side-Step TUI is DEPRECATED and will be removed in a future release. "
+        "Use 'python train.py' for the CLI wizard instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    print()
+    print("  ╔══════════════════════════════════════════════════════════╗")
+    print("  ║  ⚠  DEPRECATED — The TUI is no longer maintained.      ║")
+    print("  ║     Use 'python train.py' for the CLI wizard instead.   ║")
+    print("  ╚══════════════════════════════════════════════════════════╝")
+    print()
+
+    install_torchao_warning_filter()
 
     missing = check_dependencies()
     if missing:
@@ -93,7 +96,7 @@ def main() -> int:
         sys.path.insert(0, str(project_root))
 
     try:
-        from acestep.training_v2.tui import run_tui
+        from sidestep_engine.tui import run_tui
         run_tui()
         return 0
     except KeyboardInterrupt:
