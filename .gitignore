@@ -7,3 +7,16 @@ venv/
 .env
 checkpoints
 *.log
+
+# Generated training / preprocess outputs
+trained_adapters/
+preprocessed_tensors/
+**/runs/
+*.pt
+*.safetensors
+
+# Runtime progress/session artifacts
+**/.progress.jsonl
+**/sidestep_config_*.json
+estimate_results.json
+mstrct1.json
