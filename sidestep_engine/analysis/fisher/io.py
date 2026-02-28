@@ -35,8 +35,13 @@ def save_fisher_map(data: Dict[str, Any], path: str | Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     data.setdefault("version", _SCHEMA_VERSION)
     staging = path.with_suffix(".json.__writing__")
-    staging.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(staging, path)
+    try:
+        staging.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.replace(staging, path)
+    except Exception:
+        if staging.exists():
+            staging.unlink(missing_ok=True)
+        raise
     logger.info("Fisher map saved to %s", path)
     return path
 

@@ -88,11 +88,17 @@ const TrainingChart = (() => {
     const visibleMA5 = ma5Full.slice(startIdx, endIdx);
 
     const allVis = visibleLoss.concat(visibleSliderSmoothed).concat(visibleMA5);
-    const rawMin = Math.min(...allVis), rawMax = Math.max(...allVis);
+    let rawMin = Infinity, rawMax = -Infinity;
+    for (let i = 0; i < allVis.length; i++) {
+      if (allVis[i] < rawMin) rawMin = allVis[i];
+      if (allVis[i] > rawMax) rawMax = allVis[i];
+    }
     const yPad = (rawMax - rawMin) * 0.08 || 0.001;
     const { ticks: yTicks, min: yMin, max: yMax } = _calcTicks(rawMin - yPad, rawMax + yPad, 5);
 
-    const lrMin = 0, lrMax = visibleLr.length > 0 ? Math.max(...visibleLr) * 1.15 : 1e-4;
+    let lrMaxVal = 1e-4;
+    for (let i = 0; i < visibleLr.length; i++) { if (visibleLr[i] > lrMaxVal) lrMaxVal = visibleLr[i]; }
+    const lrMin = 0, lrMax = lrMaxVal * 1.15;
     const vbW = 1000, vbH = 500;
     svg.setAttribute('viewBox', `0 0 ${vbW} ${vbH}`);
 

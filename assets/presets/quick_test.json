@@ -1,6 +1,6 @@
 {
   "name": "quick_test",
-  "description": "Low rank, few epochs -- fast iteration for testing",
+  "description": "Low rank, few epochs -- fast iteration for testing (encoder offloading enabled to reduce VRAM at slight speed cost)",
   "rank": 16,
   "alpha": 32,
   "dropout": 0.1,

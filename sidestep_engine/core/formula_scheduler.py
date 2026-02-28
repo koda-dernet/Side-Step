@@ -172,7 +172,7 @@ def check_formula_warnings(
             elif abs(result) < _NEAR_ZERO_THRESHOLD:
                 near_zero_steps.append(pt)
         except Exception:
-            pass
+            logger.debug("Formula check error at test point %d", pt, exc_info=True)
 
     if neg_steps:
         warnings.append(
@@ -222,6 +222,7 @@ def build_formula_scheduler(
     warmup_steps: int,
     steps_per_epoch: int = 100,
     total_epochs: int = 10,
+    warmup_start_factor: float = 0.1,
 ) -> SequentialLR:
     """Build a warmup + custom-formula LR scheduler.
 
@@ -250,7 +251,6 @@ def build_formula_scheduler(
     if err:
         raise ValueError(f"Invalid custom LR formula: {err}")
     code = compile(formula.strip(), "<lr_formula>", "eval")
-    warmup_steps = min(warmup_steps, max(1, total_steps // 10))
     remaining = max(1, total_steps - warmup_steps)
 
     _MAX_CONSECUTIVE_ERRORS = 10
@@ -291,7 +291,7 @@ def build_formula_scheduler(
                 )
             if _state["consecutive_errors"] >= _MAX_CONSECUTIVE_ERRORS:
                 _state["permanently_disabled"] = True
-                logger.error(
+                logger.exception(
                     "[Side-Step] Custom formula failed %d consecutive times. "
                     "Permanently reverting to base_lr for the rest of training.",
                     _MAX_CONSECUTIVE_ERRORS,
@@ -299,7 +299,7 @@ def build_formula_scheduler(
             return 1.0
 
     warmup_sched = LinearLR(
-        optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_steps,
+        optimizer, start_factor=warmup_start_factor, end_factor=1.0, total_iters=warmup_steps,
     )
     main_sched = LambdaLR(optimizer, lr_lambda)
 

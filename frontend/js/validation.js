@@ -6,8 +6,6 @@
 const Validation = (() => {
   'use strict';
 
-  // ---- XSS-safe HTML escaping --------------------------------------------------------
-
   /**
    * Parse a data-validate attribute string into an array of rule objects.
    * Supported rules:
@@ -114,7 +112,7 @@ const Validation = (() => {
     });
   }
 
-  // ---- HTML escape for innerHTML safety ----------------------------------
+  // ---- XSS-safe HTML escaping ---------------------------------------------
 
   function esc(str) {
     if (typeof str !== 'string') return String(str ?? '');

@@ -258,9 +258,8 @@ const WorkspaceSetup = (() => {
     on("click", "#settings-panel-close", () => {
       const settings = _gatherSettings();
       API.saveSettings(settings)
-        .then(() => { populatePickers(); _emitSettingsSaved(settings); })
+        .then(() => { populatePickers(); _emitSettingsSaved(settings); if (panel) panel.classList.remove("open"); })
         .catch(() => { showToast("Failed to save settings", "error"); });
-      if (panel) panel.classList.remove("open");
     });
 
     on("click", "#btn-save-settings", async () => {
@@ -367,7 +366,7 @@ const WorkspaceSetup = (() => {
         }));
         BatchDOM.setOptions(sel, [{value: "", label: "Select a dataset..."}, ...datasetOptions], current);
       });
-    } catch (e) { /* silent */ }
+    } catch (e) { console.error('[Setup] tensor scan failed:', e); }
 
     const gemKey = $("settings-gemini-key")?.value || "";
     const oaiKey = $("settings-openai-key")?.value || "";

@@ -10,6 +10,7 @@ const Defaults = (() => {
       const resp = await fetch('js/defaults.json');
       const raw = await resp.json();
       // Strip _comment keys
+      Object.keys(_data).forEach(k => delete _data[k]);
       Object.keys(raw).forEach(k => { if (!k.startsWith('_')) _data[k] = raw[k]; });
     } catch (e) { console.warn('[Defaults] Could not load defaults.json:', e); }
   }

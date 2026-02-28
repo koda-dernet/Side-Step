@@ -158,7 +158,7 @@ def has_raw_audio(folder: Path) -> bool:
     """Return True if *folder* contains audio files (any depth)."""
     return any(
         f.suffix.lower() in AUDIO_EXTENSIONS
-        for f in folder.iterdir() if f.is_file()
+        for f in folder.rglob("*") if f.is_file()
     )
 
 

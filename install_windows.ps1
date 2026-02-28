@@ -141,7 +141,7 @@ $checkpointsDir = Join-Path $sideDir "checkpoints"
 if (-not $SkipModels) {
     Write-Step "Downloading model checkpoints"
 
-    if (Test-Path (Join-Path $checkpointsDir "acestep-v15-turbo")) {
+    if ((Test-Path (Join-Path $checkpointsDir "acestep-v15-turbo")) -and (Test-Path (Join-Path $checkpointsDir "acestep-v15-base"))) {
         Write-Ok "Checkpoints already downloaded"
     } else {
         Write-Host "  This downloads ~8 GB of model weights from HuggingFace.`n"
@@ -157,7 +157,7 @@ if (-not $SkipModels) {
         }
     }
 } else {
-    Write-Warn "Skipping model download (--SkipModels)."
+    Write-Warn "Skipping model download (-SkipModels)."
     Write-Host "  Download later with:"
     Write-Host "    cd $sideDir"
     Write-Host "    uv run huggingface-cli download ACE-Step/ACE-Step-v1-5-turbo --local-dir checkpoints/acestep-v15-turbo"

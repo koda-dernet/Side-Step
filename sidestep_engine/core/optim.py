@@ -210,6 +210,7 @@ def build_scheduler(
         total_epochs: Total training epochs (passed to custom formula).
     """
     scheduler_type = scheduler_type.lower().strip()
+    optimizer_type = optimizer_type.lower().strip()
 
     # Prodigy handles its own LR -- custom formulas are incompatible
     if optimizer_type == "prodigy" and scheduler_type == "custom":
@@ -267,6 +268,7 @@ def build_scheduler(
             warmup_steps=warmup_steps,
             steps_per_epoch=steps_per_epoch,
             total_epochs=total_epochs,
+            warmup_start_factor=warmup_start_factor,
         )
     elif scheduler_type == "cosine_restarts":
         # Cyclical cosine: LR resets to peak multiple times during training.

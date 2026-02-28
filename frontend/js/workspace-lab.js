@@ -340,7 +340,7 @@ const WorkspaceLab = (() => {
       const outDir = $("pp-output-dir")?.value;
       const fullDs = $("full-dataset-dir");
       if (fullDs && outDir) fullDs.value = outDir;
-      switchMode("full");
+      if (typeof switchMode === "function") switchMode("full");
       showToast("Dataset dir set to preprocessed tensors", "ok");
     });
     $("btn-pp-chain-ppplus")?.addEventListener("click", () => {
@@ -486,7 +486,7 @@ const WorkspaceLab = (() => {
       }
 
       _closeResumeModal();
-      Training.start(cfg);
+      if (typeof Training !== "undefined" && typeof Training.start === "function") Training.start(cfg);
     });
   }
 

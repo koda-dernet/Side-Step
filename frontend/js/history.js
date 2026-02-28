@@ -124,12 +124,18 @@ const History = (() => {
     const nameB = $('compare-run-b')?.value;
     if (!nameA || !nameB) return;
 
-    // Use AppState for deterministic curves + cached configs
     const hasAS = typeof AppState !== 'undefined';
-    const [configA, configB, curveA, curveB] = await Promise.all([
-      API.fetchRunConfig(nameA), API.fetchRunConfig(nameB),
-      API.fetchRunLossCurve(nameA), API.fetchRunLossCurve(nameB),
-    ]);
+    let configA, configB, curveA, curveB;
+    try {
+      [configA, configB, curveA, curveB] = await Promise.all([
+        API.fetchRunConfig(nameA), API.fetchRunConfig(nameB),
+        API.fetchRunLossCurve(nameA), API.fetchRunLossCurve(nameB),
+      ]);
+    } catch (e) {
+      console.error('[History] compare fetch failed:', e);
+      if (typeof showToast === 'function') showToast('Failed to load run data for comparison', 'error');
+      return;
+    }
     if (hasAS) { AppState.setRunConfig(nameA, configA); AppState.setRunConfig(nameB, configB); }
 
     _renderDiff(configA, configB);

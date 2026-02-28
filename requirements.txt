@@ -10,7 +10,7 @@
 # ── Core ML ───────────────────────────────────────────────────
 transformers>=4.51.0,<4.58.0
 diffusers
-lightning>=2.0.0
+lightning>=2.3.3
 peft>=0.18.0
 accelerate>=1.12.0
 safetensors

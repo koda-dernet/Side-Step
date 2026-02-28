@@ -38,6 +38,8 @@ class AdaptiveTimestepSampler:
             raise ValueError(f"ratio must be in [0, 1] (got {ratio})")
         if n_bins < 2:
             raise ValueError(f"n_bins must be >= 2 (got {n_bins})")
+        if not (0.0 <= ema_decay <= 1.0):
+            raise ValueError(f"ema_decay must be in [0, 1] (got {ema_decay})")
 
         self.n_bins = n_bins
         self.ema_decay = ema_decay

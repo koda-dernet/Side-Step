@@ -217,20 +217,6 @@ const Tutorial = (() => {
       btn.classList.remove('tutorial-tooltip__next--locked');
       requestAnimationFrame(() => _position(step));
     };
-    const check = typeof condition === 'function' ? condition : () => {
-      // Default: check if the selector's element is now .active or visible
-      const el = document.querySelector(condition);
-      if (!el) return false;
-      // For mode buttons: check if it became active
-      if (el.classList.contains('topbar__mode')) return el.classList.contains('active');
-      if (el.classList.contains('lab-nav__item')) return el.classList.contains('active');
-      // For settings panel: check if it's open
-      if (el.id === 'btn-open-settings') return document.getElementById('settings-panel')?.classList.contains('open');
-      // For inputs/selects: check if it received focus or value changed
-      if (el.tagName === 'SELECT' || el.tagName === 'INPUT') return document.activeElement === el || el !== el;
-      // Fallback: any interaction happened (element was clicked/focused)
-      return true;
-    };
     // Snapshot initial state for inputs
     const initEl = typeof condition === 'string' ? document.querySelector(condition) : null;
     const initVal = initEl?.value;

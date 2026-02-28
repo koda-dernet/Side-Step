@@ -277,7 +277,21 @@
   transform: translateX(16px);
   background: var(--bg);
 }
-.toggle input { display: none; }
+.toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.toggle input:focus-visible + .toggle__track {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 
 /* Legacy checkbox toggle (fallback) */
 .toggle__box {
@@ -360,12 +374,12 @@
   border-radius: var(--radius);
   font-size: var(--font-size-sm);
   line-height: 1.7;
-  animation: slideDown 0.2s ease-out;
+  animation: slide-down 0.2s ease-out;
 }
 .help-panel.active {
   display: block;
 }
-@keyframes slideDown {
+@keyframes slide-down {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
@@ -1167,7 +1181,7 @@
   border: var(--border-w) solid var(--primary);
   border-radius: var(--radius);
   margin-bottom: var(--space-sm);
-  animation: slideDown 0.15s ease-out;
+  animation: slide-down 0.15s ease-out;
 }
 .dataset-bulk-toolbar__count {
   font-size: var(--font-size-sm);

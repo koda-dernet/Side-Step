@@ -47,6 +47,7 @@ const VRAM = (() => {
       _render(est);
     } catch (e) {
       console.warn('[VRAM] estimation failed:', e);
+      _render({ peak_mb: 0, total_gpu_mb: 0, available_mb: 0, verdict: 'unknown', system_used_mb: 0 });
     }
   }
 
@@ -123,7 +124,7 @@ const VRAM = (() => {
       ezEst.textContent = `~${(peak / 1024).toFixed(1)} GB`;
       _setTextState(ezEst, state);
     }
-    if (ezTotal) ezTotal.textContent = `${(available > 0 ? available : totalGpu) / 1024 | 0} GB`;
+    if (ezTotal) ezTotal.textContent = `${Math.floor((available > 0 ? available : totalGpu) / 1024)} GB`;
     if (ezStatus) {
       const msg = verdict === 'red' ? '[!] WILL OOM' : verdict === 'yellow' ? '[!] tight fit' : '[ok] fits';
       ezStatus.textContent = msg;

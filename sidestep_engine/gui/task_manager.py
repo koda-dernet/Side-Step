@@ -10,11 +10,11 @@ Manages long-running operations:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import math
 import os
+import queue
 import signal
 import subprocess
 import sys
@@ -97,7 +97,7 @@ class Task:
     process: Optional[subprocess.Popen] = None
     thread: Optional[threading.Thread] = None
     cancel_flag: threading.Event = field(default_factory=threading.Event)
-    progress_queue: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=500))
+    progress_queue: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=500))
     started_at: float = field(default_factory=time.time)
     status: str = "running"  # "running", "done", "failed", "cancelled"
     progress_file: Optional[Path] = None
@@ -124,7 +124,7 @@ class TaskManager:
     def __init__(self) -> None:
         self._tasks: Dict[str, Task] = {}
         self._training_task: Optional[Task] = None
-        self._training_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        self._training_queue: queue.Queue = queue.Queue(maxsize=1000)
         self._lock = threading.Lock()
 
     def active_operation(self) -> Optional[str]:
@@ -268,7 +268,7 @@ class TaskManager:
         """Non-blocking fetch of the next training update."""
         try:
             return self._training_queue.get_nowait()
-        except asyncio.QueueEmpty:
+        except queue.Empty:
             return None
 
     def _tail_stdout(self, task: Task) -> None:
@@ -284,7 +284,7 @@ class TaskManager:
                     msg = {"type": "log", "msg": line, "ts": time.time()}
                     try:
                         self._training_queue.put_nowait(msg)
-                    except asyncio.QueueFull:
+                    except queue.Full:
                         pass
                     if task.progress_file is None and "Session config:" in line:
                         try:
@@ -317,7 +317,7 @@ class TaskManager:
                     "oom": task.oom_detected,
                     "reason": reason,
                 })
-            except asyncio.QueueFull:
+            except queue.Full:
                 pass
             if task.config_file:
                 try:
@@ -343,7 +343,7 @@ class TaskManager:
                     "msg": "[warn] Progress file not found — only log output is available",
                     "ts": time.time(),
                 })
-            except asyncio.QueueFull:
+            except queue.Full:
                 pass
             return
 
@@ -356,7 +356,7 @@ class TaskManager:
                             data = _sanitize_floats(json.loads(line))
                             data["type"] = "progress"
                             self._training_queue.put_nowait(data)
-                        except (json.JSONDecodeError, asyncio.QueueFull):
+                        except (json.JSONDecodeError, queue.Full):
                             pass
                     else:
                         time.sleep(0.5)
@@ -371,7 +371,7 @@ class TaskManager:
                                 data = _sanitize_floats(json.loads(line))
                                 data["type"] = "progress"
                                 self._training_queue.put_nowait(data)
-                            except (json.JSONDecodeError, asyncio.QueueFull):
+                            except (json.JSONDecodeError, queue.Full):
                                 pass
                     if _drain_pass == 0:
                         time.sleep(0.2)  # second pass catches late flushes
@@ -673,7 +673,7 @@ class TaskManager:
             return None
         try:
             return task.progress_queue.get_nowait()
-        except asyncio.QueueEmpty:
+        except queue.Empty:
             return None
 
 
@@ -691,7 +691,7 @@ def _push(task: Task, current: int, total: int, msg: str, **extra: Any) -> None:
     data.update(extra)
     try:
         task.progress_queue.put_nowait(data)
-    except asyncio.QueueFull:
+    except queue.Full:
         pass
 
 
@@ -714,5 +714,5 @@ def _push_event(task: Task, kind: str, msg: str = "", **extra: Any) -> None:
     data.update(extra)
     try:
         task.progress_queue.put_nowait(data)
-    except asyncio.QueueFull:
+    except queue.Full:
         pass

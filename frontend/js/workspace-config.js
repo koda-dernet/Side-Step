@@ -347,7 +347,7 @@ const WorkspaceConfig = (() => {
       const ppRun = $("full-pp-run"); if (ppRun) ppRun.style.display = hasPP ? "none" : "block";
 
       _updateConsole("Dataset: " + folder.name + " (" + folder.files + " files)");
-    } catch (e) { /* silent */ }
+    } catch (e) { console.error('[Config] tensor scan failed:', e); }
   }
 
   /* ---- PP++ Fisher Map Status Check ---- */

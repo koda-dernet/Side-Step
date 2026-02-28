@@ -134,6 +134,12 @@ def build_training_config(
     # -- GPU info ------------------------------------------------------------
     from sidestep_engine.models.gpu_utils import detect_gpu
     gpu_info = detect_gpu()
+    user_device = p.get("device")
+    user_precision = p.get("precision")
+    if user_device and user_device != "auto":
+        gpu_info.device = user_device
+    if user_precision and user_precision != "auto":
+        gpu_info.precision = user_precision
 
     # -- Adapter config ------------------------------------------------------
     adapter_type = _get(p, "adapter_type", "lora")

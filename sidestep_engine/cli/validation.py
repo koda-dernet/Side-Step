@@ -5,8 +5,11 @@ Path validation and target-module resolution for ACE-Step Training V2 CLI.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from sidestep_engine.cli.args import VARIANT_DIR_MAP
 
@@ -104,7 +107,7 @@ def validate_paths(args: argparse.Namespace) -> bool:
                     if isinstance(dur, (int, float)) and dur > max_sample_s:
                         max_sample_s = dur
                     del _d
-                    if max_sample_s > 0 and max_sample_s < chunk_dur:
+                    if max_sample_s >= chunk_dur:
                         break
                 if max_sample_s > 0 and chunk_dur > max_sample_s:
                     print(
@@ -112,8 +115,15 @@ def validate_paths(args: argparse.Namespace) -> bool:
                         f"({max_sample_s:.0f}s). Chunking will have no effect.",
                         file=sys.stderr,
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Chunk duration scan failed: %s", exc)
+
+    # Prefetch-factor / num-workers consistency
+    num_workers = getattr(args, "num_workers", 0)
+    prefetch = getattr(args, "prefetch_factor", 0)
+    if num_workers > 0 and prefetch < 1:
+        args.prefetch_factor = 2
+        logger.debug("Coerced prefetch_factor to 2 (num_workers=%d requires >=1)", num_workers)
 
     # Resume path: fail if explicitly set but missing
     resume = getattr(args, "resume_from", None)

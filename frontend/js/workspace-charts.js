@@ -26,6 +26,7 @@ const WorkspaceCharts = (() => {
           if (typeof showToast === "function") showToast("TensorBoard failed: " + (result.error || "unknown error"), "error");
         }
       } catch (e) {
+        console.error('[TensorBoard] API call failed, opening fallback URL:', e);
         window.open("http://localhost:" + port, "_blank");
       }
     });

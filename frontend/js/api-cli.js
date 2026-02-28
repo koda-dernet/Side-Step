@@ -9,9 +9,11 @@ const APICli = (() => {
       const p = String(window.__SIDESTEP_PLATFORM__ || '').toLowerCase();
       return p.startsWith('win') ? '0' : '2';
     };
+    const _isWin = String(window.__SIDESTEP_PLATFORM__ || '').toLowerCase().startsWith('win');
     const _sh = (val) => {
       const s = String(val);
       if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(s)) return s;
+      if (_isWin) return '"' + s.replace(/"/g, '\\"') + '"';
       return "'" + s.replace(/'/g, "'\"'\"'") + "'";
     };
     const add = (flag, val) => { if (val !== undefined && val !== null && val !== '') parts.push(flag + ' ' + _sh(val)); };
@@ -118,7 +120,7 @@ const APICli = (() => {
     addNoBool('--pin-memory', config.pin_memory);
     if (config.persistent_workers === false) parts.push('--no-persistent-workers');
 
-    return parts.join(' \\\n  ');
+    return parts.join(_isWin ? ' ^\n  ' : ' \\\n  ');
   }
 
   return { buildCLICommand };

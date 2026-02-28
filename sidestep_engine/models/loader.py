@@ -110,16 +110,18 @@ def _resolve_model_dir(checkpoint_dir: str | Path, variant: str) -> Path:
     a recognised alias, it is treated as a literal subdirectory name (to
     support custom fine-tunes with arbitrary folder names).
     """
+    base = Path(checkpoint_dir).resolve()
+
     # 1. Known alias (turbo -> acestep-v15-turbo, etc.)
     subdir = _VARIANT_DIR.get(variant)
     if subdir is not None:
-        p = Path(checkpoint_dir) / subdir
-        if p.is_dir():
+        p = (Path(checkpoint_dir) / subdir).resolve()
+        if p.is_relative_to(base) and p.is_dir():
             return p
 
     # 2. Literal subdirectory name (e.g. "my-custom-finetune")
-    p = Path(checkpoint_dir) / variant
-    if p.is_dir():
+    p = (Path(checkpoint_dir) / variant).resolve()
+    if p.is_relative_to(base) and p.is_dir():
         return p
 
     # 3. None found
@@ -394,8 +396,8 @@ def load_silence_latent(
     # 2. Variant-specific subdirectory
     if sl_path is None and variant is not None:
         subdir = _VARIANT_DIR.get(variant, f"acestep-v15-{variant}")
-        candidate = ckpt / subdir / "silence_latent.pt"
-        if candidate.is_file():
+        candidate = (ckpt / subdir / "silence_latent.pt").resolve()
+        if candidate.is_relative_to(ckpt.resolve()) and candidate.is_file():
             sl_path = candidate
 
     # 3. Last-resort: scan all known variant subdirectories

@@ -52,7 +52,7 @@ dependencies = [
     "pywebview[qt]>=5.0; sys_platform == 'linux'",
     "pywebview>=5.0; sys_platform != 'linux'",
     "nvidia-ml-py>=12.0.0",
-    "pygobject>=3.54.5",
+    "pygobject>=3.54.5; sys_platform == 'linux'",
 ]
 
 [project.scripts]
@@ -92,3 +92,4 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["sidestep_engine"]
+include = ["train.py"]

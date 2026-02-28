@@ -62,6 +62,11 @@ class AdapterEMA:
 
         Call :meth:`restore` afterwards to resume training with raw weights.
         """
+        if self._backup:
+            raise RuntimeError(
+                "apply() called while a previous apply() is still active — "
+                "call restore() first to avoid losing the raw training weights"
+            )
         self._backup = [p.data.detach().clone() for p in self._params]
         for shadow, param in zip(self._shadow, self._params):
             param.data.copy_(shadow.to(dtype=param.dtype, device=param.device))

@@ -266,7 +266,9 @@ def link_source_audio(tensor_name: str, audio_path: str) -> Dict[str, Any]:
     if not tensors_dir:
         return {"ok": False, "error": "No preprocessed_tensors_dir configured in Settings"}
     base = _resolve_gui_path(tensors_dir)
-    target = base / tensor_name
+    target = (base / tensor_name).resolve()
+    if not target.is_relative_to(base.resolve()):
+        return {"ok": False, "error": "Invalid tensor dataset name"}
     if not target.is_dir():
         return {"ok": False, "error": f"Tensor dataset not found: {tensor_name}"}
 

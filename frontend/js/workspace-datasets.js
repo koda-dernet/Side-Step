@@ -4,7 +4,7 @@ const WorkspaceDatasets = (() => {
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  const _esc = window._esc;
+  const _esc = window._esc || ((s) => String(s ?? ''));
   const _fmtWhen = (iso) => {
     if (!iso) return "";
     const d = new Date(iso);

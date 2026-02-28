@@ -58,7 +58,6 @@ class ProgressWriter:
         self._interval = interval
         self._last_write = 0.0
         self._fh: Optional[Any] = None
-        self._step_count = 0
 
     def _ensure_open(self) -> None:
         if self._fh is None:
@@ -92,3 +91,10 @@ class ProgressWriter:
             except OSError:
                 pass
             self._fh = None
+
+    def __enter__(self) -> "ProgressWriter":
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()

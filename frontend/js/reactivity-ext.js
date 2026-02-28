@@ -4,11 +4,6 @@ const ReactivityExt = (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
 
-  function _showWarning(id, msg) {
-    const el = $(id); if (!el) return;
-    el.textContent = msg; el.style.display = msg ? 'block' : 'none';
-  }
-
   /* ---- PP++ Cross-Validation ---- */
   function initPPPlusCrossValidation() {
     const baseRank = $('ppplus-base-rank'), rankMin = $('ppplus-rank-min'), rankMax = $('ppplus-rank-max');
@@ -56,7 +51,7 @@ const ReactivityExt = (() => {
       const ppToggle = $('full-use-ppplus');
       const hasPP = ppStatus && ppStatus.textContent.includes('[ok]') && (!ppToggle || ppToggle.checked);
       attnSel.disabled = hasPP; attnSel.style.opacity = hasPP ? '0.5' : '';
-      mlpToggle.disabled = hasPP; mlpToggle.closest('.toggle').style.opacity = hasPP ? '0.5' : '';
+      mlpToggle.disabled = hasPP; const _tgl = mlpToggle.closest('.toggle'); if (_tgl) _tgl.style.opacity = hasPP ? '0.5' : '';
       if (hasPP) { attnSel.value = 'both'; mlpToggle.checked = true; }
       const hint = $('pp-adapter-lock-hint'); if (hint) hint.style.display = hasPP ? '' : 'none';
     };
@@ -91,6 +86,9 @@ const ReactivityExt = (() => {
       let s = src;
       s = s.replace(/([a-zA-Z0-9_.\)]+)\s*\*\*\s*([a-zA-Z0-9_.\(]+)/g, 'pow($1, $2)');
       s = s.replace(/([a-zA-Z0-9_.\)]+)\s*\/\/\s*([a-zA-Z0-9_.\(]+)/g, 'Math.floor($1 / $2)');
+      if ((s.match(/\bif\b/g) || []).length > 1) {
+        console.warn('[Formula] Nested Python ternaries are not supported — preview may be inaccurate');
+      }
       s = s.replace(/(.+?)\s+if\s+(.+?)\s+else\s+(.+)/g, '(($2) ? ($1) : ($3))');
       s = s.replace(/\bTrue\b/g, 'true').replace(/\bFalse\b/g, 'false');
       return s;
@@ -104,7 +102,7 @@ const ReactivityExt = (() => {
       const expr = _py2js(raw.replace(/^\s*lr\s*=\s*/, ''));
       const baseLr = parseFloat($('full-lr')?.value) || 1e-4;
       try {
-        if (/\b(while|for|do|eval|Function|import|require|fetch|XMLHttp)\b/.test(expr)) throw new Error('Blocked keyword');
+        if (/\b(while|for|do|eval|Function|import|require|fetch|XMLHttp|window|document|globalThis|constructor|this)\b/.test(expr)) throw new Error('Blocked keyword');
         if (expr.length > 500) throw new Error('Formula too long');
         const fn = new Function('step', 'total_steps', 'progress', 'epoch', 'base_lr', ...Object.keys(SAFE_FNS), 'return (' + expr + ')');
         const pts = []; let yMax = 0;

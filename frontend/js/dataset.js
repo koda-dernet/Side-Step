@@ -34,15 +34,17 @@ const Dataset = (() => {
   }
 
   function _fmtDuration(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
+    const total = Math.floor(seconds);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
   function _fmtTotalDuration(seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
+    const total = Math.floor(seconds);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
     if (h > 0) return `${h}h ${m}m ${s}s`;
     return `${m}m ${s}s`;
   }
@@ -262,8 +264,9 @@ const Dataset = (() => {
     let result = { files: [], sidecar_count: 0, total_duration: 0 };
     try {
       result = await API.scanDataset(targetPath);
-    } catch {
-      result = { files: [], sidecar_count: 0, total_duration: 0, error: 'Scan failed' };
+    } catch (e) {
+      console.error('[Dataset] scan failed:', e);
+      result = { files: [], sidecar_count: 0, total_duration: 0, error: 'Scan failed: ' + (e.message || e) };
     }
 
     _files = result.files || [];
@@ -354,9 +357,11 @@ const Dataset = (() => {
     const allEmpty = !data.caption && !data.genre && !data.bpm && !data.key &&
       !data.signature && !data.tags && !data.custom_tag && !data.lyrics;
     if (allEmpty && typeof WorkspaceBehaviors !== 'undefined' && WorkspaceBehaviors.showConfirmModal) {
-      await new Promise((resolve) => {
-        WorkspaceBehaviors.showConfirmModal('Empty Sidecar', 'All fields are empty. Save anyway?', 'Save', resolve);
+      const confirmed = await new Promise((resolve) => {
+        WorkspaceBehaviors.showConfirmModal('Empty Sidecar', 'All fields are empty. Save anyway?', 'Save',
+          () => resolve(true), () => resolve(false));
       });
+      if (!confirmed) return;
     }
 
     const savePath = _sidecarPath(_currentFile);

@@ -463,7 +463,7 @@ const Training = (() => {
     _ws = API.connectTrainingWS(_onTrainingMessage);
 
     _gpuWs = API.connectGpuWS((data) => {
-      if (typeof AppState !== 'undefined' && data.available !== false) AppState.setGPU(data);
+      if (data && typeof data === 'object' && typeof AppState !== 'undefined' && data.available !== false) AppState.setGPU(data);
     });
 
     // Periodic DOM refresh (timing display, ETA, etc.)

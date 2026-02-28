@@ -98,8 +98,9 @@ const WorkspaceBehaviors = (() => {
       const runs = allRuns.filter((r) => !r.detected_only);
       if (!runs.length) { showToast("No completed runs to export", "warn"); return; }
       const headers = ["run_name", "adapter", "model", "epochs", "best_loss", "duration", "status", "date"];
+      const _csvEsc = (v) => { const s = String(v ?? ""); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
       const csv = [headers.join(",")];
-      runs.forEach((r) => { csv.push(headers.map((h) => String(r[h] || "").replace(/,/g, ";")).join(",")); });
+      runs.forEach((r) => { csv.push(headers.map((h) => _csvEsc(r[h])).join(",")); });
       const blob = new Blob([csv.join("\n")], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -149,14 +150,23 @@ const WorkspaceBehaviors = (() => {
 
   /* ---- Reusable Confirmation Modal ---- */
   let _confirmCallback = null;
+  let _cancelCallback = null;
   function _initConfirmModal() {
     const modal = $("confirm-modal");
-    const _close = () => { modal?.classList.remove("open"); _confirmCallback = null; };
+    const _close = () => {
+      modal?.classList.remove("open");
+      const cancelCb = _cancelCallback;
+      _confirmCallback = null;
+      _cancelCallback = null;
+      if (typeof cancelCb === "function") cancelCb();
+    };
     $("confirm-modal-close")?.addEventListener("click", _close);
     $("confirm-modal-no")?.addEventListener("click", _close);
     $("confirm-modal-yes")?.addEventListener("click", () => {
       const cb = _confirmCallback;
-      _close();
+      _confirmCallback = null;
+      _cancelCallback = null;
+      modal?.classList.remove("open");
       if (typeof cb === "function") cb();
     });
   }
@@ -445,16 +455,17 @@ const WorkspaceBehaviors = (() => {
 
   return { init, showConfirmModal };
 
-  function showConfirmModal(title, message, confirmLabel, onConfirm) {
+  function showConfirmModal(title, message, confirmLabel, onConfirm, onCancel) {
     const modal = $("confirm-modal");
     if (!modal) { if (typeof onConfirm === "function") onConfirm(); return; }
     const titleEl = $("confirm-modal-title");
     const msgEl = $("confirm-modal-message");
     const yesBtn = $("confirm-modal-yes");
     if (titleEl) titleEl.textContent = title || "Confirm";
-    if (msgEl) msgEl.innerHTML = message || "Are you sure?";
+    if (msgEl) msgEl.textContent = message || "Are you sure?";
     if (yesBtn) yesBtn.textContent = confirmLabel || "Confirm";
     _confirmCallback = onConfirm;
+    _cancelCallback = onCancel || null;
     modal.classList.add("open");
   }
 })();

@@ -33,7 +33,7 @@ const AppState = (() => {
 
   // ---- Runs --------------------------------------------------------------
   function runs() { return _runs; }
-  function setRuns(arr) { _runs = arr; }
+  function setRuns(arr) { _runs = arr; document.dispatchEvent(new CustomEvent("appstate:runs", { detail: _runs })); }
 
   // ---- Run configs (cached from API) -------------------------------------
   function runConfig(name) { return _configCache[name] || null; }

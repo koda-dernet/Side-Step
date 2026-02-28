@@ -26,11 +26,11 @@ const Palette = (() => {
     try {
       const raw = localStorage.getItem(KEYBIND_STORAGE);
       _customBinds = raw ? JSON.parse(raw) : {};
-    } catch { _customBinds = {}; }
+    } catch (e) { console.error('[Palette] Failed to load keybinds:', e); _customBinds = {}; }
   }
 
   function _saveBinds() {
-    try { localStorage.setItem(KEYBIND_STORAGE, JSON.stringify(_customBinds)); } catch (e) {}
+    try { localStorage.setItem(KEYBIND_STORAGE, JSON.stringify(_customBinds)); } catch (e) { console.error('[Palette] Failed to save keybinds:', e); }
   }
 
   function getKeybind(actionId) {

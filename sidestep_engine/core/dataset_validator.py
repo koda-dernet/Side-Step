@@ -114,8 +114,8 @@ def validate_dataset(
             dur = meta.get("total_duration") or meta.get("total_duration_s")
             if dur:
                 status.total_duration_s = int(float(dur))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to parse preprocess_meta.json in %s: %s", d, exc)
 
     if expected_model_variant and status.model_hash:
         if status.model_hash != expected_model_variant:

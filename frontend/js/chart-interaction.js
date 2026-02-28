@@ -87,8 +87,7 @@ const ChartInteraction = (() => {
       e.preventDefault();
     });
 
-    document.addEventListener("mousemove", (e) => {
-      // Pan
+    const _onDocMouseMove = (e) => {
       if (panning && panView) {
         const r = svg.getBoundingClientRect();
         const dx = e.clientX - panStartX;
@@ -101,7 +100,6 @@ const ChartInteraction = (() => {
         opts.setRange(clamped.lo, clamped.hi);
         return;
       }
-      // Drag-to-zoom overlay
       if (dragStart) {
         const r = area.getBoundingClientRect();
         const svgR = svg.getBoundingClientRect();
@@ -111,11 +109,10 @@ const ChartInteraction = (() => {
         if (x2 - x1 > 4) { overlay.style.display = "block"; overlay.style.left = x1 + "px"; overlay.style.top = "0"; overlay.style.width = (x2 - x1) + "px"; overlay.style.height = svgR.height + "px"; }
         return;
       }
-      // Tooltip
       _updateTip(e);
-    });
+    };
 
-    document.addEventListener("mouseup", (e) => {
+    const _onDocMouseUp = (e) => {
       if (panning) { panning = false; panView = null; area.style.cursor = ""; return; }
       if (!dragStart) return;
       const dx = Math.abs(e.clientX - dragStart.x);
@@ -132,7 +129,16 @@ const ChartInteraction = (() => {
         }
       }
       dragStart = null;
-    });
+    };
+
+    // Remove previous listeners if re-wiring the same area
+    if (area._ciCleanup) area._ciCleanup();
+    document.addEventListener("mousemove", _onDocMouseMove);
+    document.addEventListener("mouseup", _onDocMouseUp);
+    area._ciCleanup = () => {
+      document.removeEventListener("mousemove", _onDocMouseMove);
+      document.removeEventListener("mouseup", _onDocMouseUp);
+    };
 
     area.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -175,7 +181,12 @@ const ChartInteraction = (() => {
       const xPos = e.clientX - ar.left;
       crosshair.style.display = "block"; crosshair.style.left = xPos + "px";
       tooltip.style.display = "block"; tooltip.style.left = (xPos + 12) + "px"; tooltip.style.top = (e.clientY - ar.top - 30) + "px";
-      tooltip.innerHTML = opts.formatTip ? opts.formatTip(dataIdx, frac) : '<span class="u-text-muted">#' + dataIdx + '</span>';
+      if (opts.formatTip) {
+        const tip = opts.formatTip(dataIdx, frac);
+        if (opts.allowUnsafeHtml) { tooltip.innerHTML = tip; } else { tooltip.textContent = tip; }
+      } else {
+        tooltip.textContent = '#' + dataIdx;
+      }
     }
 
     area.addEventListener("mouseleave", () => { tooltip.style.display = "none"; crosshair.style.display = "none"; });

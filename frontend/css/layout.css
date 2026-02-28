@@ -126,6 +126,10 @@
 .topbar__status-chip--training {
   animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .topbar__mode.training { animation: none; }
+  .topbar__status-chip--training { animation: none; }
+}
 
 .topbar__spacer {
   flex: 1;

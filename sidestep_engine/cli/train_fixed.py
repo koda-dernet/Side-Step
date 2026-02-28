@@ -13,6 +13,10 @@ and adapter utilities (``inject_lora_into_dit``, ``save_lora_weights``).
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import argparse
 import gc
 import json
@@ -159,8 +163,8 @@ def run_fixed(args: argparse.Namespace) -> int:
                         "This may produce poor results.",
                         file=sys.stderr,
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to read preprocess_meta.json: %s", e)
 
     # -- Optional dependency preflight ---------------------------------------
     from sidestep_engine.ui.dependency_check import (

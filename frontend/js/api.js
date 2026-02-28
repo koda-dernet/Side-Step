@@ -184,7 +184,7 @@ const API = (() => {
       const blob = new Blob(['{}'], { type: 'application/json' });
       navigator.sendBeacon(url, blob);
     } else {
-      fetch('/api/shutdown', { method: 'POST', headers: { 'Content-Type': 'application/json', ..._authHeaders() }, body: '{}', keepalive: true });
+      fetch('/api/shutdown', { method: 'POST', headers: { 'Content-Type': 'application/json', ..._authHeaders() }, body: '{}', keepalive: true }).catch(() => {});
     }
   }
 

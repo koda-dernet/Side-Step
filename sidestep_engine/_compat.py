@@ -41,23 +41,23 @@ def check_compatibility() -> None:
     # 1. Vendored modules (required for fixed training)
     try:
         from sidestep_engine.vendor.data_module import PreprocessedDataModule  # noqa: F401
-    except ImportError:
+    except Exception as e:
         warnings.append(
-            "Cannot import vendored data_module.PreprocessedDataModule"
+            f"Cannot import vendored data_module.PreprocessedDataModule: {e}"
         )
 
     try:
         from sidestep_engine.vendor.lora_utils import inject_lora_into_dit  # noqa: F401
-    except ImportError:
+    except Exception as e:
         warnings.append(
-            "Cannot import vendored lora_utils.inject_lora_into_dit"
+            f"Cannot import vendored lora_utils.inject_lora_into_dit: {e}"
         )
 
     try:
         from sidestep_engine.vendor.configs import TrainingConfig  # noqa: F401
-    except ImportError:
+    except Exception as e:
         warnings.append(
-            "Cannot import vendored configs.TrainingConfig"
+            f"Cannot import vendored configs.TrainingConfig: {e}"
         )
 
     if warnings:
@@ -87,12 +87,18 @@ def check_compatibility() -> None:
 _TORCHAO_CPP_WARN_SNIPPET = "Skipping import of cpp extensions due to incompatible torch version"
 
 
+_torchao_filter_installed = False
+
+
 def install_torchao_warning_filter() -> None:
     """Suppress one known non-fatal torchao compatibility warning.
 
     Call early in every entry point (``train.py``, ``sidestep_tui.py``)
-    so the user never sees irrelevant torchao noise.
+    so the user never sees irrelevant torchao noise.  Idempotent.
     """
+    global _torchao_filter_installed
+    if _torchao_filter_installed:
+        return
     if os.getenv("SIDESTEP_DISABLE_TORCHAO_WARN_FILTER", "").strip().lower() in {
         "1", "true", "yes", "on",
     }:
@@ -110,3 +116,4 @@ def install_torchao_warning_filter() -> None:
     root_logger = logging.getLogger()
     root_logger.addFilter(_drop_only_known_torchao_warning)
     logging.getLogger("torchao").addFilter(_drop_only_known_torchao_warning)
+    _torchao_filter_installed = True

@@ -201,9 +201,8 @@ function initShiftClickTable(tbodyId, opts) {
 
     const onModeSelect = (btn) => { if (btn?.dataset?.mode) switchMode(btn.dataset.mode); };
     modes.forEach((btn) => {
-      btn.addEventListener("click", (e) => { onModeSelect(btn); });
-      btn.addEventListener("mousedown", (e) => { if (e.button === 0) onModeSelect(btn); }); // WebKit fallback
-      btn.onclick = () => { onModeSelect(btn); return true; };
+      btn.addEventListener("click", () => { onModeSelect(btn); });
+      btn.addEventListener("mousedown", (e) => { if (e.button === 0) onModeSelect(btn); });
     });
 
     // Document-level delegation fallback (pywebview/WebKit may not deliver direct handlers)
@@ -582,7 +581,6 @@ function initShiftClickTable(tbodyId, opts) {
     const welcomeSaveBtn = $("welcome-save");
     if (welcomeSaveBtn) {
       welcomeSaveBtn.addEventListener("click", async (e) => { e.preventDefault(); await handleWelcomeSave(); });
-      welcomeSaveBtn.onclick = async function(e) { e.preventDefault(); await handleWelcomeSave(); return true; };
     }
     async function handleWelcomeSave() {
       [["welcome-checkpoint-dir","settings-checkpoint-dir"],["welcome-audio-dir","settings-audio-dir"],["welcome-tensors-dir","settings-tensors-dir"],["welcome-gemini-key","settings-gemini-key"],["welcome-openai-key","settings-openai-key"]]

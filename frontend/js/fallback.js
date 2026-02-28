@@ -33,7 +33,7 @@ window._fmtDuration = (seconds) => {
 
 window._esc = (s) => typeof Validation !== 'undefined'
   ? Validation.esc(s)
-  : String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  : String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 window.BatchDOM = {
   fragment: () => document.createDocumentFragment(),

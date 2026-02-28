@@ -4,7 +4,11 @@
 
 const _domCache = new Map();
 window.$ = (id) => {
-  if (_domCache.has(id)) return _domCache.get(id);
+  if (_domCache.has(id)) {
+    const cached = _domCache.get(id);
+    if (cached.isConnected && document.getElementById(id) === cached) return cached;
+    _domCache.delete(id);
+  }
   const el = document.getElementById(id);
   if (el) _domCache.set(id, el);
   return el || null;
