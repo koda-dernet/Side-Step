@@ -1,0 +1,133 @@
+/* ============================================================
+   Side-Step GUI — Command Palette (Ctrl+K)
+   Floating search/command interface — the pro-tool hallmark
+   ============================================================ */
+
+.palette-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: rgba(0, 0, 0, 0.5);
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+}
+.palette-backdrop.open {
+  display: flex;
+}
+
+.palette {
+  width: 600px;
+  max-width: 90vw;
+  background: var(--panel);
+  border: var(--border-w) solid var(--border);
+  border-top: 2px solid var(--primary);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: palette-in var(--transition-fast) ease;
+  overflow: hidden;
+}
+@keyframes palette-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.palette__input-row {
+  display: flex;
+  align-items: center;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: var(--border-w) solid var(--border);
+  gap: var(--space-sm);
+}
+.palette__prefix {
+  color: var(--primary);
+  font-weight: bold;
+  font-size: var(--font-size-lg);
+  flex-shrink: 0;
+}
+.palette__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-bold);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  outline: none;
+}
+.palette__input::placeholder {
+  color: var(--muted);
+}
+
+.palette__results {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.palette__empty {
+  padding: var(--space-lg);
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+
+.palette__group {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: bold;
+  background: var(--surface);
+  border-bottom: var(--border-w) solid var(--border-subtle);
+}
+
+.palette__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  font-size: var(--font-size-sm);
+  color: var(--text);
+  border-bottom: var(--border-w) solid var(--border-subtle);
+}
+.palette__item:last-child {
+  border-bottom: none;
+}
+.palette__item:hover,
+.palette__item.active {
+  background: var(--primary-dim);
+  color: var(--text-bold);
+}
+
+.palette__item-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.palette__item-icon {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.palette__item-shortcut {
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+}
+
+.palette__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-xs) var(--space-md);
+  border-top: var(--border-w) solid var(--border);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+.palette__footer .kbd {
+  font-size: var(--font-size-2xs);
+}

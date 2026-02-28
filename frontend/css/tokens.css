@@ -1,0 +1,120 @@
+/* ============================================================
+   Side-Step GUI — Design Tokens
+   Background: terminal blue-slate
+   Colors: theme.py palette + COLOR_LANGUAGE.md semantics
+   ============================================================ */
+
+:root {
+  /* --- Surface hierarchy (4 layers, clearly separated) --- */
+  --bg:          #16161E;
+  --surface:     #1E1F28;
+  --panel:       #2D2E36;
+  --elevated:    #363742;
+  --border:      #4A5F8F;
+  --border-focus: #5ccfe6;
+
+  /* --- Semantic colors --- */
+  --primary:     #5ccfe6;   /* cyan — info, headings, focus, ASCII art */
+  --secondary:   #ff4fd8;   /* strong magenta — recalled/default values + high contrast pair */
+  --accent:      #73d0ff;   /* lighter cyan — hover, focus rings */
+  --changed:     #d7b27a;   /* edited/non-default values (not warning/caution) */
+  --success:     #7ec97a;   /* green — ok, confirmed, detected (desaturated) */
+  --warning:     #ffcc66;   /* amber — warnings, caution, stale states */
+  --error:       #f07178;   /* coral — errors, failures */
+
+  /* --- Text --- */
+  --text:        #A1A8CF;
+  --text-bold:   #D5D8EC;
+  --muted:       #8995BC;   /* dim hints, secondary labels */
+  --text-secondary: #7A82A6; /* tertiary text, deeply subdued */
+
+  /* --- Impact badge colors (from contributor form) --- */
+  --badge-vram:    #f07178;
+  --badge-quality: #87d37c;
+  --badge-speed:   #ffcc66;
+  --badge-neutral: #8995BC;
+
+  /* --- Typography --- */
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+  --font-size-2xs:  10px;
+  --font-size-xs:   11px;
+  --font-size-sm:   13px;
+  --font-size-base: 14px;
+  --font-size-lg:   16px;
+  --font-size-xl:   20px;
+  --font-size-2xl:  22px;
+  --font-size-3xl:  24px;
+  --line-height:    1.6;
+
+  /* --- Spacing (2-space indent = wizard signature) --- */
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  32px;
+
+  /* --- Borders --- */
+  --radius:    2px;   /* terminal-sharp — no rounded corners */
+  --border-w:  1px;
+  --border-subtle: #3a3f4f; /* less prominent dividers */
+
+  /* --- Focus & tint --- */
+  --primary-dim: rgba(92, 207, 230, 0.10);
+  --primary-glow: rgba(92, 207, 230, 0.25);
+
+  /* --- Transitions --- */
+  --transition-fast: 100ms ease;
+  --transition-base: 150ms ease;
+  --transition-slow: 250ms ease;
+}
+
+/* ============================================================
+   Reset + Base
+   ============================================================ */
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Noise/scanline overlays removed — clean background, best performance */
+
+::selection {
+  background: var(--primary);
+  color: var(--bg);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
