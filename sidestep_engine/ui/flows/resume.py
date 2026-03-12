@@ -41,6 +41,10 @@ _SAFE_FIELDS: dict[str, str] = {
     "save_best": "Auto-save best model",
     "save_best_after": "Start best-model tracking after epoch",
     "early_stop_patience": "Early stop patience (0=disabled)",
+    "target_loss": "Target loss (0=disabled)",
+    "target_loss_floor": "LR floor for cruise control",
+    "target_loss_warmup": "Cruise control warmup steps",
+    "target_loss_smoothing": "Cruise control EMA smoothing β",
     "run_name": "Run name",
 }
 

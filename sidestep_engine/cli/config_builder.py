@@ -2,7 +2,8 @@
 Config-object construction for ACE-Step Training V2 CLI.
 
 Reads model ``config.json`` for timestep parameters, auto-detects GPU,
-and builds adapter config (LoRA or LoKR) + ``TrainingConfigV2`` from CLI args.
+and builds adapter config (LoRA, DoRA, LoKR, LoHA, or OFT) +
+``TrainingConfigV2`` from CLI args.
 """
 
 from __future__ import annotations
@@ -145,12 +146,6 @@ def _populate_defaults_cache() -> None:
                     return
 
 
-def _warn_deprecated_base_model(args: argparse.Namespace) -> None:
-    """No-op: --base-model flag was removed in Beta 1.
-
-    Kept as a stub so callers don't need updating.
-    """
-
 
 def _resolve_model_config_path(ckpt_root: Path, variant: str) -> Path:
     """Find config.json for *variant*, supporting custom folder names.
@@ -202,8 +197,6 @@ def build_configs(args: argparse.Namespace) -> Tuple[AdapterConfig, TrainingConf
     :func:`~sidestep_engine.core.config_factory.build_training_config`,
     the single source of truth for config construction.
     """
-    _warn_deprecated_base_model(args)
-
     # Pre-resolve scheduler formula (requires cross-field Namespace access)
     resolved_formula = _resolve_scheduler_formula(args)
 
