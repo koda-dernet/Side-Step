@@ -159,6 +159,21 @@ def _levers_tracking(a: dict) -> None:
         default=a.get("early_stop_patience", 0), type_fn=int,
         validate_fn=lambda v: "Must be >= 0" if v < 0 else None,
     )
+    a["target_loss_floor"] = ask(
+        "Target loss LR floor (0.01 = 1%)",
+        default=a.get("target_loss_floor", 0.01), type_fn=float,
+        validate_fn=lambda v: "Must be > 0 and <= 1" if v <= 0 or v > 1 else None,
+    )
+    a["target_loss_warmup"] = ask(
+        "Cruise control warmup steps",
+        default=a.get("target_loss_warmup", 50), type_fn=int,
+        validate_fn=lambda v: "Must be >= 0" if v < 0 else None,
+    )
+    a["target_loss_smoothing"] = ask(
+        "Cruise control smoothing (EMA beta)",
+        default=a.get("target_loss_smoothing", 0.98), type_fn=float,
+        validate_fn=lambda v: "Must be > 0 and < 1" if v <= 0 or v >= 1 else None,
+    )
 
 
 # ---- Main step function ---------------------------------------------------

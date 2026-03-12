@@ -41,6 +41,10 @@ from sidestep_engine.training_defaults import (
     DEFAULT_DROPOUT,
     DEFAULT_EARLY_STOP_PATIENCE,
     DEFAULT_EMA_DECAY,
+    DEFAULT_TARGET_LOSS,
+    DEFAULT_TARGET_LOSS_FLOOR,
+    DEFAULT_TARGET_LOSS_WARMUP,
+    DEFAULT_TARGET_LOSS_SMOOTHING,
     DEFAULT_EPOCHS,
     DEFAULT_GRADIENT_ACCUMULATION,
     DEFAULT_GRADIENT_CHECKPOINTING,
@@ -274,7 +278,7 @@ def build_training_config(
                 budget.get("max", 128),
             )
 
-            lr = _get(p, "learning_rate", DEFAULT_LEARNING_RATE)
+            lr = float(_get(p, "learning_rate", DEFAULT_LEARNING_RATE))
             if lr > PP_LR_WARN_THRESHOLD:
                 logger.warning(
                     "[Side-Step] Preprocessing++ is active with lr=%.1e. "
@@ -356,6 +360,10 @@ def build_training_config(
         save_best=_get(p, "save_best", DEFAULT_SAVE_BEST),
         save_best_after=_get(p, "save_best_after", DEFAULT_SAVE_BEST_AFTER),
         early_stop_patience=_get(p, "early_stop_patience", DEFAULT_EARLY_STOP_PATIENCE),
+        target_loss=_get(p, "target_loss", DEFAULT_TARGET_LOSS),
+        target_loss_floor=_get(p, "target_loss_floor", DEFAULT_TARGET_LOSS_FLOOR),
+        target_loss_warmup=_get(p, "target_loss_warmup", DEFAULT_TARGET_LOSS_WARMUP),
+        target_loss_smoothing=_get(p, "target_loss_smoothing", DEFAULT_TARGET_LOSS_SMOOTHING),
         cfg_ratio=_get(p, "cfg_ratio", DEFAULT_CFG_RATIO),
         loss_weighting=_get(p, "loss_weighting", DEFAULT_LOSS_WEIGHTING),
         snr_gamma=_get(p, "snr_gamma", DEFAULT_SNR_GAMMA),

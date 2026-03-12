@@ -23,6 +23,10 @@ from sidestep_engine.training_defaults import (
     DEFAULT_DROPOUT,
     DEFAULT_EARLY_STOP_PATIENCE,
     DEFAULT_EMA_DECAY,
+    DEFAULT_TARGET_LOSS,
+    DEFAULT_TARGET_LOSS_FLOOR,
+    DEFAULT_TARGET_LOSS_WARMUP,
+    DEFAULT_TARGET_LOSS_SMOOTHING,
     DEFAULT_EPOCHS,
     DEFAULT_GRADIENT_ACCUMULATION,
     DEFAULT_GRADIENT_CHECKPOINTING_RATIO,
@@ -39,6 +43,7 @@ from sidestep_engine.training_defaults import (
     DEFAULT_LOSS_WEIGHTING,
     DEFAULT_MAX_GRAD_NORM,
     DEFAULT_MAX_STEPS,
+    DEFAULT_MODEL_VARIANT,
     DEFAULT_NUM_WORKERS as _DEFAULT_NUM_WORKERS,
     DEFAULT_OFT_BLOCK_SIZE,
     DEFAULT_OFT_EPS,
@@ -329,12 +334,12 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
     g.add_argument(
         "--model", "-M", "--model-variant",
         type=str,
-        default="turbo",
+        default=DEFAULT_MODEL_VARIANT,
         dest="model_variant",
         metavar="MODEL",
         help=(
-            "Model variant or subfolder name (default: turbo). "
-            "Official: turbo, base, sft. "
+            f"Model variant or subfolder name (default: {DEFAULT_MODEL_VARIANT}). "
+            "Official: base, sft, turbo. "
             "For fine-tunes: use the exact folder name under checkpoint-dir."
         ),
     )
@@ -496,6 +501,22 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
                          help=f"Epoch to start best-model tracking (default: {DEFAULT_SAVE_BEST_AFTER})")
     g_ckpt.add_argument("--early-stop-patience", type=int, default=DEFAULT_EARLY_STOP_PATIENCE,
                          help=f"Stop if no improvement for N epochs; 0=disabled (default: {DEFAULT_EARLY_STOP_PATIENCE})")
+    g_ckpt.add_argument("--target-loss", type=float, default=DEFAULT_TARGET_LOSS,
+                         dest="target_loss",
+                         help=f"Target loss cruise control (0=disabled). Damps LR as smoothed loss "
+                              f"approaches this value so training holds steady. (default: {DEFAULT_TARGET_LOSS})")
+    g_ckpt.add_argument("--target-loss-floor", type=float, default=DEFAULT_TARGET_LOSS_FLOOR,
+                         dest="target_loss_floor",
+                         help=f"Min LR multiplier at target loss; 0.01=1%% of scheduled LR "
+                              f"(default: {DEFAULT_TARGET_LOSS_FLOOR})")
+    g_ckpt.add_argument("--target-loss-warmup", type=int, default=DEFAULT_TARGET_LOSS_WARMUP,
+                         dest="target_loss_warmup",
+                         help=f"Min steps before cruise control engages "
+                              f"(default: {DEFAULT_TARGET_LOSS_WARMUP})")
+    g_ckpt.add_argument("--target-loss-smoothing", type=float, default=DEFAULT_TARGET_LOSS_SMOOTHING,
+                         dest="target_loss_smoothing",
+                         help=f"EMA beta for loss smoothing in cruise control; higher=smoother "
+                              f"(default: {DEFAULT_TARGET_LOSS_SMOOTHING})")
 
     # -- Logging / TensorBoard -----------------------------------------------
     g_log = parser.add_argument_group("Logging / TensorBoard")
@@ -654,6 +675,11 @@ def _add_captions_args(parser: argparse.ArgumentParser) -> None:
     g.add_argument(
         "--genius-token", type=str, default=None,
         help="Genius API token (overrides env/settings)",
+    )
+    g.add_argument(
+        "--google-search", action="store_true", default=False,
+        help="Enable Grounding with Google Search for Gemini captions "
+             "(lets the model look up track info online; adds per-query cost)",
     )
 
 

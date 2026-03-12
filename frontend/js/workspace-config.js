@@ -52,6 +52,7 @@ const WorkspaceConfig = (() => {
       ["full-weight-decay", "rev-weight-decay", v => v],
       ["full-max-grad-norm", "rev-grad-norm", v => v],
       ["full-save-every", "rev-save-every", v => v + " epochs"],
+      ["full-target-loss", "rev-target-loss", v => v === "0" ? "off" : v],
     ];
 
     fields.forEach(([srcId, targetId, fmt]) => {
@@ -422,6 +423,10 @@ const WorkspaceConfig = (() => {
       save_every: _v("full-save-every", "50"), log_every: _v("full-log-every", "10"),
       log_heavy_every: _v("full-log-heavy-every", "50"), save_best: _c("full-save-best"),
       save_best_after: _v("full-save-best-after", "200"), early_stop: _v("full-early-stop", "0"),
+      target_loss: _v("full-target-loss", "0"),
+      target_loss_floor: _v("full-target-loss-floor", "0.01"),
+      target_loss_warmup: _v("full-target-loss-warmup", "50"),
+      target_loss_smoothing: _v("full-target-loss-smoothing", "0.98"),
       resume_from: _v("full-resume-from", ""), strict_resume: $("full-strict-resume")?.checked ?? true,
       weight_decay: _v("full-weight-decay", "0.01"),
       max_grad_norm: _v("full-max-grad-norm", "1.0"), seed: _v("full-seed", "42"),

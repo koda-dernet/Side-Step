@@ -45,6 +45,7 @@ def _flush_accumulated(
     epoch: int,
     global_step: int,
     steps_per_epoch: int,
+    pre_scheduler_lr: float = None,
 ) -> Tuple[int, float, List[TrainingUpdate]]:
     """Clip gradients, step optimizer/scheduler, log, then zero grads.
 
@@ -58,6 +59,11 @@ def _flush_accumulated(
     """
     torch.nn.utils.clip_grad_norm_(trainable_params, cfg.max_grad_norm)
     optimizer.step()
+    # Restore un-damped LR so scheduler.step() sees the pure value,
+    # NOT the cruise-damped value (prevents compounding spiral).
+    if pre_scheduler_lr is not None:
+        for pg in optimizer.param_groups:
+            pg["lr"] = pre_scheduler_lr
     scheduler.step()
     global_step += 1
 
@@ -300,6 +306,68 @@ def run_basic_training_loop(
     _step_loss_window: list = []
     _step_loss_window_size = 20
 
+    # Target loss cruise control
+    _target_loss = getattr(cfg, "target_loss", 0.0)
+    _target_loss_floor = getattr(cfg, "target_loss_floor", 0.01)
+    _cruise_active = False  # one-time message flag
+    _cruise_ema: Optional[float] = None
+    _cruise_beta = getattr(cfg, "target_loss_smoothing", 0.98)
+    _scheduler_lr: Optional[float] = None  # pure scheduler LR (before damping)
+    _CRUISE_MIN_STEPS = getattr(cfg, "target_loss_warmup", 50)
+
+    # -- Cruise control conflict guards --
+    if _target_loss > 0:
+        # Prodigy manages LR internally — cruise control would fight it
+        if optimizer_type == "prodigy":
+            _target_loss = 0.0
+            yield TrainingUpdate(
+                0, 0.0,
+                "[WARN] Cruise control disabled — Prodigy optimizer manages LR internally. "
+                "Use a different optimizer (e.g. adamw8bit) to enable target_loss.",
+                kind="warn",
+            )
+
+        # Early stopping triggers on plateau — cruise intentionally plateaus loss
+        if _target_loss > 0 and cfg.early_stop_patience > 0:
+            yield TrainingUpdate(
+                0, 0.0,
+                f"[WARN] Early stopping (patience={cfg.early_stop_patience}) auto-disabled — "
+                f"cruise control intentionally holds loss steady, which would false-trigger early stop.",
+                kind="warn",
+            )
+            cfg.early_stop_patience = 0
+
+        # Never engage cruise before scheduler warmup finishes
+        if _target_loss > 0 and _CRUISE_MIN_STEPS < cfg.warmup_steps:
+            _CRUISE_MIN_STEPS = cfg.warmup_steps
+            yield TrainingUpdate(
+                0, 0.0,
+                f"[INFO] Cruise warmup clamped to {cfg.warmup_steps} (scheduler warmup steps) "
+                f"to avoid fighting the LR ramp.",
+                kind="info",
+            )
+
+        # Cosine restarts cause periodic LR resets that fight smooth cruising
+        if _target_loss > 0 and scheduler_type == "cosine_restarts":
+            yield TrainingUpdate(
+                0, 0.0,
+                "[WARN] Cosine restarts + cruise control: LR resets will cause oscillating "
+                "damping. Consider using 'cosine' scheduler for smoother cruising.",
+                kind="warn",
+            )
+
+        # Combined minimum effective LR warning
+        if _target_loss > 0 and scheduler_type in ("cosine", "cosine_restarts"):
+            _eta_min_ratio = getattr(cfg, "cosine_eta_min_ratio", 0.01)
+            _combined_min = cfg.learning_rate * _eta_min_ratio * _target_loss_floor
+            if _combined_min < cfg.learning_rate * 1e-4:
+                yield TrainingUpdate(
+                    0, 0.0,
+                    f"[WARN] Combined min LR (eta_min × floor) = {_combined_min:.2e} — "
+                    f"this may be too low. Consider raising cosine_eta_min_ratio or target_loss_floor.",
+                    kind="warn",
+                )
+
     # Rehydrate tracker state from checkpoint if available
     if _resumed_runtime and _resumed_runtime.get("tracker_state"):
         ts = _resumed_runtime["tracker_state"]
@@ -309,6 +377,10 @@ def run_basic_training_loop(
         recent_losses = list(ts.get("recent_losses", []))
         saved_patience = ts.get("patience_counter", 0)
         patience_counter = min(saved_patience, cfg.early_stop_patience) if cfg.early_stop_patience > 0 else 0
+        _saved_cruise_ema = ts.get("cruise_ema")
+        if _saved_cruise_ema is not None and _target_loss > 0:
+            _cruise_ema = _saved_cruise_ema
+            _CRUISE_MIN_STEPS = 0  # already warmed — engage immediately
         yield TrainingUpdate(
             0, 0.0,
             f"[OK] Tracker state restored (best_loss={best_loss:.4f}, "
@@ -396,11 +468,54 @@ def run_basic_training_loop(
                     trainable_params, optimizer, scheduler,
                     accumulated_loss, accumulation_step, cfg, tb, module,
                     epoch, global_step, steps_per_epoch,
+                    pre_scheduler_lr=_scheduler_lr,
                 )
                 if _ema is not None:
                     _ema.update()
                 yield from updates
-                _lr = scheduler.get_last_lr()[0]
+
+                # Snapshot the scheduler's pure LR before any damping
+                _scheduler_lr = scheduler.get_last_lr()[0]
+
+                # -- Target loss cruise control (LR damping) v3 -----
+                if _target_loss > 0 and global_step >= _CRUISE_MIN_STEPS:
+                    # EMA loss smoothing
+                    if _cruise_ema is None:
+                        _cruise_ema = avg_loss
+                    else:
+                        _cruise_ema = _cruise_beta * _cruise_ema + (1.0 - _cruise_beta) * avg_loss  # noqa: E501
+
+                    if _cruise_ema > _target_loss:
+                        # Above target: smoothstep over tight 30% margin
+                        _margin = 0.3
+                        _headroom = (_cruise_ema - _target_loss) / max(_target_loss * _margin, 1e-8)
+                        _t = max(0.0, min(1.0, _headroom))
+                        _smooth_t = _t * _t * (3.0 - 2.0 * _t)
+                        _scale = _target_loss_floor + _smooth_t * (1.0 - _target_loss_floor)
+                    else:
+                        # Below target: exponentially decay toward zero LR
+                        _overshoot = (_target_loss - _cruise_ema) / max(_target_loss, 1e-8)
+                        _scale = _target_loss_floor * math.exp(-10.0 * _overshoot)
+
+                    # Fast-path: raw loss already below target → clamp now,
+                    # don't wait for the lagging EMA to catch up
+                    if avg_loss < _target_loss:
+                        _scale = min(_scale, _target_loss_floor)
+
+                    for pg in optimizer.param_groups:
+                        pg["lr"] = _scheduler_lr * _scale
+                    tb.log_scalar("target_loss_scale", _scale, global_step)
+                    tb.log_scalar("target_loss_ema", _cruise_ema, global_step)
+                    if not _cruise_active and _scale < 0.99:
+                        _cruise_active = True
+                        yield TrainingUpdate(
+                            step=global_step, loss=avg_loss,
+                            msg=f"[INFO] Target loss cruise control activated "
+                                f"(target={_target_loss}, ema={_cruise_ema:.4f}, scale={_scale:.3f})",
+                            kind="info", epoch=epoch + 1, max_epochs=cfg.max_epochs,
+                        )
+
+                _lr = optimizer.param_groups[0]["lr"]
                 _pw.maybe_write(step=global_step, epoch=epoch + 1,
                                 max_epochs=cfg.max_epochs, loss=avg_loss, lr=_lr,
                                 best_loss=best_loss, best_epoch=best_epoch,
@@ -458,11 +573,15 @@ def run_basic_training_loop(
 
         # Flush remainder
         if accumulation_step > 0:
+            if _scheduler_lr is not None:
+                for pg in optimizer.param_groups:
+                    pg["lr"] = _scheduler_lr
             global_step, avg_loss, updates = _flush_accumulated(
                 trainable_params, optimizer, scheduler,
                 accumulated_loss, accumulation_step, cfg, tb, module,
                 epoch, global_step, steps_per_epoch,
             )
+            _scheduler_lr = scheduler.get_last_lr()[0]
             if _ema is not None:
                 _ema.update()
             yield from updates
@@ -582,6 +701,7 @@ def run_basic_training_loop(
                     "patience_counter": patience_counter,
                     "best_tracking_active": best_tracking_active,
                     "recent_losses": list(recent_losses),
+                    "cruise_ema": _cruise_ema,
                 },
             }
             if _chunk_sampler is not None:

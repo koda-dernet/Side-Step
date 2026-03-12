@@ -223,19 +223,12 @@ class OFTConfigV2(OFTConfig):
 
 @dataclass
 class TrainingConfigV2(TrainingConfig):
-    """Extended training configuration with corrected-training fields.
+    """Extended training configuration for Side-Step.
 
-    New fields compared to the original TrainingConfig:
-    - CFG dropout (cfg_ratio)
-    - Continuous timestep sampling parameters (timestep_mu, timestep_sigma,
-      data_proportion)
-    - Model variant selection
-    - Device / precision auto-detection
-    - Estimation parameters
-    - Extended TensorBoard logging
-    - Sample generation during training
-    - Checkpoint resume
-    - Preprocessing flags
+    Covers adapter selection, model variant, training hyperparameters,
+    schedulers, cruise control, logging, checkpointing, estimation,
+    sample generation, and device/precision auto-detection.  See
+    per-field docstrings for details.
     """
 
     # --- Data loading (declared here for compatibility with base packages
@@ -318,7 +311,7 @@ class TrainingConfigV2(TrainingConfig):
     sampling + CFG dropout (base/sft).  Not user-facing."""
 
     # --- Model / paths ------------------------------------------------------
-    model_variant: str = "turbo"
+    model_variant: str = "base"
     """Model variant: 'turbo', 'base', or 'sft'."""
 
     checkpoint_dir: str = "./checkpoints"
@@ -357,6 +350,22 @@ class TrainingConfigV2(TrainingConfig):
     early_stop_patience: int = 0
     """Stop training if smoothed loss doesn't improve for this many epochs
     after best-model tracking is active.  0 = disabled."""
+
+    target_loss: float = 0.0
+    """Target loss for cruise control.  When smoothed loss reaches this value,
+    LR is progressively damped to hold steady.  0 = disabled."""
+
+    target_loss_floor: float = 0.01
+    """Minimum LR multiplier when target loss cruise control is active.
+    0.01 = LR can drop to 1% of scheduled value at the target loss."""
+
+    target_loss_warmup: int = 50
+    """Minimum optimizer steps before cruise control can engage.
+    Avoids false activation on noisy early losses."""
+
+    target_loss_smoothing: float = 0.98
+    """EMA beta for smoothing the loss signal used by cruise control.
+    Higher = smoother (less reactive).  0.98 ≈ 50-step half-life."""
 
     # --- Extended TensorBoard logging ---------------------------------------
     log_dir: Optional[str] = None
@@ -516,6 +525,20 @@ class TrainingConfigV2(TrainingConfig):
                 f"cosine_restarts_count must be >= 1 "
                 f"(got {self.cosine_restarts_count})"
             )
+        if self.target_loss < 0:
+            errors.append(f"target_loss must be >= 0 (got {self.target_loss})")
+        if not (0.0 < self.target_loss_floor <= 1.0):
+            errors.append(
+                f"target_loss_floor must be > 0 and <= 1 "
+                f"(got {self.target_loss_floor})"
+            )
+        if self.target_loss_warmup < 0:
+            errors.append(f"target_loss_warmup must be >= 0 (got {self.target_loss_warmup})")
+        if not (0.0 < self.target_loss_smoothing < 1.0):
+            errors.append(
+                f"target_loss_smoothing must be > 0 and < 1 "
+                f"(got {self.target_loss_smoothing})"
+            )
         if errors:
             raise ValueError(
                 "Invalid training configuration:\n  - " + "\n  - ".join(errors)
@@ -605,6 +628,10 @@ class TrainingConfigV2(TrainingConfig):
                 "save_best": self.save_best,
                 "save_best_after": self.save_best_after,
                 "early_stop_patience": self.early_stop_patience,
+                "target_loss": self.target_loss,
+                "target_loss_floor": self.target_loss_floor,
+                "target_loss_warmup": self.target_loss_warmup,
+                "target_loss_smoothing": self.target_loss_smoothing,
                 "log_dir": self.log_dir,
                 "log_every": self.log_every,
                 "log_heavy_every": self.log_heavy_every,

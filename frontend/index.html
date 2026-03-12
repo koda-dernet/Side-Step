@@ -171,9 +171,9 @@
           </label>
           <div class="input-with-browse">
             <select class="select model-picker" id="ez-model-variant">
-              <option value="turbo" selected>turbo (fast, 8 steps)</option>
-              <option value="base">base (quality, 50 steps)</option>
+              <option value="base" selected>base (recommended, 50 steps)</option>
               <option value="sft">sft (prompted, 50 steps)</option>
+              <option value="turbo">turbo (fast inference, 8 steps)</option>
             </select>
             <button class="btn btn--sm btn--refresh" title="Refresh model list">R</button>
           </div>
@@ -185,13 +185,13 @@
             <h4>What is this?</h4>
             <p>Which base model to fine-tune. Available variants are auto-detected from your checkpoint directory.</p>
             <ul>
-              <li><code>turbo</code> — Fast inference (8 steps). Best for most use cases.</li>
-              <li><code>base</code> — Higher quality, slower (50 steps). Better for complex music.</li>
+              <li><code>base</code> — Recommended for training. LoRAs trained on base transfer to turbo/sft at inference.</li>
               <li><code>sft</code> — Supervised fine-tune, follows text prompts more closely.</li>
+              <li><code>turbo</code> — Fast inference (8 steps). Not recommended for training.</li>
             </ul>
             <p><em>Can't find your model? Check your checkpoint directory in Settings.</em></p>
-            <span class="badge badge--speed">Speed: turbo=fast, base/sft=slower inference</span>
-            <span class="badge badge--quality">Quality: base slightly higher ceiling</span>
+            <span class="badge badge--quality">Quality: base produces the best LoRAs</span>
+            <span class="badge badge--speed">Inference: turbo=fast, base/sft=slower</span>
           </div>
         </div>
 
@@ -334,9 +334,9 @@
               </label>
               <div class="input-with-browse">
                 <select class="select model-picker" id="full-model-variant">
-                  <option value="turbo" selected>turbo</option>
-                  <option value="base">base</option>
+                  <option value="base" selected>base</option>
                   <option value="sft">sft</option>
+                  <option value="turbo">turbo</option>
                 </select>
                 <button class="btn btn--sm btn--refresh" title="Refresh model list">R</button>
               </div>
@@ -347,7 +347,7 @@
               <div class="field-warning" id="warn-non-base-full" style="display:none;">
                 <strong>Not recommended.</strong> Training on the <strong>base</strong> variant produces the best LoRAs. LoRAs trained on base transfer to turbo/sft at inference time.
               </div>
-              <div id="full-strategy-banner" style="font-size: var(--font-size-sm); color: var(--muted); margin-top: var(--space-xs);">Turbo — discrete 8-step sampling, no CFG</div>
+              <div id="full-strategy-banner" style="font-size: var(--font-size-sm); color: var(--muted); margin-top: var(--space-xs);">Base/SFT — continuous sampling + CFG dropout</div>
             </div>
             <div class="form-group">
               <label class="form-group__label">Adapter type <span class="help-icon" data-help="help-full-adapter">?</span></label>
@@ -1153,6 +1153,52 @@
                   <div class="field-error"></div>
                 </div>
               </div>
+              <!-- Cruise Control -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Cruise Control</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Target loss (0=off) <span class="help-icon" data-help="help-full-target-loss">?</span></label>
+                  <div id="help-full-target-loss" class="help-panel">
+                    <h4>Loss Cruise Control</h4>
+                    <p><strong>Simple:</strong> Set a target loss value (e.g. 0.5) and training will automatically slow down as it approaches that level, holding steady without overshooting. Training keeps running — you decide when to stop.</p>
+                    <p>0 = disabled. Typical values: 0.3–0.8 depending on dataset size and quality.</p>
+                  </div>
+                  <input class="input has-default" type="text" id="full-target-loss" value="0" data-default="0" data-validate="gte:0">
+                  <div class="field-error"></div>
+                  <div class="hint">Damp LR as loss approaches this value. 0=disabled.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">LR floor <span class="help-icon" data-help="help-full-target-loss-floor">?</span></label>
+                  <div id="help-full-target-loss-floor" class="help-panel">
+                    <p><strong>Simple:</strong> When cruise control is active, this is the minimum fraction of the scheduled LR. 0.01 = LR can drop to 1% of its normal value at the target loss. Lower = harder brake.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-target-loss-floor" value="0.01" step="0.01" data-default="0.01" data-validate="gt:0 lte:1">
+                  <div class="field-error"></div>
+                  <div class="hint">Min LR multiplier at target (0.01 = 1%)</div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Warmup steps <span class="help-icon" data-help="help-full-target-loss-warmup">?</span></label>
+                  <div id="help-full-target-loss-warmup" class="help-panel">
+                    <p><strong>Simple:</strong> How many optimizer steps to wait before cruise control can engage. Early loss values are noisy — this prevents premature activation.</p>
+                    <p>Lower for small datasets, higher for large noisy datasets.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-target-loss-warmup" value="50" data-default="50" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                  <div class="hint">Min steps before cruise engages</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Smoothing (EMA β) <span class="help-icon" data-help="help-full-target-loss-smoothing">?</span></label>
+                  <div id="help-full-target-loss-smoothing" class="help-panel">
+                    <p><strong>Simple:</strong> Controls how smoothly the loss signal is averaged. Higher values = smoother (less reactive to individual steps). Lower = more reactive.</p>
+                    <p>0.98 ≈ 50-step half-life. Try 0.95 for faster response or 0.99 for very smooth.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-target-loss-smoothing" value="0.98" step="0.01" data-default="0.98" data-validate="gt:0 lt:1">
+                  <div class="field-error"></div>
+                  <div class="hint">Higher = smoother (0.95–0.99)</div>
+                </div>
+              </div>
               <!-- Optimizer internals -->
               <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Optimizer Internals</div>
               <div class="form-row">
@@ -1354,7 +1400,7 @@
             <div class="panel__title">Review</div>
             <div id="full-review-content">
               <div class="review-table__group" data-jump="full-model-variant" style="cursor:pointer;">Model</div>
-              <div class="review-table__row"><span class="review-table__key">Variant</span><span class="review-table__val" id="rev-variant">turbo</span></div>
+              <div class="review-table__row"><span class="review-table__key">Variant</span><span class="review-table__val" id="rev-variant">base</span></div>
               <div class="review-table__row"><span class="review-table__key">Checkpoint</span><span class="review-table__val" id="rev-ckpt">checkpoints</span></div>
               <div class="review-table__group" data-jump="full-adapter-type" style="cursor:pointer;">Adapter</div>
               <div class="review-table__row"><span class="review-table__key">Type</span><span class="review-table__val" id="rev-adapter">LoRA</span></div>
@@ -1366,6 +1412,7 @@
               <div class="review-table__row"><span class="review-table__key">LR</span><span class="review-table__val" id="rev-lr">1e-4</span></div>
               <div class="review-table__row"><span class="review-table__key">Batch</span><span class="review-table__val" id="rev-batch">1 × 4 = 4</span></div>
               <div class="review-table__row"><span class="review-table__key">Epochs</span><span class="review-table__val" id="rev-epochs">100</span></div>
+              <div class="review-table__row"><span class="review-table__key">Target loss</span><span class="review-table__val" id="rev-target-loss">off</span></div>
               <div class="review-table__row"><span class="review-table__key">Warmup</span><span class="review-table__val" id="rev-warmup">100 steps</span></div>
               <div class="review-table__row"><span class="review-table__key">Max steps</span><span class="review-table__val" id="rev-max-steps">off</span></div>
               <div class="review-table__row"><span class="review-table__key">Dataset repeats</span><span class="review-table__val" id="rev-repeats">1×</span></div>
@@ -2013,11 +2060,25 @@
             <div id="caption-gemini-settings">
               <div class="form-group">
                 <label class="form-group__label">Gemini Model</label>
-                <select class="select" id="caption-gemini-model">
-                  <option value="gemini-2.0-flash" selected>gemini-2.0-flash</option>
-                  <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
-                  <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                </select>
+                <input class="input" type="text" id="caption-gemini-model" list="gemini-model-suggestions" value="gemini-2.5-flash" placeholder="gemini-2.5-flash">
+                <datalist id="gemini-model-suggestions">
+                  <option value="gemini-2.5-flash">
+                  <option value="gemini-2.5-flash-lite">
+                  <option value="gemini-2.5-pro">
+                  <option value="gemini-3-flash-preview">
+                  <option value="gemini-3.1-flash-lite-preview">
+                  <option value="gemini-3.1-pro-preview">
+                </datalist>
+              </div>
+              <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-md);margin-bottom:var(--space-md);">
+                <div>
+                  <label class="form-group__label" for="caption-gemini-google-search" style="margin-bottom:2px;">Enable Google Search</label>
+                  <div class="hint">Let Gemini look up track info online to enrich captions. Audio analysis still takes priority. Adds a small per-query cost.</div>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" id="caption-gemini-google-search">
+                  <span class="toggle__track"></span>
+                </label>
               </div>
             </div>
 
@@ -2026,7 +2087,18 @@
               <div class="form-row">
                 <div class="form-group" style="flex: 1;">
                   <label class="form-group__label">OpenAI Model</label>
-                  <input class="input" type="text" id="caption-openai-model" value="gpt-4o-mini">
+                  <input class="input" type="text" id="caption-openai-model" list="openai-model-suggestions" value="gpt-4o-audio-preview">
+                  <datalist id="openai-model-suggestions">
+                    <option value="gpt-4o">
+                    <option value="gpt-4o-audio-preview">
+                    <option value="gpt-4o-mini">
+                    <option value="gpt-4o-mini-audio-preview">
+                    <option value="gpt-4.1">
+                    <option value="gpt-4.1-mini">
+                    <option value="gpt-audio">
+                    <option value="gpt-audio-1.5">
+                    <option value="gpt-audio-mini">
+                  </datalist>
                 </div>
                 <div class="form-group" style="flex: 1;">
                   <label class="form-group__label">Base URL (empty = default)</label>
@@ -2042,6 +2114,16 @@
                 <span style="color: var(--muted);">No API key required.</span>
                 First run will download the model from HuggingFace.<br>
                 <span style="color: var(--muted);">Tip:</span> Run the installer script again to pre-download.
+              </div>
+              <div class="form-group" style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-md);margin-bottom:var(--space-md);">
+                <div>
+                  <label class="form-group__label" for="caption-local-cpu-offload" style="margin-bottom:2px;">Allow CPU offload if GPU memory is insufficient</label>
+                  <div class="hint">Slower, but can keep local captioning usable when the full model does not fit entirely in VRAM.</div>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" id="caption-local-cpu-offload">
+                  <span class="toggle__track"></span>
+                </label>
               </div>
             </div>
 
@@ -2092,9 +2174,9 @@
             </label>
             <div class="input-with-browse">
               <select class="select model-picker" id="pp-model-variant">
-                <option value="turbo" selected>turbo</option>
-                <option value="base">base</option>
+                <option value="base" selected>base</option>
                 <option value="sft">sft</option>
+                <option value="turbo">turbo</option>
               </select>
               <button class="btn btn--sm btn--refresh" title="Refresh model list">R</button>
             </div>
@@ -2250,9 +2332,9 @@
             </label>
             <div class="input-with-browse">
               <select class="select model-picker" id="ppplus-model-variant">
-                <option value="turbo" selected>turbo</option>
-                <option value="base">base</option>
+                <option value="base" selected>base</option>
                 <option value="sft">sft</option>
+                <option value="turbo">turbo</option>
               </select>
               <button class="btn btn--sm btn--refresh" title="Refresh model list">R</button>
             </div>
@@ -2538,7 +2620,15 @@
       </div>
       <div class="form-group">
         <label class="form-group__label">Gemini Model</label>
-        <input class="input" type="text" id="settings-gemini-model" value="gemini-2.0-flash" placeholder="gemini-2.0-flash">
+        <input class="input" type="text" id="settings-gemini-model" list="settings-gemini-model-suggestions" value="gemini-2.5-flash" placeholder="gemini-2.5-flash">
+        <datalist id="settings-gemini-model-suggestions">
+          <option value="gemini-2.5-flash">
+          <option value="gemini-2.5-flash-lite">
+          <option value="gemini-2.5-pro">
+          <option value="gemini-3-flash-preview">
+          <option value="gemini-3.1-flash-lite-preview">
+          <option value="gemini-3.1-pro-preview">
+        </datalist>
       </div>
       <div class="form-group">
         <label class="form-group__label">OpenAI API Key</label>

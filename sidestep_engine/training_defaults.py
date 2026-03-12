@@ -105,6 +105,10 @@ DEFAULT_SAVE_BEST: bool = True
 DEFAULT_SAVE_BEST_AFTER: int = 200
 DEFAULT_EARLY_STOP_PATIENCE: int = 0
 DEFAULT_STRICT_RESUME: bool = True
+DEFAULT_TARGET_LOSS: float = 0.0
+DEFAULT_TARGET_LOSS_FLOOR: float = 0.01
+DEFAULT_TARGET_LOSS_WARMUP: int = 50
+DEFAULT_TARGET_LOSS_SMOOTHING: float = 0.98
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -152,7 +156,7 @@ DEFAULT_SAVE_BEST_EVERY_N_STEPS: int = 0
 # Model / device
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL_VARIANT: str = "turbo"
+DEFAULT_MODEL_VARIANT: str = "base"
 DEFAULT_ADAPTER_TYPE: str = "lora"
 DEFAULT_DEVICE: str = "auto"
 DEFAULT_PRECISION: str = "auto"
@@ -218,6 +222,10 @@ TRAINING_DEFAULTS: dict = {
     "save_best_after": DEFAULT_SAVE_BEST_AFTER,
     "early_stop_patience": DEFAULT_EARLY_STOP_PATIENCE,
     "strict_resume": DEFAULT_STRICT_RESUME,
+    "target_loss": DEFAULT_TARGET_LOSS,
+    "target_loss_floor": DEFAULT_TARGET_LOSS_FLOOR,
+    "target_loss_warmup": DEFAULT_TARGET_LOSS_WARMUP,
+    "target_loss_smoothing": DEFAULT_TARGET_LOSS_SMOOTHING,
     # Logging
     "log_every": DEFAULT_LOG_EVERY,
     "log_heavy_every": DEFAULT_LOG_HEAVY_EVERY,
@@ -256,6 +264,10 @@ GUI_KEY_MAP: dict = {
     "grad_accum": "gradient_accumulation",
     "scheduler": "scheduler_type",
     "early_stop": "early_stop_patience",
+    "target-loss": "target_loss",
+    "target-loss-floor": "target_loss_floor",
+    "target-loss-warmup": "target_loss_warmup",
+    "target-loss-smoothing": "target_loss_smoothing",
     "projections": "target_modules",
     "self_projections": "self_target_modules",
     "cross_projections": "cross_target_modules",
@@ -306,6 +318,10 @@ GUI_FIELD_MAP: dict = {
     "save_best": "full-save-best",
     "save_best_after": "full-save-best-after",
     "early_stop_patience": "full-early-stop",
+    "target_loss": "full-target-loss",
+    "target_loss_floor": "full-target-loss-floor",
+    "target_loss_warmup": "full-target-loss-warmup",
+    "target_loss_smoothing": "full-target-loss-smoothing",
     "strict_resume": "full-strict-resume",
     "weight_decay": "full-weight-decay",
     "max_grad_norm": "full-max-grad-norm",
@@ -379,9 +395,9 @@ def get_gui_defaults() -> dict:
         else:
             out[field_id] = str(value)
 
-    # -- Model-variant-dependent defaults (turbo is the default variant) ----
-    out["full-shift"] = "3.0"
-    out["full-inference-steps"] = "8"
+    # -- Model-variant-dependent defaults (base is the default variant) -----
+    out["full-shift"] = "1.0"
+    out["full-inference-steps"] = "50"
 
     # -- UI presentation defaults (no backend equivalent) ------------------
     _projs = "q_proj k_proj v_proj o_proj"
