@@ -281,7 +281,7 @@ const WorkspaceSetup = (() => {
 
     const _MASK_CHAR = "\u2022";
     const _SENSITIVE_KEYS = new Set(["gemini_api_key", "openai_api_key", "genius_api_token", "hf_token"]);
-    function _isMasked(v) { return typeof v === "string" && v.includes(_MASK_CHAR); }
+    function _isMasked(v) { return typeof v === "string" && v.length > 0 && /^[\u2022\s]+$/.test(v); }
     function _gatherSettings() {
       const raw = {
         checkpoint_dir: $("settings-checkpoint-dir")?.value,
@@ -301,7 +301,6 @@ const WorkspaceSetup = (() => {
       const out = {};
       Object.entries(raw).forEach(([k, v]) => {
         if (v == null || _isMasked(v)) return;
-        if (_SENSITIVE_KEYS.has(k) && v === "") return;
         out[k] = v;
       });
       return out;

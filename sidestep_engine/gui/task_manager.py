@@ -802,7 +802,7 @@ class TaskManager:
                         af,
                         default_artist=default_artist,
                         caption_fn=caption_fn,
-                        lyrics_fn=(lambda artist, title: lyrics_fn(artist, title, af)) if lyrics_fn else None,
+                        lyrics_fn=(lambda artist, title, af=af: lyrics_fn(artist, title, af)) if lyrics_fn else None,
                         metadata_fn=metadata_fn,
                         policy=policy,
                     )

@@ -719,7 +719,8 @@ const WorkspaceLab = (() => {
     });
 
     const _MASK_CHAR = "•";
-    const _unmaskRuntimeSecret = (v) => (typeof v === "string" && v.includes(_MASK_CHAR) ? "" : v);
+    const _isMaskedRuntimeSecret = (v) => (typeof v === "string" && v.length > 0 && /^[\u2022\s]+$/.test(v));
+    const _unmaskRuntimeSecret = (v) => (_isMaskedRuntimeSecret(v) ? "" : v);
 
     $("btn-run-captions")?.addEventListener("click", async () => {
       const provider = $("caption-provider")?.value;

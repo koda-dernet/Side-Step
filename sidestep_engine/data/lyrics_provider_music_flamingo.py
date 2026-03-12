@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from urllib.error import HTTPError, URLError
 
+from sidestep_engine.data.http_utils import validate_http_url
 from sidestep_engine.data.lyrics_provider_server import _extract_payload_text
 from sidestep_engine.data.metadata_provider_music_flamingo import (
     _auth_headers,
@@ -48,7 +49,8 @@ def fetch_lyrics_from_music_flamingo(
         elif _looks_like_gradio_space(root_url):
             raw = _call_gradio_http(root_url, audio_path, full_prompt, timeout_s, hf_token=hf_token)
         else:
-            endpoint = _resolve_generic_endpoint(root_url)
+            endpoint = validate_http_url(_resolve_generic_endpoint(root_url))
+            headers = _auth_headers(hf_token, endpoint)
             fields = {"prompt": full_prompt, "mode": "lyrics", "return_json": "false"}
             raw = _http_post_multipart(endpoint, "file", audio_path, fields, timeout_s, headers=headers)
     except HTTPError as exc:

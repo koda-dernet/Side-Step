@@ -6,10 +6,12 @@ import json
 import logging
 import os
 import re
-import uuid
-from typing import Any, Dict, Iterable, List, Tuple
+from collections.abc import Iterable
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from sidestep_engine.data.http_utils import build_multipart, validate_http_url
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT_S = 180.0
@@ -23,37 +25,16 @@ def _resolve_endpoint(server_url: str) -> str:
         return ""
     tail = base.rsplit("/", 1)[-1].lower()
     if tail in {"transcribe", "lyrics", "predict", "infer"}:
-        return base
-    return base + "/transcribe"
+        return validate_http_url(base)
+    return validate_http_url(base + "/transcribe")
 
 
-def _build_multipart(fields: Dict[str, str], file_field_name: str, file_path: str) -> Tuple[bytes, str]:
-    boundary = "----sidestep-" + uuid.uuid4().hex
-    filename = os.path.basename(file_path)
-    with open(file_path, "rb") as f:
-        data = f.read()
-    parts: List[bytes] = []
-    for k, v in (fields or {}).items():
-        parts.append(f"--{boundary}\r\n".encode())
-        parts.append(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode())
-        parts.append(str(v).encode())
-        parts.append(b"\r\n")
-    parts.append(f"--{boundary}\r\n".encode())
-    parts.append(
-        (
-            f'Content-Disposition: form-data; name="{file_field_name}"; filename="{filename}"\r\n'
-            "Content-Type: application/octet-stream\r\n\r\n"
-        ).encode()
-    )
-    parts.append(data)
-    parts.append(b"\r\n")
-    parts.append(f"--{boundary}--\r\n".encode())
-    return b"".join(parts), boundary
 
 
-def _post_requests(endpoint: str, audio_path: str, fields: Dict[str, str], timeout_s: float) -> Dict[str, Any]:
+def _post_requests(endpoint: str, audio_path: str, fields: dict[str, str], timeout_s: float) -> dict[str, Any]:
     import requests
 
+    endpoint = validate_http_url(endpoint)
     with open(audio_path, "rb") as f:
         files = {"file": (os.path.basename(audio_path), f, "application/octet-stream")}
         resp = requests.post(endpoint, files=files, data=fields, timeout=timeout_s)
@@ -61,8 +42,9 @@ def _post_requests(endpoint: str, audio_path: str, fields: Dict[str, str], timeo
         return resp.json()
 
 
-def _post_urllib(endpoint: str, audio_path: str, fields: Dict[str, str], timeout_s: float) -> Dict[str, Any]:
-    body, boundary = _build_multipart(fields, "file", audio_path)
+def _post_urllib(endpoint: str, audio_path: str, fields: dict[str, str], timeout_s: float) -> dict[str, Any]:
+    endpoint = validate_http_url(endpoint)
+    body, boundary = build_multipart(fields, "file", audio_path)
     req = Request(endpoint, method="POST", data=body, headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     with urlopen(req, timeout=timeout_s) as resp:
         return json.loads(resp.read().decode("utf-8", errors="replace"))
@@ -74,7 +56,7 @@ def _normalize_spaces(text: str) -> str:
 
 def _normalize_text(text: str) -> str:
     lines = [line.rstrip() for line in str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")]
-    cleaned: List[str] = []
+    cleaned: list[str] = []
     blank = False
     for line in lines:
         s = line.strip()
@@ -116,7 +98,7 @@ def _segment_gap(seg: dict[str, Any]) -> float:
 def _iter_segments(segments: Any) -> Iterable[dict[str, Any]]:
     if not isinstance(segments, list):
         return []
-    out: List[dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for seg in segments:
         if isinstance(seg, str):
             s = _normalize_spaces(seg)
@@ -132,7 +114,7 @@ def _iter_segments(segments: Any) -> Iterable[dict[str, Any]]:
     return out
 
 
-def _flush_phrase(buf: List[str], out: List[str]) -> None:
+def _flush_phrase(buf: list[str], out: list[str]) -> None:
     if not buf:
         return
     line = _normalize_spaces(" ".join(buf))
@@ -142,8 +124,8 @@ def _flush_phrase(buf: List[str], out: List[str]) -> None:
 
 
 def _join_segment_lines(segments: Iterable[dict[str, Any]]) -> str:
-    rendered: List[str] = []
-    buf: List[str] = []
+    rendered: list[str] = []
+    buf: list[str] = []
     wc = 0
     prev_end = None
 
@@ -196,7 +178,7 @@ def _reflow_text_block(text: str) -> str:
         return ""
 
     paras = norm.split("\n\n")
-    out: List[str] = []
+    out: list[str] = []
     for para in paras:
         lines = [ln.strip() for ln in para.split("\n") if ln.strip()]
         if not lines:
@@ -212,8 +194,8 @@ def _reflow_text_block(text: str) -> str:
         words = _normalize_spaces(" ".join(lines)).split()
         if not words:
             continue
-        wrapped: List[str] = []
-        chunk: List[str] = []
+        wrapped: list[str] = []
+        chunk: list[str] = []
         for word in words:
             chunk.append(word)
             joined = " ".join(chunk)

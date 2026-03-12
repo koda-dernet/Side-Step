@@ -22,6 +22,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
+from sidestep_engine.data.http_utils import build_multipart, validate_http_url
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_S = 240.0
@@ -58,6 +60,7 @@ def _build_cookie_opener():
 
 
 def _open_request(req: Request, timeout_s: float, opener=None):
+    validate_http_url(req.full_url)
     if opener is not None:
         return opener.open(req, timeout=timeout_s)
     return urlopen(req, timeout=timeout_s)
@@ -123,28 +126,6 @@ def _resolve_generic_endpoint(server_url: str) -> str:
     return base + "/infer"
 
 
-def _build_multipart(fields: Dict[str, str], file_field_name: str, file_path: str) -> Tuple[bytes, str]:
-    boundary = "----sidestep-" + uuid.uuid4().hex
-    filename = os.path.basename(file_path)
-    with open(file_path, "rb") as f:
-        data = f.read()
-    parts: list[bytes] = []
-    for k, v in (fields or {}).items():
-        parts.append(f"--{boundary}\r\n".encode())
-        parts.append(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode())
-        parts.append(str(v).encode())
-        parts.append(b"\r\n")
-    parts.append(f"--{boundary}\r\n".encode())
-    parts.append(
-        (
-            f'Content-Disposition: form-data; name="{file_field_name}"; filename="{filename}"\r\n'
-            "Content-Type: application/octet-stream\r\n\r\n"
-        ).encode()
-    )
-    parts.append(data)
-    parts.append(b"\r\n")
-    parts.append(f"--{boundary}--\r\n".encode())
-    return b"".join(parts), boundary
 
 
 def _http_get_json(url: str, timeout_s: float, headers: Optional[Dict[str, str]] = None, opener=None) -> Dict[str, Any]:
@@ -176,7 +157,8 @@ def _http_post_multipart(
     headers: Optional[Dict[str, str]] = None,
     opener=None,
 ) -> Any:
-    body, boundary = _build_multipart(fields, file_field_name, file_path)
+    url = validate_http_url(url)
+    body, boundary = build_multipart(fields, file_field_name, file_path)
     hdrs = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
     if headers:
         hdrs.update(headers)
@@ -950,7 +932,8 @@ def _call_music_flamingo_transport(
         return _call_local_music_flamingo(root_url, audio_path, prompt, timeout_s, hf_token=hf_token)
     if _looks_like_gradio_space(root_url):
         return _call_gradio_http(root_url, audio_path, prompt, timeout_s, hf_token=hf_token)
-    endpoint = _resolve_generic_endpoint(root_url)
+    endpoint = validate_http_url(_resolve_generic_endpoint(root_url))
+    headers = _auth_headers(hf_token, endpoint)
     fields = {"prompt": prompt, "mode": "metadata", "return_json": "true"}
     return _http_post_multipart(endpoint, "file", audio_path, fields, timeout_s, headers=headers)
 
