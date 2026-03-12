@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,7 +19,7 @@ def validate_http_url(url: str) -> str:
 
 def build_multipart(fields: dict[str, str], file_field_name: str, file_path: str) -> tuple[bytes, str]:
     boundary = "----sidestep-" + uuid.uuid4().hex
-    filename = os.path.basename(file_path) or Path(file_path).name
+    filename = Path(file_path).name
     with open(file_path, "rb") as f:
         data = f.read()
     parts: list[bytes] = []

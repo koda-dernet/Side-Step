@@ -55,6 +55,7 @@ def merge_fields(
     Policies:
         ``fill_missing``: only write keys that are absent or empty.
         ``overwrite_caption``: overwrite ``caption`` only; fill rest.
+        ``overwrite_lyrics``: overwrite ``lyrics`` only; fill rest.
         ``overwrite_all``: overwrite all generated fields.
 
     Args:
@@ -83,6 +84,12 @@ def merge_fields(
 
         elif policy == "overwrite_caption":
             if key == "caption":
+                merged[key] = value
+            elif not merged.get(key, "").strip():
+                merged[key] = value
+
+        elif policy == "overwrite_lyrics":
+            if key == "lyrics":
                 merged[key] = value
             elif not merged.get(key, "").strip():
                 merged[key] = value

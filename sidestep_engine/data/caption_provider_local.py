@@ -13,7 +13,6 @@ Call :func:`unload_model` after a batch to free VRAM.
 from __future__ import annotations
 
 import gc
-import importlib
 import importlib.util
 import logging
 import os
@@ -273,16 +272,16 @@ def _pick_dtype() -> torch.dtype:
 
 
 def _pick_attention_backend() -> Optional[str]:
-    """Pick the most memory-efficient attention backend available."""
+    """Pick the most memory-efficient supported attention backend available."""
     if not torch.cuda.is_available():
         return None
     if importlib.util.find_spec("flash_attn") is None:
         return None
     try:
-        importlib.import_module("flash_attn")
-        return "flash_attention_2"
+        major, _minor = torch.cuda.get_device_capability()
     except Exception:
         return None
+    return "flash_attention_2" if major >= 8 else None
 
 
 def _load_model(tier: str, *, allow_cpu_offload: bool = False) -> None:
@@ -476,12 +475,8 @@ def generate_caption(
                     padding=True,
                     use_audio_in_video=False,
                 )
-
-                # Keep runtime tensors on the same device as the model's first
-                # parameter to avoid device mismatches with Accelerate-managed placement.
                 model_device = next(_model.parameters()).device
                 inputs = inputs.to(model_device)
-
                 if idx > 0:
                     logger.warning(
                         "Captioning fell back to temporary transcoded audio for: %s",

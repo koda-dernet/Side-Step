@@ -214,7 +214,7 @@ def _extract_payload_text(payload: Any) -> str:
         return ""
     if isinstance(payload, str):
         parsed = _coerce_json_string(payload)
-        if parsed is not payload:
+        if parsed != payload:
             return _extract_payload_text(parsed)
         return _reflow_text_block(payload)
     if isinstance(payload, list):
@@ -226,7 +226,7 @@ def _extract_payload_text(payload: Any) -> str:
         val = payload.get(key)
         if isinstance(val, str) and val.strip():
             parsed = _coerce_json_string(val)
-            if parsed is not val:
+            if parsed != val:
                 text = _extract_payload_text(parsed)
                 if text:
                     return text
@@ -264,8 +264,8 @@ def fetch_lyrics_from_server(
     try:
         try:
             payload = _post_requests(endpoint, audio_path, fields, timeout_s)
-        except Exception as exc:
-            logger.debug("requests lyrics POST failed, falling back to urllib: %s", exc)
+        except ImportError as exc:
+            logger.debug("requests unavailable, falling back to urllib: %s", exc)
             payload = _post_urllib(endpoint, audio_path, fields, timeout_s)
     except HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else str(exc)

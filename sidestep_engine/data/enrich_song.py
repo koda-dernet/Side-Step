@@ -47,7 +47,6 @@ def _normalize_generated_fields(fields: Dict[str, Any]) -> Dict[str, str]:
         )
     return {k: v for k, v in normalized.items() if str(v).strip()}
 
-
 def enrich_one(
     audio_path: Path,
     *,
@@ -103,12 +102,18 @@ def enrich_one(
             return bool(str((existing or {}).get(key, "") or "").strip())
 
         def _block_complete(*keys: str) -> bool:
-            return policy == "fill_missing" and existing and all(_has_value(k) for k in keys)
+            if not existing or not all(_has_value(k) for k in keys):
+                return False
+            if policy == "fill_missing":
+                return True
+            if policy == "overwrite_caption":
+                return "caption" not in keys
+            if policy == "overwrite_lyrics":
+                return "lyrics" not in keys
+            return False
 
         def _needs_any(*keys: str) -> bool:
-            if policy != "fill_missing":
-                return True
-            return any(not _has_value(k) for k in keys)
+            return not _block_complete(*keys)
 
         requested_blocks = []
         if lyrics_fn:
@@ -137,7 +142,8 @@ def enrich_one(
                 if analysis:
                     new_fields.update(_normalize_generated_fields(analysis))
             except Exception as exc:
-                logger.warning("Audio analysis failed for %s: %s", audio_path.name, exc)
+                logger.warning("Audio analysis failed for %s: %s",
+                               audio_path.name, exc)
                 warnings.append(f"Audio analysis error: {exc}")
 
         # Fetch lyrics
@@ -152,7 +158,8 @@ def enrich_one(
                 if not artist:
                     warnings.append("No artist detected — tried title-only lookup")
             except Exception as exc:
-                logger.warning("Lyrics fetch failed for %s: %s", audio_path.name, exc)
+                logger.warning("Lyrics fetch failed for %s: %s",
+                               audio_path.name, exc)
                 warnings.append(f"Lyrics error: {exc}")
 
         # Generate caption + structured metadata
@@ -180,7 +187,8 @@ def enrich_one(
                     result["error"] = str(exc)
                     result["error_code"] = "local_caption_oom"
                     return result
-                logger.warning("Caption generation failed for %s: %s", audio_path.name, exc)
+                logger.warning("Caption generation failed for %s: %s",
+                               audio_path.name, exc)
                 warnings.append(f"Caption error: {exc}")
 
         if metadata_fn and _needs_any(*metadata_keys):
@@ -191,7 +199,8 @@ def enrich_one(
                 else:
                     warnings.append("Metadata returned empty")
             except Exception as exc:
-                logger.warning("Metadata generation failed for %s: %s", audio_path.name, exc)
+                logger.warning("Metadata generation failed for %s: %s",
+                               audio_path.name, exc)
                 warnings.append(f"Metadata error: {exc}")
 
         if not new_fields:

@@ -41,11 +41,13 @@ def _auth_headers(hf_token: str | None, target_url: str | None = None) -> Dict[s
         "User-Agent": "Side-Step Music Flamingo/1.0",
     }
     parsed = urlparse(str(target_url or "").strip())
+    host = (parsed.hostname or "").lower()
     if parsed.scheme and parsed.netloc:
         origin = f"{parsed.scheme}://{parsed.netloc}"
         headers["Origin"] = origin
         headers["Referer"] = origin + "/"
-    if token:
+    is_hf_target = host.endswith("hf.space") or host.endswith("huggingface.co")
+    if token and is_hf_target:
         bearer = f"Bearer {token}"
         headers["Authorization"] = bearer
         headers["X-HF-Authorization"] = bearer

@@ -336,7 +336,7 @@ def _extract_from_mapping_blob_text(text: str) -> dict[str, str]:
         return {}
 
     patterns = {
-        "caption": [r'''[\'\"]caption[\'\"]\s*:\s*[\'\"]([^\'\"]+)[\'\"]'''],
+        "caption": [r'''[\'\"]caption[\'\"]\s*:\s*(["\'])(.*?)\1'''],
         "genre": [
             r'''[\'\"]genres[\'\"]\s*:\s*\[([^\]]+)\]''',
             r'''[\'\"]genre[\'\"]\s*:\s*[\'\"]([^\'\"]+)[\'\"]''',
@@ -349,10 +349,13 @@ def _extract_from_mapping_blob_text(text: str) -> dict[str, str]:
     result: dict[str, str] = {}
     for key, pats in patterns.items():
         for pat in pats:
-            m = re.search(pat, s, flags=re.I)
+            m = re.search(pat, s, flags=re.I | re.S)
             if not m:
                 continue
-            val = (m.group(1) or "").strip()
+            if m.lastindex and m.lastindex >= 2:
+                val = (m.group(2) or "").strip()
+            else:
+                val = (m.group(1) or "").strip()
             if not val:
                 continue
             if key == "genre" and "[" in s and "," in val:
