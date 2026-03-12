@@ -140,7 +140,7 @@ class HostValidationMiddleware(BaseHTTPMiddleware):
 # API key masking
 # ---------------------------------------------------------------------------
 
-_SENSITIVE_KEYS = {"gemini_api_key", "openai_api_key", "genius_api_token"}
+_SENSITIVE_KEYS = {"gemini_api_key", "openai_api_key", "genius_api_token", "hf_token"}
 _SENSITIVE_PATTERNS = ("_api_key", "_api_token", "_secret")
 
 

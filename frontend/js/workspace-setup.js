@@ -280,7 +280,7 @@ const WorkspaceSetup = (() => {
     };
 
     const _MASK_CHAR = "\u2022";
-    const _SENSITIVE_KEYS = new Set(["gemini_api_key", "openai_api_key", "genius_api_token"]);
+    const _SENSITIVE_KEYS = new Set(["gemini_api_key", "openai_api_key", "genius_api_token", "hf_token"]);
     function _isMasked(v) { return typeof v === "string" && v.includes(_MASK_CHAR); }
     function _gatherSettings() {
       const raw = {
@@ -294,6 +294,9 @@ const WorkspaceSetup = (() => {
         openai_api_key: $("settings-openai-key")?.value,
         openai_base_url: $("settings-openai-base")?.value,
         genius_api_token: $("settings-genius-token")?.value,
+        transcriber_server_url: $("settings-transcriber-server-url")?.value,
+        music_flamingo_url: $("settings-music-flamingo-url")?.value,
+        hf_token: $("settings-hf-token")?.value,
       };
       const out = {};
       Object.entries(raw).forEach(([k, v]) => {
@@ -446,6 +449,8 @@ const WorkspaceSetup = (() => {
     const gemKey = $("settings-gemini-key")?.value || "";
     const oaiKey = $("settings-openai-key")?.value || "";
     const genKey = $("settings-genius-token")?.value || "";
+    const transcriberUrl = $("settings-transcriber-server-url")?.value || "";
+    const musicFlamingoUrl = $("settings-music-flamingo-url")?.value || "";
     const _setBadgeState = (el, configured) => {
       if (!el) return;
       el.textContent = configured ? "configured [ok]" : "not set";
@@ -456,6 +461,8 @@ const WorkspaceSetup = (() => {
     _setBadgeState($("caption-gemini-badge"), gemKey && !gemKey.includes("Not set"));
     _setBadgeState($("caption-openai-badge"), !!oaiKey);
     _setBadgeState($("caption-genius-badge"), !!genKey);
+    _setBadgeState($("caption-transcriber-badge"), !!transcriberUrl);
+    _setBadgeState($("caption-music-flamingo-badge"), !!musicFlamingoUrl);
 
     if (typeof CustomSelect !== "undefined" && CustomSelect.refresh) CustomSelect.refresh();
   }

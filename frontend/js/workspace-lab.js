@@ -668,12 +668,14 @@ const WorkspaceLab = (() => {
   /* ---- AI Captions ---- */
   function _updateCaptionButtonLabels() {
     const prov = $("caption-provider")?.value;
-    const isLyrics = prov === "lyrics_only";
+    const lyricsProv = $("caption-lyrics-provider")?.value || "none";
+    const isLyrics = prov === "lyrics_only" || ((prov === "none") && lyricsProv !== "none");
+    const isNone = prov === "none" && lyricsProv === "none";
     const isLocal = prov === "local_8-10gb" || prov === "local_16gb";
     const genBtn = $("btn-gen-captions");
     const runBtn = $("btn-run-captions");
-    const label = isLyrics ? "Fetch Lyrics" : isLocal ? "Run Local Captions" : "Generate AI Captions";
-    const runLabel = isLyrics ? "Fetch Lyrics" : isLocal ? "Run Local Captions" : "Run AI Captions";
+    const label = isLyrics ? "Fetch Lyrics" : isNone ? "Run Enrichment" : isLocal ? "Run Local Captions" : "Generate AI Captions";
+    const runLabel = isLyrics ? "Fetch Lyrics" : isNone ? "Run Enrichment" : isLocal ? "Run Local Captions" : "Run AI Captions";
     if (genBtn) genBtn.textContent = label;
     if (runBtn) runBtn.textContent = runLabel;
   }
@@ -701,6 +703,10 @@ const WorkspaceLab = (() => {
       $("settings-panel")?.classList.add("open");
     });
 
+    $("caption-lyrics-provider")?.addEventListener("change", () => {
+      _updateCaptionButtonLabels();
+    });
+
     $("btn-gen-captions")?.addEventListener("click", () => {
       // Expand and scroll to the AI Caption Generation section within Audio Library
       const panel = $("ai-caption-panel");
@@ -712,23 +718,40 @@ const WorkspaceLab = (() => {
       setTimeout(() => panel.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80);
     });
 
+    const _MASK_CHAR = "•";
+    const _unmaskRuntimeSecret = (v) => (typeof v === "string" && v.includes(_MASK_CHAR) ? "" : v);
+
     $("btn-run-captions")?.addEventListener("click", async () => {
       const provider = $("caption-provider")?.value;
-      if (provider === "lyrics_only") {
+      const lyricsProvider = $("caption-lyrics-provider")?.value || (provider === "lyrics_only" ? "genius" : "none");
+      if (lyricsProvider === "genius") {
         const geniusToken = ($("settings-genius-token")?.value || "").trim();
         if (!geniusToken) { showToast("Genius token not configured — set it in Settings", "warn"); return; }
+      }
+      if (lyricsProvider === "transcriber_server") {
+        const transcriberUrl = ($("settings-transcriber-server-url")?.value || "").trim();
+        if (!transcriberUrl) { showToast("Transcriber Server URL not configured — set it in Settings", "warn"); return; }
+      }
+      if (provider === "music_flamingo") {
+        const musicFlamingoUrl = ($("settings-music-flamingo-url")?.value || "").trim();
+        if (!musicFlamingoUrl) { showToast("Music Flamingo URL not configured — set it in Settings", "warn"); return; }
       }
       // Use selected files if there's a selection, otherwise process whole directory
       const selectedPaths = (typeof Dataset !== "undefined" && Dataset.hasSelection()) ? Dataset.getSelectedAudioPaths() : [];
       const config = {
+        metadata_provider: provider,
         provider: provider,
+        lyrics_provider: lyricsProvider,
         overwrite: $("caption-overwrite")?.value,
         gemini_key: $("settings-gemini-key")?.value,
         gemini_model: $("caption-gemini-model")?.value,
         openai_key: $("settings-openai-key")?.value,
         openai_model: $("caption-openai-model")?.value,
         openai_base: $("caption-openai-base")?.value || $("settings-openai-base")?.value,
-        genius_token: $("settings-genius-token")?.value,
+        genius_token: _unmaskRuntimeSecret($("settings-genius-token")?.value),
+        transcriber_server_url: $("settings-transcriber-server-url")?.value,
+        music_flamingo_url: $("settings-music-flamingo-url")?.value,
+        hf_token: _unmaskRuntimeSecret($("settings-hf-token")?.value),
         default_artist: $("caption-default-artist")?.value,
         dataset_dir: $("lab-dataset-path")?.value,
         caption_local_cpu_offload: !!$("caption-local-cpu-offload")?.checked,

@@ -316,6 +316,7 @@ def _load_model(tier: str, *, allow_cpu_offload: bool = False) -> None:
     load_kwargs: dict[str, Any] = {
         "trust_remote_code": True,
         "attn_implementation": attn_implementation,
+        "low_cpu_mem_usage": True,
     }
 
     if torch.cuda.is_available():
@@ -451,6 +452,10 @@ def generate_caption(
     generate_started = 0.0
     decode_started = 0.0
 
+    inputs = None
+    text_ids = None
+    decoded = None
+    audios = images = videos = None
     try:
         last_error: Optional[Exception] = None
         for idx, source in enumerate(audio_sources):
@@ -467,7 +472,8 @@ def generate_caption(
                     padding=True,
                     use_audio_in_video=False,
                 )
-                inputs = inputs.to(_model.device)
+                model_device = next(_model.parameters()).device
+                inputs = inputs.to(model_device)
                 if idx > 0:
                     logger.warning(
                         "Captioning fell back to temporary transcoded audio for: %s",
@@ -567,8 +573,10 @@ def generate_caption(
     except LocalCaptionOOMError:
         raise
     except Exception as exc:
-        logger.error("Local caption generation failed for '%s - %s': %s",
-                     artist, title, exc)
+        logger.error(
+            "Local caption generation failed for '%s - %s': %s",
+            artist, title, exc,
+        )
         return None
     finally:
         conversation = None

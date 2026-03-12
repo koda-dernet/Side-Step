@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 _cache: tuple[float, Dict[str, Any]] | None = None
 
 # Current schema version -- bump when adding/renaming keys.
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 
 # Environment variable names for API key resolution
 _ENV_GEMINI_KEY = "GEMINI_API_KEY"
@@ -35,6 +35,7 @@ _ENV_OPENAI_BASE = "OPENAI_BASE_URL"
 _ENV_OPENAI_MODEL = "OPENAI_MODEL"
 _ENV_GEMINI_MODEL = "GEMINI_MODEL"
 _ENV_GENIUS_TOKEN = "GENIUS_API_TOKEN"
+_ENV_HF_TOKEN = "HF_TOKEN"
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +73,9 @@ def _default_settings() -> Dict[str, Any]:
         "openai_base_url": None,
         "openai_model": None,
         "genius_api_token": None,
+        "transcriber_server_url": None,
+        "music_flamingo_url": None,
+        "hf_token": None,
         "trained_adapters_dir": None,
         "preprocessed_tensors_dir": None,
         "audio_dir": None,
@@ -289,3 +293,20 @@ def remember_history_output_root(path: str) -> None:
     data["history_output_roots"] = roots
     save_settings(data)
 
+
+
+def get_transcriber_server_url() -> Optional[str]:
+    """Return the configured Transcriber Server URL."""
+    data = load_settings() or {}
+    return data.get("transcriber_server_url")
+
+
+def get_music_flamingo_url() -> Optional[str]:
+    """Return the configured Music Flamingo URL."""
+    data = load_settings() or {}
+    return data.get("music_flamingo_url")
+
+
+def get_hf_token() -> Optional[str]:
+    """Return the Hugging Face token (env var → settings file)."""
+    return _resolve_key(_ENV_HF_TOKEN, "hf_token")

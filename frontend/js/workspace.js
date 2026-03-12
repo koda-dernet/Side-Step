@@ -766,6 +766,9 @@ document.addEventListener("keydown", (e) => {
     openai_api_key:           "settings-openai-key",
     openai_base_url:          "settings-openai-base",
     genius_api_token:         "settings-genius-token",
+    transcriber_server_url:    "settings-transcriber-server-url",
+    music_flamingo_url:        "settings-music-flamingo-url",
+    hf_token:                  "settings-hf-token",
   };
 
   function _settingsDomId(key) {

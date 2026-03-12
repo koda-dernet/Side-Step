@@ -8,6 +8,8 @@ and merge policies for the AI dataset builder.
 
 from __future__ import annotations
 
+import ast
+import re
 import logging
 import os
 import shutil
@@ -22,6 +24,40 @@ _FIELD_ORDER = ("caption", "genre", "bpm", "key", "signature")
 
 # Fields that the AI pipeline can generate
 GENERATED_FIELDS = {"caption", "lyrics", "genre", "bpm", "key", "signature"}
+
+
+def _looks_like_caption_blob(val: Any) -> bool:
+    s = str(val or '').strip()
+    if not s:
+        return False
+    low = s.lower()
+    return low.startswith('caption: {') or (s.startswith('{') and (("'caption'" in s) or ('"caption"' in s) or ("'ok'" in s) or ('"ok"' in s)))
+
+
+def _extract_caption_from_blob(val: Any) -> str:
+    if isinstance(val, dict):
+        data = val
+    else:
+        s = str(val or '').strip()
+        if not s:
+            return ''
+        if s.lower().startswith('caption:'):
+            s = s.split(':', 1)[1].strip()
+        try:
+            data = ast.literal_eval(s)
+        except Exception:
+            data = None
+            m = re.search(r'''[\'\"]caption[\'\"]\s*:\s*[\'\"]([^\'\"]+)[\'\"]''', s, flags=re.I)
+            if m:
+                caption = (m.group(1) or '').strip()
+                return '' if _looks_like_caption_blob(caption) else caption
+            return ''
+    if not isinstance(data, dict):
+        return ''
+    caption = data.get('caption') or data.get('description') or data.get('summary') or ''
+    caption = str(caption).strip()
+    return '' if _looks_like_caption_blob(caption) else caption
+
 
 
 def read_sidecar(path: Path) -> Dict[str, str]:
@@ -68,6 +104,12 @@ def merge_fields(
     for key, value in new_fields.items():
         if not value:
             continue
+
+        if key == "caption":
+            clean_caption = _extract_caption_from_blob(value) if _looks_like_caption_blob(value) else str(value).strip()
+            if not clean_caption:
+                continue
+            value = clean_caption
 
         if policy == "fill_missing":
             if not merged.get(key, "").strip():
@@ -120,6 +162,12 @@ def write_sidecar(path: Path, data: Dict[str, str]) -> None:
             shutil.copy2(str(path), str(bak_path))
         except OSError:
             pass
+
+    data = dict(data or {})
+    if "caption" in data:
+        cap = data.get("caption", "")
+        if _looks_like_caption_blob(cap):
+            data["caption"] = _extract_caption_from_blob(cap)
 
     lines: list[str] = []
     written_keys: set[str] = set()

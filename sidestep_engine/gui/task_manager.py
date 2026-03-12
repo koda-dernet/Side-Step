@@ -30,6 +30,12 @@ from typing import Any, Callable, Dict, List, Optional
 from sidestep_engine.core.progress_writer import sanitize_floats as _sanitize_floats
 
 logger = logging.getLogger(__name__)
+_MASK_CHAR = "•"
+
+
+def _is_masked_secret(value: Any) -> bool:
+    return isinstance(value, str) and _MASK_CHAR in value
+
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -571,7 +577,7 @@ class TaskManager:
 
                 def _build_caption_fn() -> Optional[Callable[..., Optional[str]]]:
                     provider = str(config.get("provider") or "skip").lower()
-                    if provider in ("skip", "lyrics_only"):
+                    if provider in ("skip", "lyrics_only", "none", "music_flamingo"):
                         return None
 
                     generation_keys = (
@@ -681,18 +687,96 @@ class TaskManager:
 
                     raise ValueError(f"Unknown caption provider: {provider}")
 
-                def _build_lyrics_fn() -> Optional[Callable[[str, str], Optional[str]]]:
-                    token = str(config.get("genius_token") or "")
-                    token = token.encode("ascii", "ignore").decode("ascii").strip()
-                    if not token:
+                def _build_metadata_fn() -> Optional[Callable[[Path], Optional[Dict[str, str]]]]:
+                    provider = str(config.get("metadata_provider") or config.get("provider") or "skip").lower()
+                    if provider != "music_flamingo":
                         return None
 
-                    from sidestep_engine.data.lyrics_provider_genius import fetch_lyrics
+                    server_url = str(config.get("music_flamingo_url") or "").strip()
+                    hf_token = config.get("hf_token")
+                    if _is_masked_secret(hf_token) or not str(hf_token or "").strip():
+                        from sidestep_engine.settings import get_hf_token
+                        hf_token = get_hf_token()
+                    hf_token = str(hf_token or "").strip()
+                    if not server_url:
+                        return None
 
-                    def _run_lyrics(artist: str, title: str) -> Optional[str]:
-                        return fetch_lyrics(artist, title, token)
+                    from sidestep_engine.data.metadata_provider_music_flamingo import (
+                        fetch_music_flamingo_metadata as _generate_metadata,
+                    )
 
-                    return _run_lyrics
+                    def _run_metadata(audio_path: Path) -> Optional[Dict[str, str]]:
+                        return _generate_metadata(
+                            str(audio_path),
+                            server_url=server_url,
+                            hf_token=hf_token or None,
+                        )
+
+                    return _run_metadata
+
+                def _build_lyrics_fn() -> Optional[Callable[[str, str, Path], Optional[str]]]:
+                    lyrics_provider = str(config.get("lyrics_provider") or "").strip().lower()
+                    provider = str(config.get("provider") or "").strip().lower()
+                    if not lyrics_provider:
+                        lyrics_provider = "genius" if provider == "lyrics_only" else "none"
+
+                    if lyrics_provider == "none":
+                        return None
+
+                    if lyrics_provider == "genius":
+                        token = config.get("genius_token")
+                        if _is_masked_secret(token) or not str(token or "").strip():
+                            from sidestep_engine.settings import get_genius_api_token
+                            token = get_genius_api_token()
+                        token = str(token or "").strip()
+                        if not token:
+                            return None
+                        from sidestep_engine.data.lyrics_provider_genius import fetch_lyrics
+
+                        def _run_lyrics(artist: str, title: str, _audio_path: Path) -> Optional[str]:
+                            return fetch_lyrics(artist, title, token)
+
+                        return _run_lyrics
+
+                    if lyrics_provider == "transcriber_server":
+                        server_url = str(config.get("transcriber_server_url") or "").strip()
+                        if not server_url:
+                            return None
+                        from sidestep_engine.data.lyrics_provider_server import fetch_lyrics_from_server
+
+                        def _run_lyrics(artist: str, title: str, audio_path: Path) -> Optional[str]:
+                            return fetch_lyrics_from_server(
+                                str(audio_path),
+                                server_url=server_url,
+                                artist=artist,
+                                title=title,
+                            )
+
+                        return _run_lyrics
+
+                    if lyrics_provider == "music_flamingo":
+                        server_url = str(config.get("music_flamingo_url") or "").strip()
+                        hf_token = config.get("hf_token")
+                        if _is_masked_secret(hf_token) or not str(hf_token or "").strip():
+                            from sidestep_engine.settings import get_hf_token
+                            hf_token = get_hf_token()
+                        hf_token = str(hf_token or "").strip()
+                        if not server_url:
+                            return None
+                        from sidestep_engine.data.lyrics_provider_music_flamingo import fetch_lyrics_from_music_flamingo
+
+                        def _run_lyrics(artist: str, title: str, audio_path: Path) -> Optional[str]:
+                            return fetch_lyrics_from_music_flamingo(
+                                str(audio_path),
+                                server_url=server_url,
+                                artist=artist,
+                                title=title,
+                                hf_token=hf_token or None,
+                            )
+
+                        return _run_lyrics
+
+                    raise ValueError(f"Unknown lyrics provider: {lyrics_provider}")
 
                 audio_files = _resolve_audio_files()
                 total = len(audio_files)
@@ -703,6 +787,7 @@ class TaskManager:
                     return
 
                 caption_fn = _build_caption_fn()
+                metadata_fn = _build_metadata_fn()
                 lyrics_fn = _build_lyrics_fn()
                 default_artist = str(config.get("default_artist") or "")
                 policy = str(config.get("overwrite") or "fill_missing")
@@ -717,7 +802,8 @@ class TaskManager:
                         af,
                         default_artist=default_artist,
                         caption_fn=caption_fn,
-                        lyrics_fn=lyrics_fn,
+                        lyrics_fn=(lambda artist, title: lyrics_fn(artist, title, af)) if lyrics_fn else None,
+                        metadata_fn=metadata_fn,
                         policy=policy,
                     )
                     status = str(result.get("status") or "failed")

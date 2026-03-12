@@ -2026,7 +2026,9 @@
                   <option value="openai">OpenAI / Compatible</option>
                   <option value="local_8-10gb">Local 8-10GB (Qwen2.5-Omni 4-bit)</option>
                   <option value="local_16gb">Local 16GB+ (Qwen2.5-Omni bf16)</option>
+                  <option value="music_flamingo">Music Flamingo</option>
                   <option value="lyrics_only">Lyrics only</option>
+                  <option value="none">None</option>
                 </select>
               </div>
               <div class="form-group" style="flex: 1;">
@@ -2052,6 +2054,14 @@
               <div>
                 <span style="color: var(--muted);">Genius:</span>
                 <span class="api-key-badge" id="caption-genius-badge" style="color: var(--muted);">not set</span>
+              </div>
+              <div>
+                <span style="color: var(--muted);">Transcriber Server:</span>
+                <span class="api-key-badge" id="caption-transcriber-badge" style="color: var(--muted);">not set</span>
+              </div>
+              <div>
+                <span style="color: var(--muted);">Music Flamingo:</span>
+                <span class="api-key-badge" id="caption-music-flamingo-badge" style="color: var(--muted);">not set</span>
               </div>
               <a href="#" id="caption-open-settings" style="color: var(--primary); font-size: var(--font-size-sm);">Configure in Settings</a>
             </div>
@@ -2125,6 +2135,16 @@
                   <span class="toggle__track"></span>
                 </label>
               </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-group__label">Lyrics Provider</label>
+              <select class="select" id="caption-lyrics-provider">
+                <option value="genius" selected>Genius</option>
+                <option value="transcriber_server">Transcriber Server</option>
+                <option value="music_flamingo">Music Flamingo</option>
+                <option value="none">None</option>
+              </select>
             </div>
 
             <!-- Default Artist -->
@@ -2646,6 +2666,21 @@
         <label class="form-group__label">Genius API Token</label>
         <input class="input" type="password" id="settings-genius-token" placeholder="Not set">
         <div class="hint">For automatic lyrics fetching</div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Transcriber Server URL</label>
+        <input class="input" type="text" id="settings-transcriber-server-url" placeholder="http://127.0.0.1:8000">
+        <div class="hint">Local or remote HTTP server used by the Transcriber Server lyrics provider</div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Music Flamingo URL</label>
+        <input class="input" type="text" id="settings-music-flamingo-url" placeholder="https://...">
+        <div class="hint">Local or remote Music Flamingo endpoint (local server, custom HTTP, Hugging Face, or Gradio Space)</div>
+      </div>
+      <div class="form-group">
+        <label class="form-group__label">Hugging Face Token</label>
+        <input class="input" type="password" id="settings-hf-token" placeholder="Optional bearer token for Music Flamingo auth">
+        <div class="hint">Used for authenticated Music Flamingo calls when needed</div>
       </div>
 
       <div class="section-header" id="settings-visual-section" style="display:none;">Visual</div>

@@ -9,11 +9,12 @@ caption providers.  Custom prompts are loaded from
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -273,20 +274,124 @@ def _split_structured_tail(key: str, value: str) -> tuple[str, str]:
     return normalized, ""
 
 
-def parse_structured_response(text: str) -> dict[str, str]:
-    """Parse a structured ``key: value`` AI response into a dict.
+def _clean_scalar(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, tuple, set)):
+        parts = [_clean_scalar(v) for v in value]
+        return ", ".join(p for p in parts if p)
+    text = str(value).strip()
+    if not text or text.lower() == "n/a":
+        return ""
+    return text
 
-    Falls back to treating the entire text as a caption if no
-    recognised keys are found (backward compat with plain-text
-    prompts or user-overridden system prompts).
 
-    Args:
-        text: Raw response text from the caption provider.
+def _extract_structured_from_mapping(data: dict[str, Any]) -> dict[str, str]:
+    lowered = {str(k).strip().lower(): v for k, v in (data or {}).items()}
 
-    Returns:
-        Dict with sidecar-compatible keys.  Values that are
-        ``"N/A"`` or empty are omitted.
+    def pick(*names: str) -> str:
+        for name in names:
+            if name in lowered:
+                text = _clean_scalar(lowered.get(name))
+                if text:
+                    return text
+        return ""
+
+    result: dict[str, str] = {}
+    caption = pick("caption", "description", "summary")
+    genre = pick("genre", "genres")
+    bpm = pick("bpm", "tempo", "tempo (bpm)")
+    key = pick("key", "key_scale")
+    signature = pick("signature", "timesignature", "time signature", "time_signature")
+
+    if caption:
+        result["caption"] = caption
+    if genre:
+        result["genre"] = genre
+    if bpm:
+        result["bpm"] = bpm
+    if key:
+        result["key"] = key
+    if signature:
+        result["signature"] = signature
+    return result
+
+
+def _maybe_parse_mapping_text(text: str) -> dict[str, Any] | None:
+    stripped = str(text or "").strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None
+    try:
+        parsed = ast.literal_eval(stripped)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _extract_from_mapping_blob_text(text: str) -> dict[str, str]:
+    s = str(text or "").strip()
+    if not s:
+        return {}
+
+    patterns = {
+        "caption": [r'''[\'\"]caption[\'\"]\s*:\s*[\'\"]([^\'\"]+)[\'\"]'''],
+        "genre": [
+            r'''[\'\"]genres[\'\"]\s*:\s*\[([^\]]+)\]''',
+            r'''[\'\"]genre[\'\"]\s*:\s*[\'\"]([^\'\"]+)[\'\"]''',
+        ],
+        "bpm": [r'''[\'\"](?:bpm|tempo|tempo \(bpm\))[\'\"]\s*:\s*[\'\"]?([^,\'\"}\]]+)'''],
+        "key": [r'''[\'\"](?:key|key_scale)[\'\"]\s*:\s*[\'\"]([^\'\"]+)[\'\"]'''],
+        "signature": [r'''[\'\"](?:signature|timesignature|time signature|time_signature)[\'\"]\s*:\s*[\'\"]([^\'\"]+)[\'\"]'''],
+    }
+
+    result: dict[str, str] = {}
+    for key, pats in patterns.items():
+        for pat in pats:
+            m = re.search(pat, s, flags=re.I)
+            if not m:
+                continue
+            val = (m.group(1) or "").strip()
+            if not val:
+                continue
+            if key == "genre" and "[" in s and "," in val:
+                parts = [part.strip().strip("'\" ") for part in val.split(',')]
+                val = ", ".join([part for part in parts if part])
+            result[key] = val
+            break
+    return result
+
+
+def parse_structured_response(raw: Any) -> dict[str, str]:
+    """Parse structured caption output into a sidecar-compatible dict.
+
+    Accepts classic ``key: value`` text, Python/JSON-like mapping text,
+    or an already-decoded dict payload from HTTP providers.
     """
+    if not raw:
+        return {}
+
+    if isinstance(raw, dict):
+        result = _extract_structured_from_mapping(raw)
+        if result:
+            return result
+        raw = raw.get("caption") or raw.get("text") or raw.get("raw_text") or str(raw)
+
+    if not isinstance(raw, str):
+        raw = str(raw)
+
+    parsed_mapping = _maybe_parse_mapping_text(raw)
+    if parsed_mapping:
+        result = _extract_structured_from_mapping(parsed_mapping)
+        if result:
+            return result
+
+    blob_result = _extract_from_mapping_blob_text(raw)
+    if blob_result:
+        return blob_result
+
+    text = raw.strip()
     if not text:
         return {}
 
@@ -329,6 +434,6 @@ def parse_structured_response(text: str) -> dict[str, str]:
 
     # Fallback: if no structured keys found, treat whole text as caption
     if not result:
-        result["caption"] = text.strip()
+        result["caption"] = text
 
     return result
