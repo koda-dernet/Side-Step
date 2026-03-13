@@ -46,12 +46,6 @@ const WorkspaceConfig = (() => {
       ["full-max-steps", "rev-max-steps", v => v === "0" ? "off" : v],
       ["full-dataset-repeats", "rev-repeats", v => v + "\u00d7"],
       ["full-grad-ckpt-ratio", "rev-ckpt-mode", v => parseFloat(v) > 0 ? "ratio " + v : "off"],
-      ["full-chunk-duration", "rev-chunk", v => v === "0" ? "off" : v + "s"],
-      ["full-max-latent-length", "rev-chunk", v => {
-        const mode = _v("full-crop-mode", "full");
-        if (mode === "latent") return v === "0" ? "off" : ("max_latent_length=" + v);
-        return _v("full-chunk-duration", "0") === "0" ? "off" : (_v("full-chunk-duration", "0") + "s");
-      }],
       ["full-optimizer", "rev-optimizer", v => v],
       ["full-scheduler", "rev-scheduler", v => v],
       ["full-weight-decay", "rev-weight-decay", v => v],
@@ -86,6 +80,32 @@ const WorkspaceConfig = (() => {
     };
     $("full-batch")?.addEventListener("input", updateBatch);
     $("full-grad-accum")?.addEventListener("input", updateBatch);
+
+    const updateCropReview = () => {
+      const t = $("rev-chunk");
+      if (!t) return;
+      const modeEl = $("full-crop-mode");
+      const chunkEl = $("full-chunk-duration");
+      const latentEl = $("full-max-latent-length");
+      const mode = modeEl?.value || "full";
+      const chunkVal = chunkEl?.value ?? "0";
+      const latentVal = latentEl?.value ?? "0";
+      let text = "off";
+      if (mode === "seconds") text = Number(chunkVal) > 0 ? `${chunkVal}s` : "off";
+      else if (mode === "latent") text = Number(latentVal) > 0 ? `max_latent_length=${latentVal}` : "off";
+      const modeDefault = (modeEl?.dataset?.default || "full") === mode;
+      const chunkDefault = !chunkEl?.dataset?.default || chunkEl.value === chunkEl.dataset.default;
+      const latentDefault = !latentEl?.dataset?.default || latentEl.value === latentEl.dataset.default;
+      t.textContent = text;
+      t.style.color = "";
+      t.classList.toggle("review-table__val--modified", !(modeDefault && chunkDefault && latentDefault));
+    };
+    [$("full-crop-mode"), $("full-chunk-duration"), $("full-max-latent-length")].forEach((el) => {
+      if (!el) return;
+      el.addEventListener("input", updateCropReview);
+      el.addEventListener("change", updateCropReview);
+    });
+    updateCropReview();
 
     const updateOffload = () => {
       const t = $("rev-offload");
@@ -462,7 +482,6 @@ const WorkspaceConfig = (() => {
 
     if (cfg.crop_mode === "latent") {
       cfg.chunk_duration = "0";
-      if (!cfg.max_latent_length || Number(cfg.max_latent_length) <= 0) cfg.max_latent_length = "1500";
     } else if (cfg.crop_mode === "seconds") {
       cfg.max_latent_length = "0";
     } else {

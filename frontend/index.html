@@ -951,7 +951,7 @@
               </div>
               <div class="form-row">
                 <div class="form-group">
-                  <label class="form-group__label">Sequence crop mode <span class="help-icon" data-help="help-full-crop-mode">?</span></label>
+                  <label class="form-group__label" for="full-crop-mode">Sequence crop mode <span class="help-icon" data-help="help-full-crop-mode">?</span></label>
                   <div id="help-full-crop-mode" class="help-panel">
                     <p><strong>Full sample:</strong> no crop. Highest context, highest VRAM.</p>
                     <p><strong>Chunk by seconds:</strong> random moving crop based on audio seconds.</p>
@@ -964,7 +964,7 @@
                   </select>
                 </div>
                 <div class="form-group" id="crop-seconds-group" style="display:none;">
-                  <label class="form-group__label">Chunk duration (seconds) <span class="help-icon" data-help="help-full-chunk">?</span></label>
+                  <label class="form-group__label" for="full-chunk-duration">Chunk duration (seconds) <span class="help-icon" data-help="help-full-chunk">?</span></label>
                   <input class="input has-default vram-input" type="number" id="full-chunk-duration" value="0" data-default="0" data-validate="gte:0 int">
                   <div class="field-error"></div>
                   <div class="field-warning" id="warn-chunk-short"></div>
@@ -975,7 +975,7 @@
                   <div class="hint">Used only in <em>Chunk by seconds</em> mode.</div>
                 </div>
                 <div class="form-group" id="crop-latent-group" style="display:none;">
-                  <label class="form-group__label">Max latent length <span class="help-icon" data-help="help-full-max-latent">?</span></label>
+                  <label class="form-group__label" for="full-max-latent-length">Max latent length <span class="help-icon" data-help="help-full-max-latent">?</span></label>
                   <input class="input has-default vram-input" type="number" id="full-max-latent-length" value="0" data-default="0" data-validate="gte:0 int">
                   <div class="field-error"></div>
                   <div id="help-full-max-latent" class="help-panel">

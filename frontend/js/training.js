@@ -552,7 +552,6 @@ const Training = (() => {
 
     // Strip frontend-only keys and zero-means-off fields before sending to backend
     delete _config.steps_per_epoch;
-    delete _config.crop_mode;
     // Only strip disabled crop fields; chunk_decay_every=0 is still a valid user choice.
     if (_config.chunk_duration !== undefined && (Number(_config.chunk_duration) === 0 || _config.chunk_duration === '0')) delete _config.chunk_duration;
     if (_config.max_latent_length !== undefined && (Number(_config.max_latent_length) === 0 || _config.max_latent_length === '0')) delete _config.max_latent_length;

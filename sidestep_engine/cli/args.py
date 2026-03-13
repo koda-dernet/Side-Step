@@ -419,7 +419,7 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
                               "may reduce training quality for full-length inference")
     g_train.add_argument("--chunk-decay-every", type=int, default=DEFAULT_CHUNK_DECAY_EVERY,
                          help=f"Epoch interval for halving chunk coverage histogram; 0 disables decay (default: {DEFAULT_CHUNK_DECAY_EVERY})")
-    g_train.add_argument("--max-latent-length", type=int, default=DEFAULT_MAX_LATENT_LENGTH,
+    g_train.add_argument("--max-latent-length", type=int, default=None,
                          help="Random crop length in latent frames (0 = disabled). Takes precedence over --chunk-duration when > 0")
     g_train.add_argument("--max-steps", "-m", type=int, default=DEFAULT_MAX_STEPS,
                          help=f"Maximum optimizer steps; 0 = use epochs only (default: {DEFAULT_MAX_STEPS})")

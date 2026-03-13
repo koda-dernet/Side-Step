@@ -395,7 +395,7 @@ class FixedLoRAModule(nn.Module):
                     use_meanflow=False,
                 )
             else:
-                t, r = sample_timesteps(
+                t, _r = sample_timesteps(
                     batch_size=bsz,
                     device=self.device,
                     dtype=self.dtype,
