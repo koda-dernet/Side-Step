@@ -163,7 +163,7 @@ const API = (() => {
     return _get('/api/fisher-map/status?' + q.toString());
   }
 
-  async function runFisherAnalysis(config) { return _post('/api/ppplus/start', config); }
+  async function runFisherAnalysis(config) { return _post('/api/ppplus/start', { config }); }
 
   // ---- Resume -----------------------------------------------------------
 
