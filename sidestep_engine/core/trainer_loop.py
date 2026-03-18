@@ -418,6 +418,8 @@ def run_basic_training_loop(
         num_updates = 0
         epoch_start = time.time()
 
+        _accum_cond_info: list = []
+
         for batch in train_loader:
             if training_state and training_state.get("should_stop", False):
                 _stop_loss = (
@@ -430,6 +432,12 @@ def run_basic_training_loop(
                 yield TrainingUpdate(global_step, _stop_loss, "[INFO] Training stopped", kind="complete")
                 tb.close()
                 return
+
+            # Extract non-tensor keys before training_step
+            _batch_cond = batch.pop("conditioning_info", None)
+            batch.pop("metadata", None)
+            if _batch_cond:
+                _accum_cond_info.extend(_batch_cond)
 
             loss = module.training_step(batch)
 
@@ -520,6 +528,8 @@ def run_basic_training_loop(
                 if _target_loss > 0 and global_step >= _CRUISE_MIN_STEPS:
                     _pw_extra["target_loss_scale"] = _scale
                     _pw_extra["target_loss_ema"] = _cruise_ema
+                if _accum_cond_info:
+                    _pw_extra["conditioning_info"] = _accum_cond_info
                 _pw.maybe_write(step=global_step, epoch=epoch + 1,
                                 max_epochs=cfg.max_epochs, loss=avg_loss, lr=_lr,
                                 best_loss=best_loss, best_epoch=best_epoch,
@@ -528,6 +538,7 @@ def run_basic_training_loop(
                 num_updates += 1
                 accumulated_loss = 0.0
                 accumulation_step = 0
+                _accum_cond_info = []
 
                 # Step-level best-model tracking
                 if _step_best_every > 0 and cfg.save_best and best_tracking_active:

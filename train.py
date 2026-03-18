@@ -766,9 +766,9 @@ def _run_captions(args) -> int:
             return _oai_cap(title, artist, api_key, audio_path=audio_path,
                             lyrics_excerpt=lyrics_excerpt, model=model,
                             base_url=base_url)
-    elif provider in ("local_8-10gb", "local_16gb"):
+    elif provider in ("local_8-10gb", "local_12gb", "local_16gb"):
         from sidestep_engine.data.caption_provider_local import generate_caption as _local_cap
-        tier = "8-10gb" if provider == "local_8-10gb" else "16gb"
+        tier = {"local_8-10gb": "8-10gb", "local_12gb": "12gb"}.get(provider, "16gb")
 
         def caption_fn(title, artist, lyrics_excerpt, audio_path):
             return _local_cap(title, artist, audio_path=audio_path,
@@ -883,7 +883,7 @@ def _run_captions(args) -> int:
             print(f"           warning: {w}")
 
     # Free VRAM if a local model was loaded
-    if provider in ("local_8-10gb", "local_16gb"):
+    if provider in ("local_8-10gb", "local_12gb", "local_16gb"):
         try:
             from sidestep_engine.data.caption_provider_local import unload_model
             unload_model()

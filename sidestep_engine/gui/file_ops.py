@@ -485,13 +485,50 @@ def scan_audio_dir(path: str) -> Dict[str, Any]:
     }
 
 
+def _link_file(src: Path, dest: Path) -> None:
+    """Link *src* to *dest* using the best available method.
+
+    Tries in order: symlink → hard link → file copy.
+    Raises OSError only if all three methods fail.
+    """
+    # 1. symlink (cheapest, but needs privileges on Windows)
+    try:
+        os.symlink(str(src), str(dest))
+        return
+    except OSError:
+        pass
+    # 2. hard link (works on same volume without special privileges)
+    try:
+        os.link(str(src), str(dest))
+        return
+    except OSError:
+        pass
+    # 3. full copy (always works, uses more disk)
+    shutil.copy2(str(src), str(dest))
+
+
 def create_mix_dataset(
     source_root: str,
     destination_root: str,
     mix_name: str,
     files: List[str],
+    sidecar_mode: str = "copy",
 ) -> Dict[str, Any]:
-    """Create a storage-light mixed dataset by symlinking selected audio files."""
+    """Create a mixed dataset from selected files and/or folders.
+
+    Audio files are linked (symlink → hard-link → copy fallback) so the
+    mix is storage-light when possible.  Sidecar ``.txt`` files are always
+    independent copies so the user can edit them freely.
+
+    Args:
+        source_root: Audio library root used to compute relative paths.
+        destination_root: Parent directory where the new mix folder is placed.
+        mix_name: Human-readable name (sanitised for the filesystem).
+        files: List of absolute paths — may be individual audio files **or**
+            directories whose audio contents will be included recursively.
+        sidecar_mode: ``"copy"`` to duplicate existing sidecar content,
+            ``"empty"`` to create blank ``.txt`` files for every track.
+    """
     src_root = _resolve_gui_path(source_root)
     dest_root = _resolve_gui_path(destination_root)
     name = str(mix_name or "").strip()
@@ -520,48 +557,59 @@ def create_mix_dataset(
     if out_dir.exists() and any(out_dir.iterdir()):
         return {"ok": False, "error": f"Destination already exists and is not empty: {out_dir}"}
 
+    # -- Expand entries: folders → contained audio files, files pass through --
+    audio_paths: List[Path] = []
+    for raw in files or []:
+        p = _resolve_gui_path(raw)
+        if p.is_dir():
+            audio_paths.extend(
+                sorted(f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in _AUDIO_EXTS)
+            )
+        elif p.is_file() and p.suffix.lower() in _AUDIO_EXTS:
+            audio_paths.append(p)
+
+    if not audio_paths:
+        return {"ok": False, "error": "No audio files found in the selection"}
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     created = 0
     skipped = 0
     errors: List[str] = []
 
-    for raw in files or []:
-        src = _resolve_gui_path(raw)
-        if src.suffix.lower() not in _AUDIO_EXTS:
-            skipped += 1
-            continue
-        if not src.is_file():
-            skipped += 1
-            continue
-        try:
-            rel = src.relative_to(src_root)
-        except ValueError:
-            skipped += 1
-            continue
-
-        dest_audio = out_dir / rel
-        dest_audio.parent.mkdir(parents=True, exist_ok=True)
+    for src in audio_paths:
+        dest_audio = out_dir / src.name
         if dest_audio.exists():
             skipped += 1
             continue
 
         try:
-            os.symlink(str(src), str(dest_audio))
+            _link_file(src, dest_audio)
             created += 1
         except OSError as exc:
             errors.append(f"{src.name}: {exc}")
             continue
 
-        src_sidecar = src.with_suffix(".txt")
-        if src_sidecar.is_file():
-            dest_sidecar = dest_audio.with_suffix(".txt")
-            if not dest_sidecar.exists():
+        # -- Sidecar handling: always an independent file, never a link --
+        dest_sidecar = dest_audio.with_suffix(".txt")
+        if not dest_sidecar.exists():
+            src_sidecar = src.with_suffix(".txt")
+            if sidecar_mode == "copy" and src_sidecar.is_file():
                 try:
-                    os.symlink(str(src_sidecar), str(dest_sidecar))
+                    shutil.copy2(str(src_sidecar), str(dest_sidecar))
                 except OSError:
-                    # Sidecar symlink failures should not fail the whole mix.
-                    pass
+                    dest_sidecar.write_text("", encoding="utf-8")
+            else:
+                dest_sidecar.write_text("", encoding="utf-8")
+
+    if created == 0:
+        # Clean up the empty directory we created
+        try:
+            shutil.rmtree(str(out_dir), ignore_errors=True)
+        except Exception:
+            pass
+        summary = "; ".join(errors[:5]) if errors else "unknown"
+        return {"ok": False, "error": f"Could not link any files: {summary}"}
 
     return {
         "ok": True,
@@ -676,13 +724,10 @@ def bulk_apply_trigger_tag(paths: List[str], tag: str, position: str) -> Dict[st
         try:
             pp = _coerce_sidecar_path(p)
             data = _read(pp)
-            existing = str(data.get("custom_tag") or data.get("trigger") or "").strip()
-            if position == "prepend":
-                data["custom_tag"] = f"{tag} {existing}".strip()
-            elif position == "append":
-                data["custom_tag"] = f"{existing} {tag}".strip()
-            elif position == "replace":
-                data["custom_tag"] = tag
+            # Overwrite: new tag replaces any existing custom_tag/trigger
+            data["custom_tag"] = tag
+            if position in ("prepend", "append"):
+                data["tag_position"] = position
             data.pop("trigger", None)
             _write(pp, data)
             updated += 1

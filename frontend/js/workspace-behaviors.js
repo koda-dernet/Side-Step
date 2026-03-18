@@ -159,6 +159,7 @@ const WorkspaceBehaviors = (() => {
   /* ---- Reusable Confirmation Modal ---- */
   let _confirmCallback = null;
   let _cancelCallback = null;
+  let _promptResolve = null;
   function _initConfirmModal() {
     const modal = $("confirm-modal");
     const _close = () => {
@@ -503,7 +504,6 @@ const WorkspaceBehaviors = (() => {
     modal.classList.add("open");
   }
 
-  let _promptResolve = null;
   function _initPromptModal() {
     const modal = $("prompt-modal");
     if (!modal) return;

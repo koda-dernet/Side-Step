@@ -137,10 +137,10 @@ DEFAULT_CHUNK_DECAY_EVERY: int = 10
 # DataLoader (platform-dependent)
 # ---------------------------------------------------------------------------
 
-DEFAULT_NUM_WORKERS: int = 0 if sys.platform == "win32" else 4
-DEFAULT_PREFETCH_FACTOR: int = 0 if sys.platform == "win32" else 2
+DEFAULT_NUM_WORKERS: int = 2 if sys.platform == "win32" else 4
+DEFAULT_PREFETCH_FACTOR: int = 2
 DEFAULT_PIN_MEMORY: bool = True
-DEFAULT_PERSISTENT_WORKERS: bool = sys.platform != "win32"
+DEFAULT_PERSISTENT_WORKERS: bool = True
 
 # ---------------------------------------------------------------------------
 # "All the Levers" (experimental enhancements)

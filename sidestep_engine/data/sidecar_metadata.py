@@ -84,6 +84,7 @@ def normalize_sidecar(raw: Dict[str, Any], audio_path: Path) -> Dict[str, Any]:
         "duration": _parse_duration(raw.get("duration", "")),
         "is_instrumental": is_instrumental,
         "custom_tag": raw.get("custom_tag", raw.get("trigger", "")),
+        "tag_position": raw.get("tag_position", ""),
         "prompt_override": raw.get("prompt_override"),
     }
 

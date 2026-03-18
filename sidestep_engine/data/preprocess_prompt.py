@@ -43,6 +43,9 @@ def build_simple_prompt(
     override = meta.get("prompt_override")
     tag = meta.get("custom_tag") or meta.get("trigger", "")
 
+    # Per-sample tag_position overrides the dataset-level default
+    tag_position = meta.get("tag_position") or tag_position
+
     # Decide caption vs genre (mirrors AudioSample.get_training_prompt)
     if override == "genre":
         text = genre
@@ -57,8 +60,6 @@ def build_simple_prompt(
             text = f"{tag}, {text}" if text else tag
         elif tag_position == "append":
             text = f"{text}, {tag}" if text else tag
-        elif tag_position == "replace":
-            text = tag
 
     bpm = meta.get("bpm", "N/A") or "N/A"
     ts = meta.get("timesignature", "N/A") or "N/A"

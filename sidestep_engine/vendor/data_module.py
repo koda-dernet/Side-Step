@@ -102,6 +102,7 @@ class PreprocessedTensorDataset(Dataset):
         dataset_repeats: int = 1,
         verify_checksums: bool = False,
         cache_in_ram: Optional[bool] = None,
+        genre_ratio: int = -1,
     ):
         """Initialize from a directory of preprocessed .pt files.
 
@@ -124,11 +125,22 @@ class PreprocessedTensorDataset(Dataset):
             cache_in_ram: If True, cache all tensors in RAM for faster
                 I/O. If None (default), auto-enable when total dataset
                 size is below 4 GB.
+            genre_ratio: Percentage (0-100) of training steps that use
+                the genre conditioning variant instead of caption.
+                ``-1`` = auto-detect from ``preprocess_meta.json``.
+                ``0``  = always caption (default behaviour).
         """
         self.tensor_dir = tensor_dir
         self.chunk_duration = chunk_duration
         self.max_latent_length = max_latent_length
         self._chunk_decay_every = chunk_decay_every
+
+        # Auto-detect genre_ratio from preprocess_meta.json when -1
+        if genre_ratio < 0:
+            genre_ratio = self._read_genre_ratio(tensor_dir)
+        self._genre_ratio = max(0, min(100, genre_ratio))
+        if self._genre_ratio > 0:
+            logger.info("genre_ratio=%d%% -- genre variant selected per step", self._genre_ratio)
         self.sample_paths = []
         self.manifest_path = str(Path(tensor_dir) / "manifest.json")
         self.manifest_error: Optional[str] = None
@@ -228,7 +240,20 @@ class PreprocessedTensorDataset(Dataset):
         repeat_info = ""
         if len(self.valid_paths) != self._unique_count:
             repeat_info = f" ({self._unique_count} unique, {len(self.valid_paths)} with repeats)"
-        logger.info(f"PreprocessedTensorDataset: {len(self.valid_paths)} samples{repeat_info} from {tensor_dir}{chunk_info}")
+        genre_info = f", genre_ratio={self._genre_ratio}%" if self._genre_ratio > 0 else ""
+        logger.info(f"PreprocessedTensorDataset: {len(self.valid_paths)} samples{repeat_info} from {tensor_dir}{chunk_info}{genre_info}")
+
+    @staticmethod
+    def _read_genre_ratio(tensor_dir: str) -> int:
+        """Read genre_ratio from preprocess_meta.json (0 if absent)."""
+        meta_path = Path(tensor_dir) / "preprocess_meta.json"
+        if not meta_path.is_file():
+            return 0
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            return int(meta.get("genre_ratio", 0))
+        except Exception:
+            return 0
 
     def _verify_checksums(self, tensor_dir: str) -> None:
         """Verify MD5 checksums from preprocess_meta.json."""
@@ -308,8 +333,21 @@ class PreprocessedTensorDataset(Dataset):
         target_latents = data["target_latents"]      # [T, 64]
         attention_mask = data["attention_mask"]        # [T]
         context_latents = data["context_latents"]      # [T, 65]
-        encoder_hidden_states = data["encoder_hidden_states"]  # [L, D]
-        encoder_attention_mask = data["encoder_attention_mask"]  # [L]
+
+        # Dynamic genre/caption selection: pick genre variant with
+        # probability genre_ratio/100 when available in the .pt file.
+        use_genre = (
+            self._genre_ratio > 0
+            and "encoder_hidden_states_genre" in data
+            and random.randint(1, 100) <= self._genre_ratio
+        )
+        if use_genre:
+            encoder_hidden_states = data["encoder_hidden_states_genre"]  # [L, D]
+            encoder_attention_mask = data["encoder_attention_mask_genre"]  # [L]
+        else:
+            encoder_hidden_states = data["encoder_hidden_states"]  # [L, D]
+            encoder_attention_mask = data["encoder_attention_mask"]  # [L]
+
         metadata = data.get("metadata", {})
         del data
 
@@ -347,6 +385,8 @@ class PreprocessedTensorDataset(Dataset):
                 attention_mask = attention_mask[start:end]
                 context_latents = context_latents[start:end]
 
+        conditioning_type = "genre" if use_genre else "caption"
+
         return {
             "target_latents": target_latents,           # [T', 64]
             "attention_mask": attention_mask,             # [T']
@@ -354,6 +394,7 @@ class PreprocessedTensorDataset(Dataset):
             "encoder_attention_mask": encoder_attention_mask,  # [L]
             "context_latents": context_latents,          # [T', 65]
             "metadata": metadata,
+            "conditioning_type": conditioning_type,
         }
 
 
@@ -409,6 +450,14 @@ def collate_preprocessed_batch(batch: List[Dict]) -> Dict[str, torch.Tensor]:
             eam = torch.cat([eam, pad], dim=0)
         encoder_attention_masks.append(eam)
 
+    # Gather per-sample conditioning info for monitor feedback
+    conditioning_info = []
+    for s in batch:
+        meta = s.get("metadata", {})
+        fname = meta.get("filename", "?")
+        ctype = s.get("conditioning_type", "caption")
+        conditioning_info.append({"name": fname, "type": ctype})
+
     return {
         "target_latents": torch.stack(target_latents),  # [B, T, 64]
         "attention_mask": torch.stack(attention_masks),  # [B, T]
@@ -416,6 +465,7 @@ def collate_preprocessed_batch(batch: List[Dict]) -> Dict[str, torch.Tensor]:
         "encoder_attention_mask": torch.stack(encoder_attention_masks),  # [B, L]
         "context_latents": torch.stack(context_latents),  # [B, T, 65]
         "metadata": [s["metadata"] for s in batch],
+        "conditioning_info": conditioning_info,
     }
 
 
@@ -440,6 +490,7 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
         max_latent_length: Optional[int] = None,
         chunk_decay_every: int = 10,
         dataset_repeats: int = 1,
+        genre_ratio: int = -1,
     ):
         """Initialize the data module.
 
@@ -453,6 +504,8 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
             max_latent_length: Random crop length in latent frames (None = disabled)
             chunk_decay_every: Epoch interval for coverage histogram decay.
             dataset_repeats: Global dataset repetition multiplier (1 = none).
+            genre_ratio: Percentage (0-100) of steps using genre variant.
+                ``-1`` = auto-detect from preprocess_meta.json.
         """
         if LIGHTNING_AVAILABLE:
             super().__init__()
@@ -469,6 +522,7 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
         self.max_latent_length = max_latent_length
         self.chunk_decay_every = chunk_decay_every
         self.dataset_repeats = dataset_repeats
+        self.genre_ratio = genre_ratio
 
         self.train_dataset = None
         self.val_dataset = None
@@ -482,6 +536,7 @@ class PreprocessedDataModule(LightningDataModule if LIGHTNING_AVAILABLE else obj
                 max_latent_length=self.max_latent_length,
                 chunk_decay_every=self.chunk_decay_every,
                 dataset_repeats=self.dataset_repeats,
+                genre_ratio=self.genre_ratio,
             )
 
             if self.val_split > 0 and len(full_dataset) > 1:

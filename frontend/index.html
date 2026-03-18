@@ -1755,6 +1755,13 @@
               </div>
             </div>
 
+            <div class="panel" id="monitor-conditioning-panel" style="margin-bottom: var(--space-md); display: none;">
+              <div class="panel__title">Conditioning</div>
+              <div style="font-size: var(--font-size-sm);" id="monitor-conditioning">
+                <div style="color: var(--muted); padding: 3px 0;">Waiting for data...</div>
+              </div>
+            </div>
+
             <div class="panel">
               <div class="panel__title">Config</div>
               <div style="font-size: var(--font-size-sm);" id="monitor-config-summary">
@@ -2113,6 +2120,7 @@
                   <option value="gemini" selected>Gemini</option>
                   <option value="openai">OpenAI / Compatible</option>
                   <option value="local_8-10gb">Local 8-10GB (Qwen2.5-Omni 4-bit)</option>
+                  <option value="local_12gb">Local 12GB (Qwen2.5-Omni 8-bit)</option>
                   <option value="local_16gb">Local 16GB+ (Qwen2.5-Omni bf16)</option>
                   <option value="music_flamingo">Music Flamingo</option>
                   <option value="lyrics_only">Lyrics only</option>
@@ -3022,11 +3030,10 @@
           <input class="input" type="text" id="bulk-trigger-tag" placeholder="e.g. suno_v4">
         </div>
         <div class="form-group">
-          <label class="form-group__label">Position</label>
+          <label class="form-group__label">Position in Prompt</label>
           <select class="select" id="bulk-trigger-position">
             <option value="prepend" selected>Prepend (tag before caption)</option>
             <option value="append">Append (tag after caption)</option>
-            <option value="replace">Replace (tag replaces caption)</option>
           </select>
         </div>
         <div style="font-size: var(--font-size-sm); color: var(--muted);" id="bulk-trigger-preview">

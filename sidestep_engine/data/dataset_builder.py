@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Aliases are mapped to their canonical name by _SIDECAR_ALIASES.
 _KNOWN_SIDECAR_KEYS = frozenset({
     "caption", "genre", "bpm", "key", "signature", "lyrics",
-    "tags", "custom_tag", "trigger", "is_instrumental",
+    "tags", "custom_tag", "trigger", "tag_position", "is_instrumental",
     "repeat", "prompt_override", "duration",
     # Aliases
     "keyscale", "scale",

@@ -179,11 +179,14 @@ class FixedLoRATrainer:
             )
 
             # -- Data -------------------------------------------------------
-            # Windows uses spawn for multiprocessing; default to 0 workers there
             num_workers = cfg.num_workers
             if sys.platform == "win32" and num_workers > 0:
-                logger.info("[Side-Step] Windows detected -- setting num_workers=0 (spawn incompatible)")
-                num_workers = 0
+                # Windows uses 'spawn' for multiprocessing -- works but has
+                # higher per-worker overhead.  Cap at a sensible ceiling.
+                _win_cap = min(num_workers, 4)
+                if _win_cap != num_workers:
+                    logger.info("[Side-Step] Windows: capping num_workers=%d -> %d", num_workers, _win_cap)
+                    num_workers = _win_cap
 
             data_module = PreprocessedDataModule(
                 tensor_dir=cfg.dataset_dir,
@@ -198,6 +201,7 @@ class FixedLoRATrainer:
                 max_latent_length=getattr(cfg, "max_latent_length", None),
                 chunk_decay_every=getattr(cfg, "chunk_decay_every", 10),
                 dataset_repeats=getattr(cfg, "dataset_repeats", 1),
+                genre_ratio=getattr(cfg, "genre_ratio", -1),
             )
             data_module.setup("fit")
 
@@ -652,6 +656,7 @@ class FixedLoRATrainer:
             epoch_loss = 0.0
             num_updates = 0
             epoch_start = time.time()
+            _accum_cond_info: list = []
 
             for _batch_idx, batch in enumerate(train_loader):
                 # Stop signal
@@ -666,6 +671,12 @@ class FixedLoRATrainer:
                     yield TrainingUpdate(global_step, _stop_loss, "[INFO] Training stopped by user", kind="complete")
                     tb.close()
                     return
+
+                # Extract non-tensor keys before training_step
+                _batch_cond = batch.pop("conditioning_info", None)
+                batch.pop("metadata", None)
+                if _batch_cond:
+                    _accum_cond_info.extend(_batch_cond)
 
                 loss = self.module.training_step(batch)
 
@@ -758,10 +769,17 @@ class FixedLoRATrainer:
                             )
 
                     _lr = optimizer.param_groups[0]["lr"]
+                    _pw_extra = {}
+                    if _target_loss > 0 and global_step >= _CRUISE_MIN_STEPS:
+                        _pw_extra["target_loss_scale"] = _scale
+                        _pw_extra["target_loss_ema"] = _cruise_ema
+                    if _accum_cond_info:
+                        _pw_extra["conditioning_info"] = _accum_cond_info
                     _pw.maybe_write(step=global_step, epoch=epoch + 1,
                                     max_epochs=cfg.max_epochs, loss=avg_loss, lr=_lr,
                                     best_loss=best_loss, best_epoch=best_epoch,
-                                    steps_per_epoch=steps_per_epoch)
+                                    steps_per_epoch=steps_per_epoch, **_pw_extra)
+                    _accum_cond_info = []
                     if global_step % cfg.log_every == 0:
                         tb.log_loss(avg_loss, global_step)
                         tb.log_lr(_lr, global_step)

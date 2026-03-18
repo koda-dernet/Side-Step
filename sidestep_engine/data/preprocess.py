@@ -31,7 +31,6 @@ from sidestep_engine.data.preprocess_discovery import (
     load_dataset_metadata as _load_dataset_metadata,
     load_sample_metadata as _load_sample_metadata,
     safe_output_stem as _safe_output_stem,
-    select_genre_indices as _select_genre_indices,
 )
 from sidestep_engine.data.preprocess_prompt import (
     build_simple_prompt as _build_simple_prompt,
@@ -332,13 +331,6 @@ def _pass1_light(
 
     # Dataset-level prompt settings from ACE-Step's metadata block
     tag_position = ds_meta.get("tag_position", "prepend")
-    genre_ratio = ds_meta.get("genre_ratio", 0)
-    genre_indices = _select_genre_indices(total, genre_ratio)
-    if genre_indices:
-        logger.info(
-            "[Side-Step] genre_ratio=%d%% -- %d/%d samples will use genre as prompt",
-            genre_ratio, len(genre_indices), total,
-        )
     if tag_position != "prepend":
         logger.info("[Side-Step] tag_position=%s (from dataset metadata)", tag_position)
 
@@ -395,15 +387,14 @@ def _pass1_light(
                 caption = sm.get("caption", af.stem)
                 lyrics = sm.get("lyrics", "[Instrumental]")
 
-                # Build text prompt using dataset-level tag_position and genre_ratio
-                use_genre = i in genre_indices
-                text_prompt = _build_simple_prompt(sm, tag_position=tag_position, use_genre=use_genre)
+                # Build CAPTION text prompt (always encoded)
+                caption_prompt = _build_simple_prompt(sm, tag_position=tag_position, use_genre=False)
 
                 with torch.no_grad():
-                    text_hs, text_mask = encode_text(text_enc, tokenizer, text_prompt, device, dtype)
+                    text_hs, text_mask = encode_text(text_enc, tokenizer, caption_prompt, device, dtype)
                     lyric_hs, lyric_mask = encode_lyrics(text_enc, tokenizer, lyrics, device, dtype)
 
-                # Validate text encoder outputs
+                # Validate caption text encoder outputs
                 _bad_tensor = None
                 for _tname, _tens in [("text_hs", text_hs), ("lyric_hs", lyric_hs)]:
                     if torch.isnan(_tens).any() or torch.isinf(_tens).any():
@@ -419,9 +410,31 @@ def _pass1_light(
                     del lyric_hs, lyric_mask
                     continue
 
+                # Build GENRE text prompt (only when sample has genre text)
+                genre_text = sm.get("genre", "")
+                has_genre = bool(genre_text and genre_text.strip())
+                genre_text_hs = None
+                genre_text_mask = None
+                if has_genre:
+                    genre_prompt = _build_simple_prompt(sm, tag_position=tag_position, use_genre=True)
+                    with torch.no_grad():
+                        genre_text_hs, genre_text_mask = encode_text(
+                            text_enc, tokenizer, genre_prompt, device, dtype,
+                        )
+                    # Validate genre text encoder output
+                    if torch.isnan(genre_text_hs).any() or torch.isinf(genre_text_hs).any():
+                        logger.warning(
+                            "[Side-Step] Pass 1: genre text NaN/Inf for %s -- skipping genre variant",
+                            af.name,
+                        )
+                        del genre_text_hs, genre_text_mask
+                        genre_text_hs = None
+                        genre_text_mask = None
+                        has_genre = False
+
                 # 4. Save intermediate
                 tmp_path = out_path / f"{_stem}.tmp.pt"
-                torch.save({
+                save_dict = {
                     "target_latents": target_latents.squeeze(0).cpu(),
                     "attention_mask": attention_mask.squeeze(0).cpu(),
                     "text_hidden_states": text_hs.cpu(),
@@ -445,16 +458,24 @@ def _pass1_light(
                         "prompt_override": sm.get("prompt_override"),
                         "repeat": 1,  # Global dataset_repeats replaces per-sample repeat
                     },
-                }, tmp_path)
+                }
+                # Store genre text variant alongside caption variant
+                if has_genre and genre_text_hs is not None:
+                    save_dict["genre_text_hidden_states"] = genre_text_hs.cpu()
+                    save_dict["genre_text_attention_mask"] = genre_text_mask.cpu()
+                torch.save(save_dict, tmp_path)
 
                 # Free GPU tensors from this iteration before the next one
                 del target_latents, attention_mask, text_hs, text_mask
-                del lyric_hs, lyric_mask
+                del lyric_hs, lyric_mask, save_dict
+                if genre_text_hs is not None:
+                    del genre_text_hs, genre_text_mask
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
                 intermediates.append(tmp_path)
-                logger.debug("[Side-Step] Pass 1 OK: %s", af.name)
+                _genre_tag = " [+genre]" if has_genre else ""
+                logger.debug("[Side-Step] Pass 1 OK: %s%s", af.name, _genre_tag)
                 if progress_callback:
                     progress_callback(i + 1, total, f"[Pass 1] OK: {af.name}")
 
@@ -531,8 +552,7 @@ def _pass2_heavy(
                 silence_latent = data["silence_latent"].to(model_device, dtype=model_dtype)
                 latent_length = data["latent_length"]
 
-                # DIT encoder pass (adapter-agnostic: same tensors for
-                # LoRA and LoKR -- only the adapter injection differs).
+                # --- Caption variant (always encoded) --------------------------
                 encoder_hs, encoder_mask = run_encoder(
                     model,
                     text_hidden_states=text_hs,
@@ -543,8 +563,29 @@ def _pass2_heavy(
                     dtype=model_dtype,
                 )
 
-                # Free encoder inputs immediately after use
-                del text_hs, text_mask, lyric_hs, lyric_mask
+                # Free caption text inputs (lyrics are reused for genre variant)
+                del text_hs, text_mask
+
+                # --- Genre variant (only when intermediate has genre text) ------
+                has_genre = "genre_text_hidden_states" in data
+                genre_encoder_hs = None
+                genre_encoder_mask = None
+                if has_genre:
+                    genre_text_hs = data["genre_text_hidden_states"].to(model_device, dtype=model_dtype)
+                    genre_text_mask = data["genre_text_attention_mask"].to(model_device, dtype=model_dtype)
+                    genre_encoder_hs, genre_encoder_mask = run_encoder(
+                        model,
+                        text_hidden_states=genre_text_hs,
+                        text_attention_mask=genre_text_mask,
+                        lyric_hidden_states=lyric_hs,
+                        lyric_attention_mask=lyric_mask,
+                        device=str(model_device),
+                        dtype=model_dtype,
+                    )
+                    del genre_text_hs, genre_text_mask
+
+                # Free shared lyric tensors
+                del lyric_hs, lyric_mask
 
                 # Build context latents (silence-based, standard text2music)
                 if silence_latent.dim() == 2:
@@ -571,25 +612,45 @@ def _pass2_heavy(
                         _bad_tensor, tmp_path.stem,
                     )
                     del encoder_hs, encoder_mask, context_latents, data
+                    if genre_encoder_hs is not None:
+                        del genre_encoder_hs, genre_encoder_mask
                     continue
+
+                # Validate genre variant if present (non-fatal: drop genre only)
+                if genre_encoder_hs is not None:
+                    if torch.isnan(genre_encoder_hs).any() or torch.isinf(genre_encoder_hs).any():
+                        logger.warning(
+                            "[Side-Step] Pass 2: genre encoder NaN/Inf for %s -- dropping genre variant",
+                            tmp_path.stem,
+                        )
+                        del genre_encoder_hs, genre_encoder_mask
+                        genre_encoder_hs = None
+                        genre_encoder_mask = None
+                        has_genre = False
 
                 # Atomic write: save to staging path then os.replace to final
                 base_name = tmp_path.name.replace(".tmp.pt", ".pt")
                 final_path = out_path / base_name
                 staging_path = out_path / (base_name + ".__writing__")
                 meta = data["metadata"]
-                torch.save({
+                save_dict = {
                     "target_latents": data["target_latents"],
                     "attention_mask": data["attention_mask"],
                     "encoder_hidden_states": encoder_hs.squeeze(0).cpu(),
                     "encoder_attention_mask": encoder_mask.squeeze(0).cpu(),
                     "context_latents": context_latents.squeeze(0).cpu(),
                     "metadata": meta,
-                }, staging_path)
+                }
+                if has_genre and genre_encoder_hs is not None:
+                    save_dict["encoder_hidden_states_genre"] = genre_encoder_hs.squeeze(0).cpu()
+                    save_dict["encoder_attention_mask_genre"] = genre_encoder_mask.squeeze(0).cpu()
+                torch.save(save_dict, staging_path)
                 os.replace(staging_path, final_path)
 
                 # Free all GPU tensors and the loaded data dict before next iter
-                del encoder_hs, encoder_mask, context_latents, data
+                del encoder_hs, encoder_mask, context_latents, data, save_dict
+                if genre_encoder_hs is not None:
+                    del genre_encoder_hs, genre_encoder_mask
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
@@ -597,7 +658,8 @@ def _pass2_heavy(
                 tmp_path.unlink(missing_ok=True)
 
                 processed += 1
-                logger.debug("[Side-Step] Pass 2 OK: %s", tmp_path.stem)
+                _genre_tag = " [+genre]" if has_genre else ""
+                logger.debug("[Side-Step] Pass 2 OK: %s%s", tmp_path.stem, _genre_tag)
                 if progress_callback:
                     progress_callback(i + 1, total, f"[Pass 2] OK: {tmp_path.stem}")
 

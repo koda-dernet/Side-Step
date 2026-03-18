@@ -1261,6 +1261,29 @@ const Training = (() => {
     return { totalLen: len, startIdx: _viewXMin ?? 0, endIdx: _viewXMax ?? len };
   }
 
+  function _renderConditioningPanel(info) {
+    const panel = $('monitor-conditioning-panel');
+    const container = $('monitor-conditioning');
+    if (!panel || !container) return;
+    panel.style.display = '';
+    container.innerHTML = '';
+    for (const item of info) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;';
+      const nameSpan = document.createElement('span');
+      nameSpan.style.cssText = 'color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;';
+      nameSpan.textContent = item.name || '?';
+      nameSpan.title = item.name || '?';
+      const typeSpan = document.createElement('span');
+      const isGenre = item.type === 'genre';
+      typeSpan.style.cssText = 'font-weight:bold;color:' + (isGenre ? 'var(--accent)' : 'var(--secondary)') + ';';
+      typeSpan.textContent = item.type || 'caption';
+      row.appendChild(nameSpan);
+      row.appendChild(typeSpan);
+      container.appendChild(row);
+    }
+  }
+
   function _addLog(msg, kind) {
     const log = $('monitor-log');
     if (!log) return;
@@ -1438,6 +1461,11 @@ const Training = (() => {
         if (msg.target_loss_ema != null) {
           if (!_tbScalars['target_loss_ema']) _tbScalars['target_loss_ema'] = [];
           _tbScalars['target_loss_ema'].push({ step: _step, value: msg.target_loss_ema, wall_time: wt });
+        }
+
+        // Conditioning info: per-sample genre/caption selection
+        if (msg.conditioning_info && Array.isArray(msg.conditioning_info)) {
+          _renderConditioningPanel(msg.conditioning_info);
         }
       }
 
@@ -1735,6 +1763,10 @@ const Training = (() => {
     _el('monitor-run-name', _config.run_name || 'training');
     _el('monitor-output-dir', 'Output: ' + (_config.output_dir || ''));
     const log = $('monitor-log'); if (log) log.innerHTML = '';
+    const condPanel = $('monitor-conditioning-panel');
+    if (condPanel) { condPanel.style.display = 'none'; }
+    const condContent = $('monitor-conditioning');
+    if (condContent) { condContent.innerHTML = '<div style="color:var(--muted);padding:3px 0;">Waiting for data...</div>'; }
     _fillConfigSummary();
     _addLog('[info]  Starting training...', 'info');
     document.querySelector('[data-mode="monitor"]')?.classList.add('training');

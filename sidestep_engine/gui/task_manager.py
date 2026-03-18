@@ -877,12 +877,12 @@ class TaskManager:
 
                         return _run_caption
 
-                    if provider in ("local_8-10gb", "local_16gb"):
+                    if provider in ("local_8-10gb", "local_12gb", "local_16gb"):
                         from sidestep_engine.data.caption_provider_local import (
                             generate_caption as _generate_local,
                         )
 
-                        tier = "8-10gb" if provider == "local_8-10gb" else "16gb"
+                        tier = {"local_8-10gb": "8-10gb", "local_12gb": "12gb"}.get(provider, "16gb")
                         allow_cpu_offload = bool(config.get("caption_local_cpu_offload"))
 
                         _cancel = task.cancel_flag
@@ -1090,7 +1090,7 @@ class TaskManager:
             finally:
                 # Free VRAM if a local model was loaded
                 provider = str(config.get("provider") or "").lower()
-                if provider in ("local_8-10gb", "local_16gb"):
+                if provider in ("local_8-10gb", "local_12gb", "local_16gb"):
                     try:
                         from sidestep_engine.data.caption_provider_local import (
                             unload_model,

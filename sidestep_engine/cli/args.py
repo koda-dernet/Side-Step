@@ -646,8 +646,8 @@ def _add_captions_args(parser: argparse.ArgumentParser) -> None:
     )
     g.add_argument(
         "--provider", type=str, default=None,
-        choices=["gemini", "openai", "local_8-10gb", "local_16gb", "music_flamingo", "lyrics_only", "none"],
-        help="Caption provider: gemini, openai, local_8-10gb, local_16gb, music_flamingo, lyrics_only, none (default: from settings, or gemini)",
+        choices=["gemini", "openai", "local_8-10gb", "local_12gb", "local_16gb", "music_flamingo", "lyrics_only", "none"],
+        help="Caption provider: gemini, openai, local_8-10gb, local_12gb, local_16gb, music_flamingo, lyrics_only, none (default: from settings, or gemini)",
     )
     g.add_argument(
         "--ai-model", "--model", type=str, default=None, dest="ai_model",

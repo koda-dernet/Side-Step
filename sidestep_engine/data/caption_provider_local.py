@@ -253,14 +253,34 @@ def _prepare_inputs(conversation: list[dict[str, Any]]) -> tuple[str, Any, Any, 
 def _resolve_model_path() -> str:
     """Return a local checkpoint path if present, else the HF Hub ID.
 
-    Checks ``<project>/checkpoints/Qwen2.5-Omni-7B/`` first so that
-    installer-downloaded weights are used without a network round-trip.
+    Search order:
+    1. ``<user_checkpoint_dir>/../Qwen2.5-Omni-7B/`` (settings-based)
+    2. ``<project>/checkpoints/Qwen2.5-Omni-7B/`` (installer default)
+    3. HF Hub model ID (downloads from the internet)
     """
+    from sidestep_engine.settings import get_checkpoint_dir
+
+    _MODEL_SUBDIR = "Qwen2.5-Omni-7B"
+
+    # 1. User-configured checkpoint directory (may be on another drive)
+    user_ckpt = get_checkpoint_dir()
+    if user_ckpt:
+        # Check both <checkpoint_dir>/Qwen2.5-Omni-7B and <checkpoint_dir>/../Qwen2.5-Omni-7B
+        for candidate in [
+            Path(user_ckpt) / _MODEL_SUBDIR,
+            Path(user_ckpt).parent / _MODEL_SUBDIR,
+        ]:
+            if candidate.is_dir() and any(candidate.iterdir()):
+                logger.info("Using local model weights (from settings): %s", candidate)
+                return str(candidate)
+
+    # 2. Project-relative default
     project_root = Path(__file__).resolve().parent.parent.parent
-    local_dir = project_root / "checkpoints" / "Qwen2.5-Omni-7B"
+    local_dir = project_root / "checkpoints" / _MODEL_SUBDIR
     if local_dir.is_dir() and any(local_dir.iterdir()):
         logger.info("Using local model weights: %s", local_dir)
         return str(local_dir)
+
     return MODEL_ID
 
 
@@ -315,7 +335,8 @@ def _load_model(tier: str, *, allow_cpu_offload: bool = False) -> None:
     """Load model + processor into module-level cache.
 
     Args:
-        tier: ``"8-10gb"`` for 4-bit NF4 or ``"16gb"`` for native bf16/fp16.
+        tier: ``"8-10gb"`` for 4-bit NF4, ``"12gb"`` for 8-bit INT8,
+            or ``"16gb"`` for native bf16/fp16.
         allow_cpu_offload: Whether Accelerate CPU offload may be used when needed.
     """
     global _model, _processor, _loaded_tier, _loaded_cpu_offload  # noqa: PLW0603
@@ -360,6 +381,11 @@ def _load_model(tier: str, *, allow_cpu_offload: bool = False) -> None:
             bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
+        )
+        load_kwargs["quantization_config"] = bnb_config
+    elif tier == "12gb":
+        bnb_config = BitsAndBytesConfig(
+            load_in_8bit=True,
         )
         load_kwargs["quantization_config"] = bnb_config
     else:

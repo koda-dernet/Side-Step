@@ -671,7 +671,7 @@ const WorkspaceLab = (() => {
     const lyricsProv = $("caption-lyrics-provider")?.value || "none";
     const isLyrics = prov === "lyrics_only" || ((prov === "none") && lyricsProv !== "none");
     const isNone = prov === "none" && lyricsProv === "none";
-    const isLocal = prov === "local_8-10gb" || prov === "local_16gb";
+    const isLocal = prov === "local_8-10gb" || prov === "local_12gb" || prov === "local_16gb";
     const genBtn = $("btn-gen-captions");
     const runBtn = $("btn-run-captions");
     const label = isLyrics ? "Fetch Lyrics" : isNone ? "Run Enrichment" : isLocal ? "Run Local Captions" : "Generate AI Captions";
@@ -691,7 +691,7 @@ const WorkspaceLab = (() => {
   function initAICaptions() {
     $("caption-provider")?.addEventListener("change", () => {
       const prov = $("caption-provider").value;
-      const isLocal = prov === "local_8-10gb" || prov === "local_16gb";
+      const isLocal = prov === "local_8-10gb" || prov === "local_12gb" || prov === "local_16gb";
       $("caption-gemini-settings").style.display = prov === "gemini" ? "block" : "none";
       $("caption-openai-settings").style.display = prov === "openai" ? "block" : "none";
       $("caption-local-settings").style.display = isLocal ? "block" : "none";
@@ -821,6 +821,7 @@ const WorkspaceLab = (() => {
   /* ---- Trigger Tag Bulk Modal ---- */
   function initTriggerTagBulk() {
     $("btn-add-trigger")?.addEventListener("click", () => {
+      _updateTriggerModalScope();
       $("trigger-tag-modal")?.classList.add("open");
     });
     $("trigger-tag-close")?.addEventListener("click", () => {
@@ -838,11 +839,29 @@ const WorkspaceLab = (() => {
       const position = $("bulk-trigger-position")?.value;
       const dsPath = $("lab-dataset-path")?.value;
       if (!tag) { showToast("Enter a trigger tag", "warn"); return; }
-      const result = await API.bulkWriteTriggerTag(dsPath, tag, position);
+      // Use selected files when available, otherwise apply to all
+      const selected = (typeof Dataset !== "undefined" && Dataset.hasSelection && Dataset.hasSelection())
+        ? Dataset.getSelectedAudioPaths()
+        : null;
+      const result = await API.bulkWriteTriggerTag(dsPath, tag, position, selected);
       $("trigger-tag-modal")?.classList.remove("open");
-      showToast(`Trigger tag written to ${result.updated} sidecars`, "ok");
+      const scope = selected && selected.length ? `${result.updated} selected` : `${result.updated}`;
+      showToast(`Trigger tag written to ${scope} sidecars`, "ok");
       if (typeof Dataset !== "undefined") Dataset.scan(dsPath);
     });
+  }
+
+  function _updateTriggerModalScope() {
+    const hasSel = typeof Dataset !== 'undefined' && Dataset.hasSelection && Dataset.hasSelection();
+    const count = hasSel ? Dataset.getSelectedAudioPaths().length : 0;
+    const titleEl = document.querySelector('#trigger-tag-modal .modal__title');
+    const applyBtn = $('btn-bulk-trigger-apply');
+    const descEl = document.querySelector('#trigger-tag-modal .modal__body > p');
+    if (titleEl) titleEl.textContent = hasSel ? `Add Trigger Tag to ${count} Selected File${count !== 1 ? 's' : ''}` : 'Add Trigger Tag to All Files';
+    if (applyBtn) applyBtn.textContent = hasSel ? `Apply to ${count} Selected` : 'Apply to All Files';
+    if (descEl) descEl.innerHTML = hasSel
+      ? `This writes the trigger tag into the <strong>${count}</strong> selected sidecar${count !== 1 ? 's' : ''}. Existing tags will be overwritten.`
+      : 'This writes the trigger tag into every .txt sidecar in the dataset folder. Existing tags will be overwritten. Files without sidecars will get a new .txt file.';
   }
 
   function _updateTriggerPreview() {
@@ -928,5 +947,5 @@ const WorkspaceLab = (() => {
     _updateAnalyzeButtonStates();
   }
 
-  return { init, queuePreprocess };
+  return { init, queuePreprocess, _updateTriggerModalScope };
 })();

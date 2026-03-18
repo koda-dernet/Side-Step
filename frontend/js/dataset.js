@@ -509,7 +509,7 @@ const Dataset = (() => {
     if (folders.length) parts.push(folders.length + ' folder' + (folders.length > 1 ? 's' : ''));
     if (files) parts.push(files + ' file' + (files > 1 ? 's' : ''));
     if (countEl) countEl.textContent = parts.join(', ') + ' selected';
-    if (mixBtn) mixBtn.style.display = files > 0 ? '' : 'none';
+    if (mixBtn) mixBtn.style.display = (files > 0 || folders.length > 0) ? '' : 'none';
     if (warnEl) {
       warnEl.textContent = '';
       warnEl.style.display = 'none';
@@ -552,7 +552,8 @@ const Dataset = (() => {
     if (tbody) new MutationObserver(_updateBulkToolbar).observe(tbody, { attributes: true, attributeFilter: ['class'], subtree: true });
     $('dataset-bulk-clear')?.addEventListener('click', () => { document.querySelectorAll('#dataset-tbody tr.selected').forEach((r) => r.classList.remove('selected')); _updateBulkToolbar(); });
     $('dataset-bulk-trigger')?.addEventListener('click', () => {
-      if (!_getSelectedFolderPaths().length) { if (typeof showToast === 'function') showToast('Select at least one folder', 'warn'); return; }
+      if (!_getSelectedFolderPaths().length && !_getSelectedFilePaths().length) { if (typeof showToast === 'function') showToast('Select files or folders first', 'warn'); return; }
+      if (typeof WorkspaceLab !== 'undefined' && WorkspaceLab._updateTriggerModalScope) WorkspaceLab._updateTriggerModalScope();
       $('trigger-tag-modal')?.classList.add('open');
     });
     $('dataset-bulk-preprocess')?.addEventListener('click', () => {
@@ -575,17 +576,34 @@ const Dataset = (() => {
     });
 
     $('dataset-bulk-mix')?.addEventListener('click', async () => {
-      const filePaths = _getSelectedFilePaths();
-      if (!filePaths.length) { if (typeof showToast === 'function') showToast('Select individual audio files to create a mix', 'warn'); return; }
+      const filePaths = getSelectedAudioPaths();
+      if (!filePaths.length) { if (typeof showToast === 'function') showToast('Select files or folders to create a mix', 'warn'); return; }
       const defaultName = 'mix_' + filePaths.length + '_tracks';
       const mixName = typeof WorkspaceBehaviors !== 'undefined' && WorkspaceBehaviors.showPromptModal
         ? await WorkspaceBehaviors.showPromptModal('Create Mix Dataset', 'Name for the mix dataset:', defaultName)
         : prompt('Name for the mix dataset:', defaultName);
       if (!mixName) return;
+      // Ask about sidecar handling
+      let sidecarMode = 'empty';
+      const hasSidecars = filePaths.some((fp) => {
+        const f = _files.find((x) => x.path === fp);
+        return f && f.has_sidecar;
+      });
+      if (hasSidecars && typeof WorkspaceBehaviors !== 'undefined' && WorkspaceBehaviors.showConfirmModal) {
+        sidecarMode = await new Promise((resolve) => {
+          WorkspaceBehaviors.showConfirmModal(
+            'Sidecar Metadata',
+            'Some selected tracks have existing sidecar metadata (.txt). Copy them into the mix, or start fresh with empty sidecars?',
+            'Copy Existing',
+            () => resolve('copy'),
+            () => resolve('empty'),
+          );
+        });
+      }
       const root = _scanRoot || _canonicalAudioPath();
       const destRoot = $('settings-audio-dir')?.value || root || '.';
       try {
-        const result = await API.createMixDataset(root, destRoot, mixName, filePaths);
+        const result = await API.createMixDataset(root, destRoot, mixName, filePaths, sidecarMode);
         if (result.ok) {
           showToast('Mix dataset created: ' + mixName + ' (' + result.created + ' files)', 'ok');
           await refreshFromSettings();
