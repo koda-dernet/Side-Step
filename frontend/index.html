@@ -818,6 +818,7 @@
                 </div>
               </div>
               <div id="cfg-settings-group">
+                <!-- Row 1: Timestep sampling + CFG -->
                 <div class="form-row">
                   <div class="form-group" id="timestep-mode-group">
                     <label class="form-group__label" for="full-timestep-mode">Timestep sampling <span class="help-icon" data-help="help-full-ts-mode">?</span></label>
@@ -840,10 +841,13 @@
                       <p>Only used by base/sft models. Turbo doesn't use CFG. Default 0.15 means 15% of samples train without text.</p>
                     </div>
                   </div>
+                </div>
+                <!-- Row 2: Loss function + weighting -->
+                <div class="form-row">
                   <div class="form-group" id="loss-fn-group">
                     <label class="form-group__label">Loss function <span class="help-icon" data-help="help-full-loss-fn">?</span></label>
                     <div id="help-full-loss-fn" class="help-panel">
-                      <p><strong>huber:</strong> Smooth L1 loss -- transitions from quadratic (MSE) to linear for large errors. Prevents outlier channels (e.g. channel 19) from dominating gradients. Recommended default.</p>
+                      <p><strong>huber:</strong> Smooth L1 loss — transitions from quadratic (MSE) to linear for large errors. Prevents outlier channels from dominating gradients. Recommended default.</p>
                       <p><strong>mse:</strong> Classic mean squared error. Legacy behavior.</p>
                     </div>
                     <select class="select" id="full-loss-fn">
@@ -887,6 +891,9 @@
                     <input class="input has-default" type="number" id="full-t-bias" value="0.5" step="0.1" data-default="0.5" data-validate="range:0:2">
                     <div class="field-error"></div>
                   </div>
+                </div>
+                <!-- Row 3: Channel fidelity controls -->
+                <div class="form-row">
                   <div class="form-group" id="channel-balance-group">
                     <label class="form-group__label"><input type="checkbox" id="full-channel-balance" checked> Per-channel fidelity balancing <span class="help-icon" data-help="help-full-ch-bal">?</span></label>
                     <div id="help-full-ch-bal" class="help-panel">
