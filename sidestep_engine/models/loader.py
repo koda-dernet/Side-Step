@@ -210,7 +210,15 @@ def load_decoder_for_training(
         _stub.__path__ = []  # make it a package
         sys.modules["acestep"] = _stub
     if "acestep.models" not in sys.modules:
-        sys.modules["acestep.models"] = _types.ModuleType("acestep.models")
+        _models_stub = _types.ModuleType("acestep.models")
+        _models_stub.__path__ = []  # make it a package so sub-imports work
+        sys.modules["acestep.models"] = _models_stub
+    # Some cached checkpoint files import from acestep.models.flow_matching_solvers
+    if "acestep.models.flow_matching_solvers" not in sys.modules:
+        _fms_stub = _types.ModuleType("acestep.models.flow_matching_solvers")
+        _fms_stub.SOLVER_REGISTRY = {}
+        _fms_stub.VALID_INFER_METHODS = []
+        sys.modules["acestep.models.flow_matching_solvers"] = _fms_stub
 
     model = None
     last_err: Optional[Exception] = None
