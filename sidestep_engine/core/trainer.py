@@ -798,6 +798,12 @@ class FixedLoRATrainer:
                     if _target_loss > 0 and global_step >= _CRUISE_MIN_STEPS:
                         _pw_extra["target_loss_scale"] = _scale
                         _pw_extra["target_loss_ema"] = _cruise_ema
+                    # Pipe fidelity metrics for real-time GUI mini-charts
+                    _latest_sm = self.module._step_metrics
+                    if _latest_sm:
+                        _pw_extra["fidelity"] = dict(_latest_sm)
+                    if _ema is not None:
+                        _pw_extra["ema_active"] = _ema._active
                     if _accum_cond_info:
                         _pw_extra["conditioning_info"] = _accum_cond_info
                     _pw.maybe_write(step=global_step, epoch=epoch + 1,
@@ -808,6 +814,17 @@ class FixedLoRATrainer:
                     if global_step % cfg.log_every == 0:
                         tb.log_loss(avg_loss, global_step)
                         tb.log_lr(_lr, global_step)
+
+                        # Fidelity metrics from training_step
+                        _sm = self.module.drain_step_metrics()
+                        for _tag, _val in _sm.items():
+                            tb.log_scalar(_tag, _val, global_step)
+
+                        # EMA status
+                        if _ema is not None:
+                            tb.log_scalar("ema/active", 1.0 if _ema._active else 0.0, global_step)
+                            tb.log_scalar("ema/step_count", float(_ema._step_count), global_step)
+
                         yield TrainingUpdate(
                             step=global_step, loss=avg_loss,
                             msg=f"Epoch {epoch + 1}/{cfg.max_epochs}, Step {global_step}, Loss: {avg_loss:.4f}",
@@ -839,8 +856,9 @@ class FixedLoRATrainer:
                         tb.flush()
 
                     timestep_every = max(0, int(getattr(cfg, "log_timestep_every", cfg.log_every)))
+                    _has_weighting = getattr(cfg, "loss_weighting", "none") in ("min_snr", "flow_snr")
                     if (
-                        getattr(cfg, "loss_weighting", "none") == "min_snr"
+                        _has_weighting
                         and timestep_every > 0
                         and global_step % timestep_every == 0
                     ):

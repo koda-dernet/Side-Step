@@ -192,6 +192,18 @@ const Training = (() => {
     'val_loss':           { label: 'Val Loss',       color: 'var(--success)' },
     'target_loss_scale':  { label: 'Loss Scale',     color: 'var(--warning)' },
     'target_loss_ema':    { label: 'Loss EMA',       color: 'var(--changed)' },
+    // Fidelity metrics
+    'fidelity/raw_loss':        { label: 'Raw Loss',          color: 'hsl(200,70%,55%)' },
+    'fidelity/weighted_loss':   { label: 'Weighted Loss',     color: 'hsl(160,65%,50%)' },
+    'fidelity/snr_weight_mean': { label: 'SNR Weight (mean)', color: 'hsl(45,80%,55%)' },
+    'fidelity/snr_weight_max':  { label: 'SNR Weight (max)',  color: 'hsl(30,75%,55%)' },
+    'fidelity/timestep_mean':   { label: 'Timestep Mean',     color: 'hsl(270,55%,60%)' },
+    'fidelity/ch_loss_ratio':   { label: 'Ch Loss Ratio',     color: 'hsl(330,60%,55%)' },
+    'fidelity/ch_loss_max':     { label: 'Ch Loss Max',       color: 'hsl(0,60%,55%)' },
+    'fidelity/ch_loss_min':     { label: 'Ch Loss Min',       color: 'hsl(120,50%,50%)' },
+    // EMA tracking
+    'ema/active':      { label: 'EMA Active',     color: 'hsl(180,60%,55%)' },
+    'ema/step_count':  { label: 'EMA Step Count', color: 'hsl(210,55%,55%)' },
   };
   // Auto-color palette for unknown tags (HSL hues)
   const _AUTO_COLORS = [
@@ -1461,6 +1473,20 @@ const Training = (() => {
         if (msg.target_loss_ema != null) {
           if (!_tbScalars['target_loss_ema']) _tbScalars['target_loss_ema'] = [];
           _tbScalars['target_loss_ema'].push({ step: _step, value: msg.target_loss_ema, wall_time: wt });
+        }
+
+        // Fidelity metrics (piped through progress writer as dict)
+        if (msg.fidelity && typeof msg.fidelity === 'object') {
+          for (const [ftag, fval] of Object.entries(msg.fidelity)) {
+            if (fval == null) continue;
+            if (!_tbScalars[ftag]) _tbScalars[ftag] = [];
+            _tbScalars[ftag].push({ step: _step, value: fval, wall_time: wt });
+          }
+        }
+        // EMA active status
+        if (msg.ema_active != null) {
+          if (!_tbScalars['ema/active']) _tbScalars['ema/active'] = [];
+          _tbScalars['ema/active'].push({ step: _step, value: msg.ema_active ? 1.0 : 0.0, wall_time: wt });
         }
 
         // Conditioning info: per-sample genre/caption selection

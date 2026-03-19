@@ -252,6 +252,10 @@ class FixedLoRAModule(nn.Module):
         # One-shot flag: emit detailed NaN diagnostic only once per run
         self._nan_diagnosed = False
 
+        # Auxiliary metrics stashed by training_step for TB logging.
+        # Populated every step, drained by the training loop at log_every.
+        self._step_metrics: Dict[str, float] = {}
+
     # -----------------------------------------------------------------------
     # Adapter injection helpers
     # -----------------------------------------------------------------------
@@ -357,6 +361,16 @@ class FixedLoRAModule(nn.Module):
         result = torch.cat(list(self._timestep_buffer))
         self._timestep_buffer.clear()
         return result
+
+    def drain_step_metrics(self) -> Dict[str, float]:
+        """Return and clear auxiliary metrics from the last training step.
+
+        Called by the training loop at ``log_every`` intervals to feed
+        TensorBoard without changing ``training_step``'s return type.
+        """
+        m = dict(self._step_metrics)
+        self._step_metrics.clear()
+        return m
 
     # -----------------------------------------------------------------------
     # Training step
@@ -516,6 +530,26 @@ class FixedLoRAModule(nn.Module):
             if self._adaptive_sampler is not None:
                 with torch.no_grad():
                     self._adaptive_sampler.update(t, per_sample_loss_raw.detach())
+
+            # -- Auxiliary metrics for TensorBoard --------------------------
+            with torch.no_grad():
+                sm = self._step_metrics
+                sm["fidelity/timestep_mean"] = float(t.mean())
+                sm["fidelity/raw_loss"] = float(per_sample_loss_raw.mean())
+                sm["fidelity/weighted_loss"] = float(diffusion_loss)
+                if self._loss_weighting == "flow_snr":
+                    sm["fidelity/snr_weight_mean"] = float(w.mean())
+                    sm["fidelity/snr_weight_max"] = float(w.max())
+                elif self._loss_weighting == "min_snr":
+                    sm["fidelity/snr_weight_mean"] = float(weights.mean())
+                    sm["fidelity/snr_weight_max"] = float(weights.max())
+                if self._channel_balance and self._channel_weights is not None:
+                    per_ch = per_element.mean(dim=(0, 1))  # [64]
+                    sm["fidelity/ch_loss_max"] = float(per_ch.max())
+                    sm["fidelity/ch_loss_min"] = float(per_ch.min())
+                    sm["fidelity/ch_loss_ratio"] = float(
+                        per_ch.max() / per_ch.min().clamp(min=1e-8)
+                    )
 
         # fp32 for stable backward
         diffusion_loss = diffusion_loss.float()
