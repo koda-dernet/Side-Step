@@ -437,7 +437,7 @@ const WorkspaceConfig = (() => {
       channel_balance: _c("full-channel-balance"), vae_channel_prior: _c("full-vae-channel-prior"),
       latent_noise: _v("full-latent-noise", "0.02"), t_bias: _v("full-t-bias", "0.5"),
       legacy_loss: _c("full-legacy-loss"),
-      ema_warmup_steps: _v("full-ema-warmup-steps", "2000"),
+      ema_start_step: _v("full-ema-start-step", "2000"),
       offload_encoder: _c("full-offload-encoder"),
       gradient_checkpointing: gradCkptEnabled,
       gradient_checkpointing_ratio: _v("full-grad-ckpt-ratio", "1.0"),

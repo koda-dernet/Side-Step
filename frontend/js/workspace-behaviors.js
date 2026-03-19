@@ -331,7 +331,7 @@ const WorkspaceBehaviors = (() => {
   /* ---- EMA warmup visibility ---- */
   function initEmaReactivity() {
     const emaInput = $("full-ema-decay");
-    const warmupGroup = $("ema-warmup-group");
+    const warmupGroup = $("ema-start-group");
     if (!emaInput || !warmupGroup) return;
     const update = () => {
       warmupGroup.style.display = parseFloat(emaInput.value) > 0 ? "" : "none";

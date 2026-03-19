@@ -83,7 +83,7 @@
   "full-cosine-restarts":     "4",
 
   "full-ema-decay":           "0",
-  "full-ema-warmup-steps":    "2000",
+  "full-ema-start-step":      "2000",
   "full-val-split":           "0",
   "full-adaptive-timestep":   "0",
 

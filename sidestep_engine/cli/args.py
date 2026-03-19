@@ -24,7 +24,7 @@ from sidestep_engine.training_defaults import (
     DEFAULT_DROPOUT,
     DEFAULT_EARLY_STOP_PATIENCE,
     DEFAULT_EMA_DECAY,
-    DEFAULT_EMA_WARMUP_STEPS,
+    DEFAULT_EMA_START_STEP,
     DEFAULT_TARGET_LOSS,
     DEFAULT_TARGET_LOSS_FLOOR,
     DEFAULT_TARGET_LOSS_WARMUP,
@@ -444,7 +444,7 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     # -- All the Levers (experimental enhancements) -------------------------
     g_levers = parser.add_argument_group("All the Levers (experimental)")
     g_levers.add_argument("--ema-decay", type=float, default=DEFAULT_EMA_DECAY, help=f"EMA decay for adapter weights (0=off, 0.9999=typical, default: {DEFAULT_EMA_DECAY})")
-    g_levers.add_argument("--ema-warmup-steps", type=int, default=DEFAULT_EMA_WARMUP_STEPS, help=f"Steps over which EMA decay ramps from 0 to target (0=no warmup, default: {DEFAULT_EMA_WARMUP_STEPS})")
+    g_levers.add_argument("--ema-start-step", type=int, default=DEFAULT_EMA_START_STEP, help=f"Step at which EMA tracking begins (0=immediate, default: {DEFAULT_EMA_START_STEP})")
     g_levers.add_argument("--val-split", type=float, default=DEFAULT_VAL_SPLIT, help=f"Validation holdout fraction (0=off, 0.1=10%%, default: {DEFAULT_VAL_SPLIT})")
     g_levers.add_argument("--adaptive-timestep-ratio", type=float, default=DEFAULT_ADAPTIVE_TIMESTEP_RATIO, help=f"Adaptive timestep sampling ratio (0=off, 0.3=recommended, default: {DEFAULT_ADAPTIVE_TIMESTEP_RATIO}). Base/SFT only")
     g_levers.add_argument("--warmup-start-factor", type=float, default=DEFAULT_WARMUP_START_FACTOR, help=f"LR warmup starts at base_lr * this (default: {DEFAULT_WARMUP_START_FACTOR})")

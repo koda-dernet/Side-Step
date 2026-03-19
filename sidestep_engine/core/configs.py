@@ -490,10 +490,11 @@ class TrainingConfigV2(TrainingConfig):
     Typical value: 0.9999.  Maintains a smoothed shadow copy of trainable
     params on CPU; the EMA weights are used for best-model saves."""
 
-    ema_warmup_steps: int = 2000
-    """Number of steps over which EMA decay ramps linearly from 0 to
-    target decay.  Prevents the EMA shadow from lagging behind during
-    early training.  0 = no warmup (use flat decay from step 0)."""
+    ema_start_step: int = 2000
+    """Optimizer step at which EMA tracking begins.  Before this step
+    no shadow averaging occurs.  At the start step the shadow is
+    re-initialised to current weights and full-rate averaging begins.
+    0 = start immediately (no delay)."""
 
     val_split: float = 0.0
     """Fraction of dataset held out for validation.  0.0 = disabled.
@@ -548,8 +549,8 @@ class TrainingConfigV2(TrainingConfig):
             )
         if not (0.0 <= self.ema_decay < 1.0):
             errors.append(f"ema_decay must be >= 0 and < 1 (got {self.ema_decay})")
-        if self.ema_warmup_steps < 0:
-            errors.append(f"ema_warmup_steps must be >= 0 (got {self.ema_warmup_steps})")
+        if self.ema_start_step < 0:
+            errors.append(f"ema_start_step must be >= 0 (got {self.ema_start_step})")
         if not (0.0 <= self.val_split <= 0.5):
             errors.append(f"val_split must be >= 0 and <= 0.5 (got {self.val_split})")
         if not (0.0 <= self.adaptive_timestep_ratio <= 1.0):
@@ -732,7 +733,7 @@ class TrainingConfigV2(TrainingConfig):
                 "rank_max": self.rank_max,
                 "ignore_fisher_map": self.ignore_fisher_map,
                 "ema_decay": self.ema_decay,
-                "ema_warmup_steps": self.ema_warmup_steps,
+                "ema_start_step": self.ema_start_step,
                 "val_split": self.val_split,
                 "adaptive_timestep_ratio": self.adaptive_timestep_ratio,
                 "warmup_start_factor": self.warmup_start_factor,

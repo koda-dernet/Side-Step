@@ -131,9 +131,9 @@ def _levers_experimental(a: dict) -> None:
         validate_fn=lambda v: "Must be >= 0 and < 1" if v < 0 or v >= 1 else None,
     )
     if a["ema_decay"] > 0:
-        a["ema_warmup_steps"] = ask(
-            "EMA warmup steps (ramps decay from 0 to target over N steps, 0 = no warmup)",
-            default=a.get("ema_warmup_steps", 2000), type_fn=int,
+        a["ema_start_step"] = ask(
+            "EMA start step (tracking begins at this step, 0 = immediate)",
+            default=a.get("ema_start_step", 2000), type_fn=int,
             validate_fn=lambda v: "Must be >= 0" if v < 0 else None,
         )
 

@@ -201,7 +201,7 @@ const WorkspaceSetup = (() => {
       weight_decay:"full-weight-decay", max_grad_norm:"full-max-grad-norm", seed:"full-seed", warmup_start_factor:"full-warmup-start-factor",
       cosine_eta_min_ratio:"full-cosine-eta-min", cosine_restarts_count:"full-cosine-restarts", ema_decay:"full-ema-decay", val_split:"full-val-split",
       adaptive_timestep_ratio:"full-adaptive-timestep", save_best_every_n_steps:"full-save-best-every-n-steps",
-      ema_warmup_steps:"full-ema-warmup-steps",
+      ema_start_step:"full-ema-start-step",
       target_loss:"full-target-loss", target_loss_floor:"full-target-loss-floor",
       target_loss_warmup:"full-target-loss-warmup", target_loss_smoothing:"full-target-loss-smoothing",
       timestep_mu:"full-timestep-mu", timestep_sigma:"full-timestep-sigma", num_workers:"full-num-workers", prefetch_factor:"full-prefetch-factor",

@@ -151,7 +151,7 @@ PRESET_TYPES: dict[str, type] = {
     "target_loss": float, "target_loss_floor": float,
     "target_loss_warmup": int, "target_loss_smoothing": float,
     # "All the Levers"
-    "ema_decay": float, "ema_warmup_steps": int, "val_split": float, "adaptive_timestep_ratio": float,
+    "ema_decay": float, "ema_start_step": int, "val_split": float, "adaptive_timestep_ratio": float,
     "warmup_start_factor": float, "cosine_eta_min_ratio": float,
     "cosine_restarts_count": int, "save_best_every_n_steps": int,
     # Booleans (stored as bool in JSON, no coercion needed but listed for completeness)
@@ -188,7 +188,7 @@ PRESET_FIELDS = frozenset([
     "target_loss", "target_loss_floor", "target_loss_warmup", "target_loss_smoothing",
     "gradient_checkpointing", "gradient_checkpointing_ratio", "offload_encoder",
     # "All the Levers"
-    "ema_decay", "ema_warmup_steps", "val_split", "adaptive_timestep_ratio",
+    "ema_decay", "ema_start_step", "val_split", "adaptive_timestep_ratio",
     "warmup_start_factor", "cosine_eta_min_ratio", "cosine_restarts_count",
     "save_best_every_n_steps",
 ])

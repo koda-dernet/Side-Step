@@ -125,7 +125,7 @@ _GROUPS_TEMPLATE: List[Tuple[str, List[Tuple[str, str]]]] = [
     ]),
     ("All the Levers", [
         ("ema_decay", "EMA decay"),
-        ("ema_warmup_steps", "EMA warmup steps"),
+        ("ema_start_step", "EMA start step"),
         ("val_split", "Validation split"),
         ("adaptive_timestep_ratio", "Adaptive timestep ratio"),
         ("t_bias", "Timestep bias"),

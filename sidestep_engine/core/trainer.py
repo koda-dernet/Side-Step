@@ -395,11 +395,11 @@ class FixedLoRATrainer:
         _ema_decay = getattr(cfg, "ema_decay", 0.0)
         if _ema_decay > 0:
             from sidestep_engine.core.ema import AdapterEMA
-            _ema_warmup = getattr(cfg, "ema_warmup_steps", 2000)
-            _ema = AdapterEMA(trainable_params, decay=_ema_decay, warmup_steps=_ema_warmup)
+            _ema_start = getattr(cfg, "ema_start_step", 2000)
+            _ema = AdapterEMA(trainable_params, decay=_ema_decay, start_step=_ema_start)
             yield TrainingUpdate(
                 0, 0.0,
-                f"[INFO] EMA enabled (decay={_ema_decay}, warmup={_ema_warmup} steps)",
+                f"[INFO] EMA enabled (decay={_ema_decay}, starts at step {_ema_start})",
                 kind="info",
             )
 

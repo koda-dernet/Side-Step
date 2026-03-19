@@ -29,11 +29,12 @@ class AdapterEMA:
             Typical: 0.9999 (slow), 0.999 (faster tracking).
     """
 
-    def __init__(self, params: Iterable[torch.nn.Parameter], decay: float, warmup_steps: int = 2000) -> None:
+    def __init__(self, params: Iterable[torch.nn.Parameter], decay: float, start_step: int = 2000) -> None:
         if not (0.0 <= decay < 1.0):
             raise ValueError(f"EMA decay must be >= 0 and < 1 (got {decay})")
         self.decay = decay
-        self._warmup_steps = max(0, warmup_steps)
+        self._start_step = max(0, start_step)
+        self._active = (start_step == 0)
         # Deep-clone to CPU in float32 so we don't consume GPU VRAM
         # and accumulate in full precision regardless of mixed-precision dtype.
         self._params: List[torch.nn.Parameter] = list(params)
@@ -52,18 +53,23 @@ class AdapterEMA:
     def update(self) -> None:
         """Update shadow params: ``shadow = decay * shadow + (1-decay) * param``.
 
-        When ``warmup_steps > 0``, the effective decay ramps linearly from
-        0 to the target decay over that many steps.  This lets the shadow
-        quickly track early weight changes instead of lagging behind.
+        When ``start_step > 0``, EMA tracking is completely skipped until
+        that step is reached.  At the start step the shadow is re-
+        initialised to the current weights, then normal exponential
+        averaging begins at the full target decay rate.
         """
-        if self._warmup_steps > 0 and self._step_count < self._warmup_steps:
-            d = self.decay * (self._step_count / self._warmup_steps)
-        else:
-            d = self.decay
+        self._step_count += 1
+        if not self._active:
+            if self._step_count >= self._start_step:
+                # Snapshot current weights as the EMA starting point.
+                for i, param in enumerate(self._params):
+                    self._shadow[i].copy_(param.data.detach().float().cpu())
+                self._active = True
+            return
+        d = self.decay
         for shadow, param in zip(self._shadow, self._params):
             # Cast to float32 to match shadow dtype (params may be bf16/fp16).
             shadow.lerp_(param.data.detach().float().cpu(), 1.0 - d)
-        self._step_count += 1
 
     @torch.no_grad()
     def apply(self) -> None:

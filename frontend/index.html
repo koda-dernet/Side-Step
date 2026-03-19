@@ -1348,14 +1348,14 @@
                   <div class="field-error"></div>
                   <div class="hint">Smoothed adapter weights. 0.9999=typical, 0.999=faster.</div>
                 </div>
-                <div class="form-group" id="ema-warmup-group">
-                  <label class="form-group__label">EMA warmup steps <span class="help-icon" data-help="help-full-ema-warmup">?</span></label>
-                  <div id="help-full-ema-warmup" class="help-panel">
-                    <p>Number of optimizer steps over which EMA decay ramps linearly from 0 to the target decay rate.</p>
-                    <p>Prevents the EMA shadow from lagging behind during early training when weights are changing rapidly. At step 0, decay=0 (shadow = current weights). At warmup_steps, decay reaches the target.</p>
-                    <p>0 = no warmup (flat decay from step 0). 2000 = recommended default.</p>
+                <div class="form-group" id="ema-start-group">
+                  <label class="form-group__label">EMA start step <span class="help-icon" data-help="help-full-ema-start">?</span></label>
+                  <div id="help-full-ema-start" class="help-panel">
+                    <p>The optimizer step at which EMA tracking begins. Before this step, no shadow averaging occurs at all.</p>
+                    <p>At the start step, the shadow is initialised to the current weights and full-rate exponential averaging begins. This avoids polluting the shadow with early random weight noise.</p>
+                    <p>0 = start immediately. 2000 = recommended default.</p>
                   </div>
-                  <input class="input has-default" type="number" id="full-ema-warmup-steps" value="2000" step="100" data-default="2000" data-validate="gte:0 int">
+                  <input class="input has-default" type="number" id="full-ema-start-step" value="2000" step="100" data-default="2000" data-validate="gte:0 int">
                   <div class="field-error"></div>
                 </div>
                 <div class="form-group">
