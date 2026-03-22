@@ -207,6 +207,8 @@ const Training = (() => {
     'fidelity/ch_loss_min':     { label: 'Ch Loss Min',       color: 'hsl(120,50%,50%)' },
     'fidelity/snr_weight_spread':       { label: 'SNR Weight Spread',  color: 'hsl(15,70%,55%)' },
     'fidelity/ch_dynamic_blend_range':  { label: 'Dynamic Blend Range', color: 'hsl(290,55%,55%)' },
+    'fidelity/arrangement_loss':        { label: 'Arrangement Loss',   color: 'hsl(25,80%,55%)' },
+    'fidelity/detail_loss':             { label: 'Detail Loss',        color: 'hsl(185,70%,50%)' },
     // EMA tracking
     'ema/active':           { label: 'EMA Active',     color: 'hsl(180,60%,55%)' },
     'ema/step_count':       { label: 'EMA Step Count', color: 'hsl(210,55%,55%)' },

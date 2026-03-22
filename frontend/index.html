@@ -847,12 +847,18 @@
                   <div class="form-group" id="loss-fn-group">
                     <label class="form-group__label">Loss function <span class="help-icon" data-help="help-full-loss-fn">?</span></label>
                     <div id="help-full-loss-fn" class="help-panel">
-                      <p><strong>mse:</strong> Mean squared error. Mathematically correct for flow matching — the model must learn the conditional expectation of the vector field, which MSE guarantees. Recommended default.</p>
-                      <p><strong>huber:</strong> Smooth L1 loss. Caps gradient magnitude for large errors. Can cause clipped/waveshaped output because it under-penalizes extreme flow vectors that are mathematically necessary.</p>
+                      <p><strong>mse:</strong> Mean squared error on velocity. Equal weight across all timesteps. Standard default.</p>
+                      <p><strong>huber:</strong> Smooth L1 on velocity. Caps gradient for large errors — can wash out arrangement.</p>
+                      <p><strong>pseudo_huber:</strong> Smooth Huber approximation on velocity. Less aggressive clipping than huber.</p>
+                      <p><strong>x0_mse:</strong> MSE on reconstructed x₀. Implicit t² weighting prioritizes arrangement — the paper's intended formulation. Recommended.</p>
+                      <p><strong>x0_pseudo_huber:</strong> Pseudo-Huber on reconstructed x₀. Combines t² arrangement priority with smooth error handling.</p>
                     </div>
                     <select class="select" id="full-loss-fn">
                       <option value="mse" selected>mse</option>
                       <option value="huber">huber</option>
+                      <option value="pseudo_huber">pseudo_huber</option>
+                      <option value="x0_mse">x0_mse</option>
+                      <option value="x0_pseudo_huber">x0_pseudo_huber</option>
                     </select>
                   </div>
                   <div class="form-group" id="huber-delta-group">

@@ -311,8 +311,9 @@ const WorkspaceBehaviors = (() => {
 
       // SNR gamma visible when flow_snr or min_snr
       if (snrGroup) snrGroup.style.display = (!isLegacy && (lossWt === "flow_snr" || lossWt === "min_snr")) ? "" : "none";
-      // Huber delta visible when loss_fn=huber
-      if (huberGroup) huberGroup.style.display = (!isLegacy && lossFn === "huber") ? "" : "none";
+      // Huber delta visible when loss_fn uses delta (huber, pseudo_huber, x0_pseudo_huber)
+      const needsDelta = lossFn === "huber" || lossFn === "pseudo_huber" || lossFn === "x0_pseudo_huber";
+      if (huberGroup) huberGroup.style.display = (!isLegacy && needsDelta) ? "" : "none";
       // t_bias visible when flow_snr
       if (tBiasGroup) tBiasGroup.style.display = (!isLegacy && lossWt === "flow_snr") ? "" : "none";
       // Channel/VAE/noise hidden when legacy
