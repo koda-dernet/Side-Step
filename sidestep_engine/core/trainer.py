@@ -25,7 +25,12 @@ from typing import Any, Dict, Generator, Optional, Tuple
 
 import torch
 import torch.nn as nn
-from sidestep_engine.core.optim import build_optimizer, build_scheduler
+from sidestep_engine.core.optim import (
+    build_layer_param_groups,
+    build_optimizer,
+    build_scheduler,
+    classify_trainable_params,
+)
 from sidestep_engine.vendor.data_module import PreprocessedDataModule
 
 _MAX_CONSECUTIVE_NAN = 10  # halt training after this many NaN/Inf losses in a row
@@ -359,9 +364,22 @@ class FixedLoRATrainer:
 
         yield TrainingUpdate(0, 0.0, f"[INFO] Training {sum(p.numel() for p in trainable_params):,} parameters", kind="info")
 
+        # Classify params by layer type and build per-group LR scaling
+        classified = classify_trainable_params(
+            self.module.model,
+            getattr(self.module, "lycoris_net", None),
+        )
+        optimizer_params = build_layer_param_groups(
+            classified,
+            base_lr=cfg.learning_rate,
+            lr_scale_self_attn=getattr(cfg, "lr_scale_self_attn", 1.0),
+            lr_scale_cross_attn=getattr(cfg, "lr_scale_cross_attn", 1.0),
+            lr_scale_mlp=getattr(cfg, "lr_scale_mlp", 1.0),
+        )
+
         optimizer_type = getattr(cfg, "optimizer_type", "adamw")
         optimizer = build_optimizer(
-            trainable_params,
+            optimizer_params,
             optimizer_type=optimizer_type,
             lr=cfg.learning_rate,
             weight_decay=cfg.weight_decay,

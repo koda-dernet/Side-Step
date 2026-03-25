@@ -163,6 +163,10 @@ DEFAULT_COSINE_ETA_MIN_RATIO: float = 0.01
 DEFAULT_COSINE_RESTARTS_COUNT: int = 4
 DEFAULT_SAVE_BEST_EVERY_N_STEPS: int = 0
 
+DEFAULT_LR_SCALE_SELF_ATTN: float = 1.0
+DEFAULT_LR_SCALE_CROSS_ATTN: float = 1.0
+DEFAULT_LR_SCALE_MLP: float = 1.0
+
 # ---------------------------------------------------------------------------
 # Model / device
 # ---------------------------------------------------------------------------
@@ -269,6 +273,10 @@ TRAINING_DEFAULTS: dict = {
     "cosine_eta_min_ratio": DEFAULT_COSINE_ETA_MIN_RATIO,
     "cosine_restarts_count": DEFAULT_COSINE_RESTARTS_COUNT,
     "save_best_every_n_steps": DEFAULT_SAVE_BEST_EVERY_N_STEPS,
+    # Per-layer-type LR scales
+    "lr_scale_self_attn": DEFAULT_LR_SCALE_SELF_ATTN,
+    "lr_scale_cross_attn": DEFAULT_LR_SCALE_CROSS_ATTN,
+    "lr_scale_mlp": DEFAULT_LR_SCALE_MLP,
 }
 
 # ---------------------------------------------------------------------------
@@ -365,6 +373,9 @@ GUI_FIELD_MAP: dict = {
     "timestep_mode": "full-timestep-mode",
     "adaptive_timestep_ratio": "full-adaptive-timestep",
     "save_best_every_n_steps": "full-save-best-every-n-steps",
+    "lr_scale_self_attn": "full-lr-scale-self-attn",
+    "lr_scale_cross_attn": "full-lr-scale-cross-attn",
+    "lr_scale_mlp": "full-lr-scale-mlp",
     "num_workers": "full-num-workers",
     "prefetch_factor": "full-prefetch-factor",
     "pin_memory": "full-pin-memory",

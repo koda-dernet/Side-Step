@@ -23,9 +23,10 @@ from __future__ import annotations
 import inspect
 import logging
 import math
-from typing import Iterable
+from typing import Dict, Iterable, List, Optional, Union
 
 import torch
+import torch.nn as nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import (
     CosineAnnealingLR,
@@ -92,6 +93,126 @@ def _build_prodigy_kwargs(
 
 
 # ---------------------------------------------------------------------------
+# Per-layer-type param classification
+# ---------------------------------------------------------------------------
+
+_MLP_SUFFIXES = ("gate_proj", "up_proj", "down_proj")
+
+
+def classify_trainable_params(
+    model: nn.Module,
+    lycoris_net: Optional[nn.Module] = None,
+) -> Dict[str, List[torch.nn.Parameter]]:
+    """Classify trainable parameters into self_attn, cross_attn, and mlp groups.
+
+    Classification rules (matching ``fisher/modules.py`` conventions):
+      - MLP: parameter name contains a suffix in ``_MLP_SUFFIXES``
+      - Cross-attention: ``.cross_attn.`` appears in the parameter name
+      - Self-attention: everything else
+
+    Falls back to the LyCORIS network when the model yields no trainable
+    params (same as ``_collect_trainable_params`` in ``trainer.py``).
+
+    Returns:
+        ``{"self_attn": [...], "cross_attn": [...], "mlp": [...]}``
+        Each list contains unique ``nn.Parameter`` objects.
+    """
+    groups: Dict[str, Dict[int, torch.nn.Parameter]] = {
+        "self_attn": {},
+        "cross_attn": {},
+        "mlp": {},
+    }
+
+    def _classify(name: str, param: torch.nn.Parameter) -> None:
+        if not param.requires_grad:
+            return
+        pid = id(param)
+        short = name.rsplit(".", 1)[-1] if "." in name else name
+        if short in _MLP_SUFFIXES:
+            groups["mlp"][pid] = param
+        elif ".cross_attn." in name:
+            groups["cross_attn"][pid] = param
+        else:
+            groups["self_attn"][pid] = param
+
+    found_any = False
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            found_any = True
+            _classify(name, param)
+
+    if not found_any and lycoris_net is not None:
+        for m in getattr(lycoris_net, "loras", []) or []:
+            for name, param in m.named_parameters():
+                _classify(name, param)
+        if not any(groups[k] for k in groups):
+            for name, param in lycoris_net.named_parameters():
+                _classify(name, param)
+
+    return {k: list(v.values()) for k, v in groups.items()}
+
+
+def build_layer_param_groups(
+    classified: Dict[str, List[torch.nn.Parameter]],
+    base_lr: float,
+    lr_scale_self_attn: float = 1.0,
+    lr_scale_cross_attn: float = 1.0,
+    lr_scale_mlp: float = 1.0,
+) -> Union[List[dict], List[torch.nn.Parameter]]:
+    """Build optimizer param groups with per-layer-type LR scaling.
+
+    When all scales are 1.0, returns a flat parameter list (identical to
+    the old code path -- no param-group overhead in the optimizer).
+
+    Args:
+        classified: Output of :func:`classify_trainable_params`.
+        base_lr: Base learning rate.
+        lr_scale_self_attn: Multiplier for self-attention params.
+        lr_scale_cross_attn: Multiplier for cross-attention params.
+        lr_scale_mlp: Multiplier for MLP/FFN params.
+
+    Returns:
+        Either a flat param list or a list of param-group dicts.
+    """
+    all_default = (
+        abs(lr_scale_self_attn - 1.0) < 1e-9
+        and abs(lr_scale_cross_attn - 1.0) < 1e-9
+        and abs(lr_scale_mlp - 1.0) < 1e-9
+    )
+
+    if all_default:
+        # Flat list -- identical to previous behavior
+        flat: List[torch.nn.Parameter] = []
+        for params in classified.values():
+            flat.extend(params)
+        return flat
+
+    groups: List[dict] = []
+    _scales = {
+        "self_attn": lr_scale_self_attn,
+        "cross_attn": lr_scale_cross_attn,
+        "mlp": lr_scale_mlp,
+    }
+    for group_name, scale in _scales.items():
+        params = classified.get(group_name, [])
+        if params:
+            groups.append({
+                "params": params,
+                "lr": base_lr * scale,
+                "_group_name": group_name,  # metadata (ignored by optimizer)
+            })
+
+    if groups:
+        _summary = ", ".join(
+            f"{g['_group_name']}={len(g['params'])}p@{g['lr']:.2e}"
+            for g in groups
+        )
+        logger.info("[Side-Step] Per-layer LR groups: %s", _summary)
+
+    return groups
+
+
+# ---------------------------------------------------------------------------
 # Optimizer factory
 # ---------------------------------------------------------------------------
 
@@ -103,6 +224,12 @@ def build_optimizer(
     device_type: str = "cuda",
 ) -> torch.optim.Optimizer:
     """Create an optimizer from a string key.
+
+    ``params`` can be a flat iterable of parameters *or* a list of
+    param-group dicts (as returned by :func:`build_layer_param_groups`).
+    When param-group dicts are provided, each group keeps its own ``lr``;
+    the *lr* argument is used only as a fallback for groups that don't
+    specify one.
 
     Falls back to AdamW when an optional dependency is missing.
     """

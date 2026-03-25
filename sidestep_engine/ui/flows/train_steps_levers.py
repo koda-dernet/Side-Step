@@ -116,6 +116,34 @@ def _levers_optimizer(a: dict) -> None:
     )
 
 
+def _levers_lr_scaling(a: dict) -> None:
+    """Per-layer-type learning rate scaling."""
+    section("Per-Layer LR Scaling")
+
+    print_message(
+        "Scale the base learning rate independently for self-attention,\n"
+        "  cross-attention, and MLP/FFN LoRA parameters.\n"
+        "  1.0 = use the base LR unchanged.  0 = freeze that layer type.",
+        kind="dim",
+    )
+
+    a["lr_scale_self_attn"] = ask(
+        "Self-attention LR scale (temporal structure)",
+        default=a.get("lr_scale_self_attn", 1.0), type_fn=float,
+        validate_fn=lambda v: "Must be >= 0 and <= 10" if v < 0 or v > 10 else None,
+    )
+    a["lr_scale_cross_attn"] = ask(
+        "Cross-attention LR scale (prompt following)",
+        default=a.get("lr_scale_cross_attn", 1.0), type_fn=float,
+        validate_fn=lambda v: "Must be >= 0 and <= 10" if v < 0 or v > 10 else None,
+    )
+    a["lr_scale_mlp"] = ask(
+        "MLP/FFN LR scale (timbre/texture)",
+        default=a.get("lr_scale_mlp", 1.0), type_fn=float,
+        validate_fn=lambda v: "Must be >= 0 and <= 10" if v < 0 or v > 10 else None,
+    )
+
+
 def _levers_experimental(a: dict) -> None:
     """New experimental features."""
     section("Experimental Enhancements")
@@ -243,5 +271,6 @@ def step_all_the_levers(a: dict) -> None:
 
     _levers_flow_math(a)
     _levers_optimizer(a)
+    _levers_lr_scaling(a)
     _levers_experimental(a)
     _levers_tracking(a)

@@ -1346,6 +1346,41 @@
                 </div>
               </div>
 
+              <!-- Per-layer LR scaling -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Per-Layer LR Scaling</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Self-attention LR scale <span class="help-icon" data-help="help-full-lr-sa">?</span></label>
+                  <div id="help-full-lr-sa" class="help-panel">
+                    <p><strong>Simple:</strong> Multiplier applied to the base learning rate for self-attention LoRA parameters. Self-attention learns temporal structure — how audio frames relate to each other over time.</p>
+                    <p>1.0 = same as base LR (default). Lower values (0.3–0.5) slow down structural learning, which can prevent the "warping" artifacts some users see. 0 = freeze self-attention entirely.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-lr-scale-self-attn" value="1" step="0.1" data-default="1" data-validate="range:0:10">
+                  <div class="field-error"></div>
+                  <div class="hint">1.0 = full LR. Lower = slower structural learning.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Cross-attention LR scale <span class="help-icon" data-help="help-full-lr-ca">?</span></label>
+                  <div id="help-full-lr-ca" class="help-panel">
+                    <p><strong>Simple:</strong> Multiplier applied to the base learning rate for cross-attention LoRA parameters. Cross-attention controls how well the model follows text/lyric prompts.</p>
+                    <p>1.0 = same as base LR (default). Lower values (0.3–0.5) protect general prompt-following ability. Higher values make the model learn your specific prompt style faster but risk breaking general comprehension.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-lr-scale-cross-attn" value="1" step="0.1" data-default="1" data-validate="range:0:10">
+                  <div class="field-error"></div>
+                  <div class="hint">1.0 = full LR. Lower = protect prompt following.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">MLP/FFN LR scale <span class="help-icon" data-help="help-full-lr-mlp">?</span></label>
+                  <div id="help-full-lr-mlp" class="help-panel">
+                    <p><strong>Simple:</strong> Multiplier applied to the base learning rate for MLP/FFN LoRA parameters (gate_proj, up_proj, down_proj). The FFN layers carry timbre and tonal texture information.</p>
+                    <p>1.0 = same as base LR (default). Higher values let the model memorize your style's texture faster. Lower values slow texture adaptation.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-lr-scale-mlp" value="1" step="0.1" data-default="1" data-validate="range:0:10">
+                  <div class="field-error"></div>
+                  <div class="hint">1.0 = full LR. Higher = faster texture learning.</div>
+                </div>
+              </div>
+
               <!-- Experimental enhancements -->
               <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Experimental Enhancements</div>
               <div class="form-row">

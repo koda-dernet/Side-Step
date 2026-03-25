@@ -101,6 +101,9 @@ from sidestep_engine.training_defaults import (
     DEFAULT_WARMUP_START_FACTOR,
     DEFAULT_WARMUP_STEPS,
     DEFAULT_WEIGHT_DECAY,
+    DEFAULT_LR_SCALE_SELF_ATTN,
+    DEFAULT_LR_SCALE_CROSS_ATTN,
+    DEFAULT_LR_SCALE_MLP,
 )
 
 logger = logging.getLogger(__name__)
@@ -420,6 +423,9 @@ def build_training_config(
         cosine_eta_min_ratio=_get(p, "cosine_eta_min_ratio", DEFAULT_COSINE_ETA_MIN_RATIO),
         cosine_restarts_count=_get(p, "cosine_restarts_count", DEFAULT_COSINE_RESTARTS_COUNT),
         save_best_every_n_steps=_get(p, "save_best_every_n_steps", DEFAULT_SAVE_BEST_EVERY_N_STEPS),
+        lr_scale_self_attn=_get(p, "lr_scale_self_attn", DEFAULT_LR_SCALE_SELF_ATTN),
+        lr_scale_cross_attn=_get(p, "lr_scale_cross_attn", DEFAULT_LR_SCALE_CROSS_ATTN),
+        lr_scale_mlp=_get(p, "lr_scale_mlp", DEFAULT_LR_SCALE_MLP),
     )
 
     return adapter_cfg, train_cfg

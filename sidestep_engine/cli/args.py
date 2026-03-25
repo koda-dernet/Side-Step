@@ -72,6 +72,9 @@ from sidestep_engine.training_defaults import (
     DEFAULT_TIMESTEP_MODE,
     DEFAULT_ADAPTIVE_TIMESTEP_RATIO,
     DEFAULT_VAL_SPLIT,
+    DEFAULT_LR_SCALE_SELF_ATTN,
+    DEFAULT_LR_SCALE_CROSS_ATTN,
+    DEFAULT_LR_SCALE_MLP,
 )
 
 from sidestep_engine.core.constants import VARIANT_DIR_MAP
@@ -452,6 +455,9 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_levers.add_argument("--cosine-eta-min-ratio", type=float, default=DEFAULT_COSINE_ETA_MIN_RATIO, help=f"Cosine scheduler decays LR to base_lr * this (default: {DEFAULT_COSINE_ETA_MIN_RATIO})")
     g_levers.add_argument("--cosine-restarts-count", type=int, default=DEFAULT_COSINE_RESTARTS_COUNT, help=f"Number of cosine restart cycles (default: {DEFAULT_COSINE_RESTARTS_COUNT})")
     g_levers.add_argument("--save-best-every-n-steps", type=int, default=DEFAULT_SAVE_BEST_EVERY_N_STEPS, help=f"Step-level best-model check interval (0=epoch only, default: {DEFAULT_SAVE_BEST_EVERY_N_STEPS})")
+    g_levers.add_argument("--lr-scale-self-attn", type=float, default=DEFAULT_LR_SCALE_SELF_ATTN, help=f"LR multiplier for self-attention params (default: {DEFAULT_LR_SCALE_SELF_ATTN})")
+    g_levers.add_argument("--lr-scale-cross-attn", type=float, default=DEFAULT_LR_SCALE_CROSS_ATTN, help=f"LR multiplier for cross-attention params (default: {DEFAULT_LR_SCALE_CROSS_ATTN})")
+    g_levers.add_argument("--lr-scale-mlp", type=float, default=DEFAULT_LR_SCALE_MLP, help=f"LR multiplier for MLP/FFN params (default: {DEFAULT_LR_SCALE_MLP})")
     g_levers.add_argument("--timestep-mu", type=float, default=None, help="Override logit-normal timestep mean (default: from model config, typically -0.4)")
     g_levers.add_argument("--timestep-sigma", type=float, default=None, help="Override logit-normal timestep sigma (default: from model config, typically 1.0)")
 

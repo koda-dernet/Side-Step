@@ -523,6 +523,18 @@ class TrainingConfigV2(TrainingConfig):
     """Number of cosine restart cycles (``cosine_restarts`` scheduler only).
     Default 4 matches the current hardcoded value in ``optim.py``."""
 
+    lr_scale_self_attn: float = 1.0
+    """LR multiplier for self-attention LoRA parameters.
+    Applied on top of the base learning_rate.  1.0 = no change."""
+
+    lr_scale_cross_attn: float = 1.0
+    """LR multiplier for cross-attention LoRA parameters.
+    Applied on top of the base learning_rate.  1.0 = no change."""
+
+    lr_scale_mlp: float = 1.0
+    """LR multiplier for MLP/FFN LoRA parameters (gate_proj, up_proj, down_proj).
+    Applied on top of the base learning_rate.  1.0 = no change."""
+
     # -----------------------------------------------------------------------
     # Validation
     # -----------------------------------------------------------------------
@@ -589,6 +601,12 @@ class TrainingConfigV2(TrainingConfig):
                 f"cosine_restarts_count must be >= 1 "
                 f"(got {self.cosine_restarts_count})"
             )
+        for _lr_field in ("lr_scale_self_attn", "lr_scale_cross_attn", "lr_scale_mlp"):
+            _lr_val = getattr(self, _lr_field)
+            if not (0.0 <= _lr_val <= 10.0):
+                errors.append(
+                    f"{_lr_field} must be >= 0 and <= 10 (got {_lr_val})"
+                )
         if self.target_loss < 0:
             errors.append(f"target_loss must be >= 0 (got {self.target_loss})")
         if not (0.0 < self.target_loss_floor <= 1.0):
@@ -745,6 +763,9 @@ class TrainingConfigV2(TrainingConfig):
                 "warmup_start_factor": self.warmup_start_factor,
                 "cosine_eta_min_ratio": self.cosine_eta_min_ratio,
                 "cosine_restarts_count": self.cosine_restarts_count,
+                "lr_scale_self_attn": self.lr_scale_self_attn,
+                "lr_scale_cross_attn": self.lr_scale_cross_attn,
+                "lr_scale_mlp": self.lr_scale_mlp,
             }
         )
         return base
