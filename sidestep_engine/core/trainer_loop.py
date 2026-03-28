@@ -736,10 +736,10 @@ def run_basic_training_loop(
         # temporaries are also freed.
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        elif torch.mps.is_available():
+        elif hasattr(torch, 'mps') and torch.mps.is_available():
             torch.mps.empty_cache()
-        elif torch.xpu.is_available():
-            torch.xpu.is_available()
+        elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+            torch.xpu.empty_cache()
 
     # -- Sanity check: did we actually train? ----------------------------
     if global_step == 0:
