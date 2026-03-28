@@ -482,7 +482,7 @@ class FixedLoRATrainer:
                 elif torch.mps.is_available():
                     torch.mps.empty_cache()
                 elif torch.xpu.is_available():
-                    torch.xpu.is_available()
+                    torch.xpu.empty_cache()
 
         # -- dtype / Fabric setup -------------------------------------------
         self.module.model = self.module.model.to(self.module.dtype)
