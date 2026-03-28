@@ -51,13 +51,25 @@ def tiled_vae_encode(
     # Auto-select chunk size based on GPU VRAM
     if chunk_size is None:
         gpu_mem_gb = 0.0
-        if torch.cuda.is_available():
-            try:
+        try:
+            if torch.cuda.is_available():
                 props = torch.cuda.get_device_properties(vae_device)
                 gpu_mem_gb = props.total_mem / (1024 ** 3)
-            except Exception:
-                pass
-        chunk_size = TARGET_SR * 15 if gpu_mem_gb <= 8 else TARGET_SR * 30
+                chunk_size = TARGET_SR * 15 if gpu_mem_gb <= 8 else TARGET_SR * 30
+            elif torch.mps.is_available():
+                gpu_mem_gb = torch.mps.recommended_max_memory() / (1024 ** 3)
+                chunk_size = TARGET_SR * 15 if gpu_mem_gb <= 8 else TARGET_SR * 30
+            elif torch.xpu.is_available():
+                props = torch.xpu.get_device_properties(vae_device)
+                gpu_mem_gb = props.total_memory / (1024 ** 3)
+                chunk_size = TARGET_SR * 15 if gpu_mem_gb <= 8 else TARGET_SR * 30
+            else:
+                chunk_size = TARGET_SR * 30
+            
+        except Exception as exc:
+            import traceback
+            traceback.print_exception(exc)
+            chunk_size = TARGET_SR * 30
 
     B, C, S = audio.shape
 

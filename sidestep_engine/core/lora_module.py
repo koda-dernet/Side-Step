@@ -97,21 +97,21 @@ def _normalize_device_type(device: Any) -> str:
 
 
 def _select_compute_dtype(device_type: str) -> torch.dtype:
-    if device_type in ("cuda", "xpu"):
+    if device_type in ("cuda", "xpu", "mps"):
         return torch.bfloat16
-    if device_type == "mps":
-        return torch.float16
+    # if device_type == "mps":
+    #     return torch.float16
     return torch.float32
 
 
 def _select_fabric_precision(device_type: str) -> str:
-    if device_type in ("cuda", "xpu"):
+    if device_type in ("cuda", "xpu", "mps"):
         return "bf16-mixed"
-    if device_type == "mps":
-        # "16-mixed" activates a GradScaler whose _unscale_grads_ crashes on
-        # MPS tensors.  Use "32-true" instead -- the training step's own
-        # torch.autocast still provides fp16 forward-pass benefits.
-        return "32-true"
+    # if device_type == "mps":
+    #     # "16-mixed" activates a GradScaler whose _unscale_grads_ crashes on
+    #     # MPS tensors.  Use "32-true" instead -- the training step's own
+    #     # torch.autocast still provides fp16 forward-pass benefits.
+    #     return "32-true"
     return "32-true"
 
 

@@ -140,6 +140,10 @@ def _cleanup_gpu() -> None:
         import torch
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        elif hasattr(torch, 'mps') and torch.mps.is_available():
+            torch.mps.empty_cache()
+        elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+            torch.xpu.empty_cache()
     except ImportError:
         pass
 

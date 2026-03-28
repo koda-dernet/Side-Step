@@ -170,6 +170,12 @@ def _flush_vram() -> None:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
+        elif hasattr(torch, 'mps') and torch.mps.is_available():
+            torch.mps.empty_cache()
+            torch.mps.synchronize()
+        elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+            torch.xpu.empty_cache()
+            torch.xpu.synchronize()
     except ImportError:
         pass
 
@@ -182,8 +188,10 @@ def _resolve_device(device: str = "auto") -> str:
         import torch
         if torch.cuda.is_available():
             return "cuda"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        if hasattr(torch, "mps") and torch.mps.is_available():
             return "mps"
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return "xpu"
     except ImportError:
         pass
     return "cpu"

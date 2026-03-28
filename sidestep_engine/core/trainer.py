@@ -165,6 +165,10 @@ class FixedLoRATrainer:
             random.seed(cfg.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(cfg.seed)
+            elif torch.mps.is_available():
+                torch.mps.manual_seed(cfg.seed)
+            elif torch.xpu.is_available():
+                torch.xpu.manual_seed_all(cfg.seed)
 
             # -- Build module -----------------------------------------------
             device = torch.device(cfg.device)
@@ -475,6 +479,10 @@ class FixedLoRATrainer:
                 yield TrainingUpdate(0, 0.0, f"[INFO] Offloaded {offloaded} model components to CPU (saves VRAM)", kind="info")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                elif torch.mps.is_available():
+                    torch.mps.empty_cache()
+                elif torch.xpu.is_available():
+                    torch.xpu.empty_cache()
 
         # -- dtype / Fabric setup -------------------------------------------
         self.module.model = self.module.model.to(self.module.dtype)
@@ -841,8 +849,14 @@ class FixedLoRATrainer:
 
                     # Periodic CUDA cache cleanup to prevent intra-epoch
                     # memory fragmentation on consumer GPUs.
-                    if torch.cuda.is_available() and global_step % cfg.log_every == 0:
-                        torch.cuda.empty_cache()
+
+                    if global_step % cfg.log_every == 0:
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                        elif torch.mps.is_available():
+                            torch.mps.empty_cache()
+                        elif torch.xpu.is_available():
+                            torch.xpu.empty_cache()
 
             # Flush remainder
             if accumulation_step > 0:
@@ -1027,6 +1041,10 @@ class FixedLoRATrainer:
             # temporaries are also freed.
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            elif torch.mps.is_available():
+                torch.mps.empty_cache()
+            elif torch.xpu.is_available():
+                torch.xpu.empty_cache()
 
         # -- Sanity check: did we actually train? ----------------------------
         if global_step == 0:

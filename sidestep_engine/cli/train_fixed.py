@@ -38,6 +38,11 @@ def _cleanup_gpu() -> None:
         import torch
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        elif hasattr(torch, 'mps') and torch.mps.is_available():
+            torch.mps.empty_cache()
+        elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+            torch.xpu.empty_cache()
+        
     except ImportError:
         pass
 
@@ -126,8 +131,12 @@ def run_fixed(args: argparse.Namespace) -> int:
         set_plain_mode(True)
 
     # -- GPU pre-flight --------------------------------------------------------
-    if not torch.cuda.is_available():
-        print("[FAIL] No CUDA GPU detected. Training requires a CUDA-capable GPU.", file=sys.stderr)
+    if not any([
+        torch.cuda.is_available(),
+        hasattr(torch, 'mps') and torch.mps.is_available(),
+        hasattr(torch, 'xpu') and torch.xpu.is_available()
+    ]):
+        print("[FAIL] No supported GPU detected. Training requires a capable GPU.", file=sys.stderr)
         return 1
 
     # -- Matmul precision (matches handler.initialize_service behaviour) ------

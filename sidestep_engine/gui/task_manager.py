@@ -82,10 +82,10 @@ def _remember_history_root_for_output(config: Dict[str, Any]) -> None:
 
 
 _OOM_PATTERNS = (
-    "CUDA out of memory",
+    "GPU out of memory",
     "torch.OutOfMemoryError",
-    "torch.cuda.OutOfMemoryError",
-    "RuntimeError: CUDA error: out of memory",
+    "torch._C.OutOfMemoryError",
+    "RuntimeError: GPU error: out of memory",
 )
 
 _EXIT_CODE_LABELS = {
