@@ -165,6 +165,6 @@ class GPUMonitor:
             elif torch.mps.is_available():
                 return torch.mps.driver_allocated_memory() / (1024 ** 2) # TODO
             elif torch.xpu.is_available():
-                return torch.xpu.max_memory_allocated(self,self._cuda_idx()) / (1024 ** 2)
+                return torch.xpu.max_memory_allocated(self._cuda_idx()) / (1024 ** 2)
         except Exception:
             return 0.0
