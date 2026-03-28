@@ -856,7 +856,7 @@ class FixedLoRATrainer:
                         elif torch.mps.is_available():
                             torch.mps.empty_cache()
                         elif torch.xpu.is_available():
-                            torch.xpu.is_available()
+                            torch.xpu.empty_cache()
 
             # Flush remainder
             if accumulation_step > 0:
@@ -1044,7 +1044,7 @@ class FixedLoRATrainer:
             elif torch.mps.is_available():
                 torch.mps.empty_cache()
             elif torch.xpu.is_available():
-                torch.xpu.is_available()
+                torch.xpu.empty_cache()
 
         # -- Sanity check: did we actually train? ----------------------------
         if global_step == 0:

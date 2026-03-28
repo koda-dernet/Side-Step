@@ -74,7 +74,7 @@ def _clear_cuda_memory() -> None:
     elif torch.mps.is_available():
         torch.mps.empty_cache()
     elif torch.xpu.is_available():
-        torch.xpu.is_available()
+        torch.xpu.empty_cache()
 
 
 def _resolve_local_generation_settings(

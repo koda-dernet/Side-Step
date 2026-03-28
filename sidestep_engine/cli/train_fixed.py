@@ -131,7 +131,11 @@ def run_fixed(args: argparse.Namespace) -> int:
         set_plain_mode(True)
 
     # -- GPU pre-flight --------------------------------------------------------
-    if not any([torch.cuda.is_available(), torch.mps.is_available(), torch.xpu.is_available()]):
+    if not any([
+        torch.cuda.is_available(),
+        hasattr(torch, 'mps') and torch.mps.is_available(),
+        hasattr(torch, 'xpu') and torch.xpu.is_available()
+    ]):
         print("[FAIL] No supported GPU detected. Training requires a capable GPU.", file=sys.stderr)
         return 1
 
