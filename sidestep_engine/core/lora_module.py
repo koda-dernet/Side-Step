@@ -96,8 +96,31 @@ def _normalize_device_type(device: Any) -> str:
     return str(device)
 
 
+def _cuda_supports_bf16() -> bool:
+    """Return True only when the active CUDA device natively supports bf16.
+
+    Ampere (sm_80+) supports bf16 in hardware.  Older GPUs like T4 (sm_75)
+    execute bf16 ops emulated in software via fp32, which causes overflow /
+    NaN losses during training.  We probe the device property directly rather
+    than hard-coding a whitelist.
+    """
+    if not torch.cuda.is_available():
+        return False
+    try:
+        # is_bf16_supported() was added in PyTorch 1.12
+        return torch.cuda.is_bf16_supported()
+    except AttributeError:
+        # Older PyTorch -- fall back to capability check
+        major, _ = torch.cuda.get_device_capability()
+        return major >= 8  # Ampere and newer
+
+
 def _select_compute_dtype(device_type: str) -> torch.dtype:
     if device_type in ("cuda", "xpu"):
+        # Use bf16 only when the GPU natively supports it (Ampere+).
+        # T4 (sm_75) and earlier fall back to fp16.
+        if device_type == "cuda" and not _cuda_supports_bf16():
+            return torch.float16
         return torch.bfloat16
     if device_type == "mps":
         return torch.float16
@@ -106,6 +129,9 @@ def _select_compute_dtype(device_type: str) -> torch.dtype:
 
 def _select_fabric_precision(device_type: str) -> str:
     if device_type in ("cuda", "xpu"):
+        # Mirror compute dtype: fp16 AMP on devices without native bf16.
+        if device_type == "cuda" and not _cuda_supports_bf16():
+            return "16-mixed"
         return "bf16-mixed"
     if device_type == "mps":
         # "16-mixed" activates a GradScaler whose _unscale_grads_ crashes on

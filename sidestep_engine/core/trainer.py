@@ -524,7 +524,15 @@ class FixedLoRATrainer:
                     torch.cuda.empty_cache()
 
         # -- dtype / Fabric setup -------------------------------------------
-        self.module.model = self.module.model.to(self.module.dtype)
+        # Cast ONLY the frozen base model weights to the compute dtype.
+        # Adapter (LoRA/LoKR) parameters MUST remain in fp32 so the AMP
+        # GradScaler can unscale their gradients correctly.
+        # Rule: GradScaler requires trainable params in fp32; only the
+        # forward pass computation is done in fp16 via autocast.
+        _adapter_ids = {id(p) for p in self.module.model.parameters() if p.requires_grad}
+        for p in self.module.model.parameters():
+            if id(p) not in _adapter_ids:
+                p.data = p.data.to(self.module.dtype)
         self.module.model.decoder, optimizer = self.fabric.setup(self.module.model.decoder, optimizer)
 
         # -- Resume ---------------------------------------------------------
