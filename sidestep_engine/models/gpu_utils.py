@@ -99,7 +99,15 @@ def detect_gpu(requested_device: str = "auto", requested_precision: str = "auto"
 
     # Resolve precision
     if requested_precision == "auto":
-        if device_type in ("cuda", "xpu"):
+        if device_type == "cuda":
+            # Use native bf16 only on Ampere+ (sm_80+); fall back to fp16 on
+            # older CUDA GPUs (T4/V100/Turing, sm < 8.0) that emulate bf16
+            # through fp32 and overflow with typical loss magnitudes.
+            try:
+                precision = "bf16" if torch.cuda.is_bf16_supported() else "fp16"
+            except Exception:
+                precision = "bf16"  # conservative fallback for non-standard builds
+        elif device_type == "xpu":
             precision = "bf16"
         elif device_type == "mps":
             precision = "fp16"

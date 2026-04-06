@@ -156,7 +156,10 @@ class FixedLoRATrainer:
 
             # -- Build module -----------------------------------------------
             device = torch.device(cfg.device)
-            dtype = _select_compute_dtype(_normalize_device_type(device))
+            dtype = _select_compute_dtype(
+                _normalize_device_type(device),
+                getattr(cfg, "precision", "auto"),
+            )
 
             self.module = FixedLoRAModule(
                 model=self.model,
@@ -312,7 +315,7 @@ class FixedLoRATrainer:
         if device_type == "cuda":
             torch.cuda.set_device(self.module.device)
 
-        yield TrainingUpdate(0, 0.0, f"[INFO] Starting training (device: {device_type}, precision: bf16-true)", kind="info")
+        yield TrainingUpdate(0, 0.0, f"[INFO] Starting training (device: {device_type}, dtype: {self.module.dtype})", kind="info")
 
         # -- TensorBoard logger ---------------------------------------------
         tb = TrainingLogger(cfg.effective_log_dir)

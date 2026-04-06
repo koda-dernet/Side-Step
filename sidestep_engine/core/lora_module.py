@@ -94,8 +94,37 @@ def _normalize_device_type(device: Any) -> str:
     return str(device)
 
 
-def _select_compute_dtype(device_type: str) -> torch.dtype:
+
+def _cuda_supports_bf16() -> bool:
+    """Return True only on Ampere+ GPUs (sm_80+) with native bf16 hardware."""
+    if not torch.cuda.is_available():
+        return False
+    try:
+        return torch.cuda.is_bf16_supported()
+    except AttributeError:
+        major, _ = torch.cuda.get_device_capability()
+        return major >= 8
+
+
+def _select_compute_dtype(device_type: str, precision: str = "auto") -> torch.dtype:
+    """Return the torch dtype for model weights and compute.
+
+    Args:
+        device_type: "cuda", "mps", "xpu", or "cpu".
+        precision:   "auto" | "bf16" | "fp16" | "fp32".  When "auto",
+                     selects the best precision for the detected hardware
+                     (bf16 on Ampere+, fp16 on older CUDA/MPS).
+    """
+    if precision == "fp32":
+        return torch.float32
+    if precision == "fp16":
+        return torch.float16
+    if precision == "bf16":
+        return torch.bfloat16
+    # "auto": pick the best dtype the hardware supports
     if device_type in ("cuda", "xpu"):
+        if device_type == "cuda" and not _cuda_supports_bf16():
+            return torch.float16   # T4 / Turing / Volta fallback
         return torch.bfloat16
     if device_type == "mps":
         return torch.float16
@@ -137,7 +166,10 @@ class FixedLoRAModule(nn.Module):
         self.training_config = training_config
         self.device = torch.device(device) if isinstance(device, str) else device
         self.device_type = _normalize_device_type(self.device)
-        self.dtype = _select_compute_dtype(self.device_type)
+        self.dtype = _select_compute_dtype(
+            self.device_type,
+            getattr(training_config, "precision", "auto"),
+        )
         self.transfer_non_blocking = self.device_type in ("cuda", "xpu")
 
         # LyCORIS network reference (only set for LoKR/LoHA)

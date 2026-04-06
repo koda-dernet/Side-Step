@@ -534,15 +534,16 @@ class TrainingConfigScreen(Screen):
             yield Static("Precision:", classes="form-label")
             yield Select(
                 [
-                    ("BF16 (recommended)", "bf16-mixed"),
-                    ("FP16", "16-mixed"),
-                    ("FP32", "32-true"),
+                    ("Auto (recommended)", "auto"),
+                    ("BF16 — Ampere+ GPUs (RTX 3xxx, A100+)", "bf16"),
+                    ("FP16 — Older GPUs (T4, V100, Turing)", "fp16"),
+                    ("FP32 — Full precision / CPU", "fp32"),
                 ],
-                value="bf16-mixed",
+                value="auto",
                 id="select-precision",
             )
         yield Static("Numerical precision for training", classes="form-hint")
-        yield Static("BF16 = fast + stable  |  FP16 = fast, may overflow  |  FP32 = slow, most precise", classes="impact-hint")
+        yield Static("Auto = bf16 on Ampere+, fp16 on T4/Turing  |  Override only if needed", classes="impact-hint")
         
         yield Rule()
         yield Static("Regularization", classes="section-header")
