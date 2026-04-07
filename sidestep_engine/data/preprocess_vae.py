@@ -54,7 +54,7 @@ def tiled_vae_encode(
         try:
             if torch.cuda.is_available():
                 props = torch.cuda.get_device_properties(vae_device)
-                gpu_mem_gb = props.total_mem / (1024 ** 3)
+                gpu_mem_gb = props.total_memory / (1024 ** 3)
                 chunk_size = TARGET_SR * 15 if gpu_mem_gb <= 8 else TARGET_SR * 30
             elif torch.mps.is_available():
                 gpu_mem_gb = torch.mps.recommended_max_memory() / (1024 ** 3)

@@ -101,6 +101,9 @@ _VARIANT_DIR = {
     "turbo": "acestep-v15-turbo",
     "base": "acestep-v15-base",
     "sft": "acestep-v15-sft",
+    "xl-turbo": "acestep-v15-xl-turbo",
+    "xl-base": "acestep-v15-xl-base",
+    "xl-sft": "acestep-v15-xl-sft",
 }
 
 
@@ -205,12 +208,77 @@ def load_decoder_for_training(
     # lightweight stub so both old and new checkpoints load cleanly.
     # The actual model code uses relative imports at runtime.
     import types as _types
+    import importlib.util
+    
     if "acestep" not in sys.modules:
         _stub = _types.ModuleType("acestep")
         _stub.__path__ = []  # make it a package
         sys.modules["acestep"] = _stub
     if "acestep.models" not in sys.modules:
-        sys.modules["acestep.models"] = _types.ModuleType("acestep.models")
+        _models_stub = _types.ModuleType("acestep.models")
+        _models_stub.__path__ = []  # make it a package
+        sys.modules["acestep.models"] = _models_stub
+    
+    # Register required submodules for XL and other model variants
+    # Each must have __path__ to be treated as a package for nested imports
+    _submodules = [
+        "acestep.models.common",
+        "acestep.models.base",
+        "acestep.models.turbo",
+        "acestep.models.sft",
+        "acestep.models.xl_base",
+        "acestep.models.xl_turbo",
+        "acestep.models.xl_sft",
+    ]
+    for submodule in _submodules:
+        if submodule not in sys.modules:
+            _sub_stub = _types.ModuleType(submodule)
+            _sub_stub.__path__ = []  # make it a package
+            sys.modules[submodule] = _sub_stub
+    
+    # Load actual Python files from ACE-Step-1.5 for shared model classes
+    # The checkpoint files re-export from these locations
+    def _load_acestep_module(module_name: str, file_path: Path) -> None:
+        """Load a Python file from ACE-Step and register as a module."""
+        if not file_path.exists():
+            return
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+        except Exception as exc:
+            # Log debug info but don't fail - version mismatches are OK
+            exc_text = str(exc)
+            if "huggingface-hub" in exc_text or "transformers" in exc_text or "dependency" in exc_text:
+                logger.debug(f"Dependency issue loading {module_name} (non-fatal): {exc}")
+            else:
+                logger.debug(f"Could not load ACE-Step module {module_name}: {exc}")
+    
+    # Try to find ACE-Step-1.5 directory
+    # It could be a sibling to the checkpoint_dir
+    acestep_root = Path(checkpoint_dir).parent.parent / "acestep" / "models" / "common"
+    if not acestep_root.exists():
+        # Fallback: try direct path relative to current working directory
+        acestep_root = Path("../ACE-Step-1.5/acestep/models/common").resolve()
+    
+    if acestep_root.exists():
+        _load_acestep_module("acestep.models.common.configuration_acestep_v15",
+                            acestep_root / "configuration_acestep_v15.py")
+        _load_acestep_module("acestep.models.common.apg_guidance",
+                            acestep_root / "apg_guidance.py")
+    
+    # Ensure critical config modules are registered, even if loading failed
+    # These are needed for HuggingFace transformers imports
+    if "acestep.models.common.configuration_acestep_v15" not in sys.modules:
+        sys.modules["acestep.models.common.configuration_acestep_v15"] = _types.ModuleType(
+            "acestep.models.common.configuration_acestep_v15"
+        )
+    if "acestep.models.common.apg_guidance" not in sys.modules:
+        sys.modules["acestep.models.common.apg_guidance"] = _types.ModuleType(
+            "acestep.models.common.apg_guidance"
+        )
 
     model = None
     last_err: Optional[Exception] = None
