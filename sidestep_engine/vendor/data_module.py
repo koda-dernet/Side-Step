@@ -53,12 +53,20 @@ class PreprocessedTensorDataset(Dataset):
     _LATENT_FPS_FALLBACK = 25
 
     @staticmethod
+    def _is_pass1_staging_pt(path: str) -> bool:
+        """True for Pass-1-only ``*.tmp.pt`` files (missing DIT encoder tensors)."""
+        return Path(path).name.endswith(".tmp.pt")
+
+    @staticmethod
     def _scan_tensor_dir(tensor_dir: str) -> List[str]:
         """Collect .pt files from tensor_dir when manifest is unavailable."""
         paths: List[str] = []
         for filename in os.listdir(tensor_dir):
-            if filename.endswith(".pt") and filename != "manifest.json":
-                paths.append(str(Path(tensor_dir) / filename))
+            if not filename.endswith(".pt") or filename == "manifest.json":
+                continue
+            if filename.endswith(".tmp.pt"):
+                continue
+            paths.append(str(Path(tensor_dir) / filename))
         return paths
 
     @staticmethod
@@ -165,6 +173,25 @@ class PreprocessedTensorDataset(Dataset):
                 self.manifest_fallback_used = True
         else:
             self.sample_paths = self._scan_tensor_dir(tensor_dir)
+
+        # Manifest / scans may still list Pass-1 staging files (*.tmp.pt).
+        # Those lack encoder_hidden_states / context_latents until Pass 2 completes.
+        _staging_paths = [p for p in self.sample_paths if self._is_pass1_staging_pt(p)]
+        self.sample_paths = [
+            p for p in self.sample_paths if not self._is_pass1_staging_pt(p)
+        ]
+        if _staging_paths:
+            logger.warning(
+                "Excluded %d incomplete preprocessing file(s) (*.tmp.pt). "
+                "Run preprocessing Pass 2 (DIT encoder) or delete them. Example: %s",
+                len(_staging_paths),
+                _staging_paths[0],
+            )
+            if not self.sample_paths:
+                logger.error(
+                    "No complete .pt tensors left after excluding *.tmp.pt under %s",
+                    tensor_dir,
+                )
 
         # Validate paths
         self.valid_paths = [p for p in self.sample_paths if os.path.exists(p)]
