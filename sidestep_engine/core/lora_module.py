@@ -94,7 +94,6 @@ def _normalize_device_type(device: Any) -> str:
     return str(device)
 
 
-
 def _cuda_supports_bf16() -> bool:
     """Return True only on Ampere+ GPUs (sm_80+) with native bf16 hardware."""
     if not torch.cuda.is_available():
@@ -129,6 +128,12 @@ def _select_compute_dtype(device_type: str, precision: str = "auto") -> torch.dt
     if device_type == "mps":
         return torch.float16
     return torch.float32
+
+
+def _select_fabric_precision(device_type: str) -> str:
+    if device_type in ("cuda", "xpu", "mps"):
+        return "bf16-mixed"
+    return "32-true"
 
 
 # ===========================================================================

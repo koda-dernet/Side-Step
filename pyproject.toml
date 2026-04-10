@@ -106,6 +106,9 @@ dev = [
     "pytest>=9.0.2",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.hatch.metadata]
 allow-direct-references = true
 

@@ -14,11 +14,14 @@ from __future__ import annotations
 import gc
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import torch
+
+from sidestep_engine.models.acestep_remote_imports import _ensure_acestep_remote_imports
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +104,9 @@ _VARIANT_DIR = {
     "turbo": "acestep-v15-turbo",
     "base": "acestep-v15-base",
     "sft": "acestep-v15-sft",
+    "xl-turbo": "acestep-v15-xl-turbo",
+    "xl-base": "acestep-v15-xl-base",
+    "xl-sft": "acestep-v15-xl-sft",
 }
 
 
@@ -197,28 +203,75 @@ def load_decoder_for_training(
             f"flash_attention_2 unavailable: {fa2_reason}. Falling back to sdpa/eager."
         )
 
-    # Older ACE-Step checkpoints have ``from acestep.models import ...``
-    # in their modeling files.  ``transformers.check_imports()`` validates
-    # that every top-level import is resolvable before loading.  The
-    # pre-1.0 alpha accidentally satisfied this because an ``acestep/``
-    # working directory existed in the project root.  Register a
-    # lightweight stub so both old and new checkpoints load cleanly.
-    # The actual model code uses relative imports at runtime.
+    # Older / newer ACE-Step snapshots import ``acestep.models...`` in modeling
+    # files.  See :func:`_ensure_acestep_remote_imports`.
+    _ensure_acestep_remote_imports()
+
+    # XL checkpoints import nested ``acestep.models.xl_*`` packages.  Register
+    # namespace stubs only when not already provided by a real ACE-Step tree.
+    import importlib.util
     import types as _types
-    if "acestep" not in sys.modules:
-        _stub = _types.ModuleType("acestep")
-        _stub.__path__ = []  # make it a package
-        sys.modules["acestep"] = _stub
-    if "acestep.models" not in sys.modules:
-        _models_stub = _types.ModuleType("acestep.models")
-        _models_stub.__path__ = []  # make it a package so sub-imports work
-        sys.modules["acestep.models"] = _models_stub
-    # Some cached checkpoint files import from acestep.models.flow_matching_solvers
-    if "acestep.models.flow_matching_solvers" not in sys.modules:
-        _fms_stub = _types.ModuleType("acestep.models.flow_matching_solvers")
-        _fms_stub.SOLVER_REGISTRY = {}
-        _fms_stub.VALID_INFER_METHODS = []
-        sys.modules["acestep.models.flow_matching_solvers"] = _fms_stub
+
+    # Only XL variant packages; do not stub common/base/turbo/sft here or we
+    # can shadow a real ``acestep`` tree already on ``sys.path``.
+    _variant_submodules = (
+        "acestep.models.xl_base",
+        "acestep.models.xl_turbo",
+        "acestep.models.xl_sft",
+    )
+    for submodule in _variant_submodules:
+        if submodule not in sys.modules:
+            _sub_stub = _types.ModuleType(submodule)
+            _sub_stub.__path__ = []
+            sys.modules[submodule] = _sub_stub
+
+    def _load_acestep_module(module_name: str, file_path: Path) -> None:
+        """Load a Python file from an ACE-Step checkout when imports are still missing."""
+        if module_name in sys.modules:
+            return
+        if not file_path.is_file():
+            return
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+        except Exception as exc:
+            exc_text = str(exc)
+            if "huggingface-hub" in exc_text or "transformers" in exc_text or "dependency" in exc_text:
+                logger.debug("Dependency issue loading %s (non-fatal): %s", module_name, exc)
+            else:
+                logger.debug("Could not load ACE-Step module %s: %s", module_name, exc)
+
+    # Resolve ``acestep/models/common`` next to the checkpoint root (e.g.
+    # ``.../ACE-Step-1.5/checkpoints`` -> ``.../ACE-Step-1.5/acestep/...``).
+    ckpt_root = Path(checkpoint_dir).resolve()
+    acestep_root_candidates = (
+        ckpt_root.parent / "acestep" / "models" / "common",
+        ckpt_root.parent.parent / "ACE-Step-1.5" / "acestep" / "models" / "common",
+        Path("../ACE-Step-1.5/acestep/models/common").resolve(),
+    )
+    acestep_root = next((p for p in acestep_root_candidates if p.is_dir()), None)
+
+    if acestep_root is not None:
+        _load_acestep_module(
+            "acestep.models.common.configuration_acestep_v15",
+            acestep_root / "configuration_acestep_v15.py",
+        )
+        _load_acestep_module(
+            "acestep.models.common.apg_guidance",
+            acestep_root / "apg_guidance.py",
+        )
+
+    if "acestep.models.common.configuration_acestep_v15" not in sys.modules:
+        sys.modules["acestep.models.common.configuration_acestep_v15"] = _types.ModuleType(
+            "acestep.models.common.configuration_acestep_v15"
+        )
+    if "acestep.models.common.apg_guidance" not in sys.modules:
+        sys.modules["acestep.models.common.apg_guidance"] = _types.ModuleType(
+            "acestep.models.common.apg_guidance"
+        )
 
     model = None
     last_err: Optional[Exception] = None
@@ -245,11 +298,14 @@ def load_decoder_for_training(
                     f"The model files in {model_dir} require a Python package "
                     f"that is not installed.\n\n"
                     f"  Original error: {err_text}\n\n"
-                    f"This usually means the checkpoint files are outdated. "
-                    f"Please re-download the ACE-Step checkpoint (the upstream "
-                    f"project removed this dependency in newer releases).\n"
-                    f"If the issue persists, check that 'vector_quantize_pytorch' "
-                    f"and 'einops' are installed in your environment."
+                    f"If the error names ``acestep`` or ``acestep.models``, ensure "
+                    f"Side-Step can resolve the bundled/common ACE-Step modules "
+                    f"(set ``ACESTEP_SRC`` to a full ACE-Step checkout, or place "
+                    f"``ACE-Step-1.5`` next to the Side-Step repo). "
+                    f"Checkpoint Python stubs may also be outdated; try re-downloading "
+                    f"weights from HuggingFace.\n"
+                    f"If the error names other packages, check that "
+                    f"'vector_quantize_pytorch' and 'einops' are installed."
                 ) from exc
             last_err = exc
             next_backend = attn_candidates[idx + 1] if idx + 1 < len(attn_candidates) else None
@@ -352,6 +408,10 @@ def cleanup_preprocessing_models(models: Dict[str, Any]) -> None:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    elif hasattr(torch, 'mps') and torch.mps.is_available():
+        torch.mps.empty_cache()
+    elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+        torch.xpu.empty_cache()
     logger.info("[OK] Preprocessing models cleaned up")
 
 
@@ -513,4 +573,8 @@ def unload_models(*models: Any) -> None:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    elif hasattr(torch, 'mps') and torch.mps.is_available():
+        torch.mps.empty_cache()
+    elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+        torch.xpu.empty_cache()
     logger.info("[OK] Models unloaded and GPU cache cleared")

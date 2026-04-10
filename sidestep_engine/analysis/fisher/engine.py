@@ -164,7 +164,7 @@ def _run_full(
                     data_proportion=data_proportion,
             )
             oom_count = 0
-        except torch.cuda.OutOfMemoryError:
+        except torch._C.OutOfMemoryError:
             oom_count += 1
             _clear_cache(device)
             logger.warning("OOM on batch %d (oom_count=%d)", batches_done, oom_count)
@@ -237,7 +237,7 @@ def _run_chunked(
                     data_proportion=data_proportion,
                 )
                 oom_count = 0
-            except torch.cuda.OutOfMemoryError:
+            except torch._C.OutOfMemoryError:
                 oom_count += 1
                 _clear_cache(device)
                 logger.warning(

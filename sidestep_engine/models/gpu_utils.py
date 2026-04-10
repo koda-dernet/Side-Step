@@ -57,7 +57,7 @@ def detect_gpu(requested_device: str = "auto", requested_precision: str = "auto"
         if torch.cuda.is_available():
             device_str = f"cuda:{_best_cuda_device()}"
             device_type = "cuda"
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        elif hasattr(torch, "mps") and torch.mps.is_available():
             device_str = "mps"
             device_type = "mps"
         elif hasattr(torch, "xpu") and torch.xpu.is_available():
@@ -86,6 +86,8 @@ def detect_gpu(requested_device: str = "auto", requested_precision: str = "auto"
         vram_free = _cuda_free_mb(idx)
     elif device_type == "mps":
         name = "Apple MPS"
+        vram_total = torch.mps.recommended_max_memory() / (1024 ** 2)
+        vram_free = (torch.mps.recommended_max_memory() - torch.mps.current_allocated_memory()) / (1024 ** 2)
     elif device_type == "xpu":
         idx = 0
         if ":" in device_str:
@@ -129,11 +131,17 @@ def detect_gpu(requested_device: str = "auto", requested_precision: str = "auto"
 def _cuda_free_mb(idx: int = 0) -> Optional[float]:
     """Return free CUDA memory in MiB, or None on failure."""
     try:
-        torch.cuda.synchronize(idx)
-        free, _total = torch.cuda.mem_get_info(idx)
-        return free / (1024 ** 2)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize(idx)
+            free, _total = torch.cuda.mem_get_info(idx)
+            return free / (1024 ** 2)
+        elif torch.mps.is_available():
+            torch.mps.synchronize()
+        elif torch.xpu.is_available():
+            torch.xpu.synchronize(idx)
     except (RuntimeError, AssertionError):
-        return None
+        pass
+    return None
 
 
 def get_available_vram_mb(device: str = "auto") -> Optional[float]:

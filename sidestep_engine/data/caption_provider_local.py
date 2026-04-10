@@ -71,6 +71,10 @@ def _clear_cuda_memory() -> None:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    elif torch.mps.is_available():
+        torch.mps.empty_cache()
+    elif torch.xpu.is_available():
+        torch.xpu.empty_cache()
 
 
 def _resolve_local_generation_settings(
@@ -139,7 +143,7 @@ def _generation_attempts(
 
 
 def _is_oom_error(exc: BaseException) -> bool:
-    if isinstance(exc, torch.cuda.OutOfMemoryError):
+    if isinstance(exc, torch._C.OutOfMemoryError):
         return True
     return "out of memory" in str(exc).lower()
 
@@ -288,6 +292,9 @@ def _pick_dtype() -> torch.dtype:
     """Pick bf16 on Ampere+ GPUs, fall back to fp16."""
     if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
         return torch.bfloat16
+    elif torch.mps.is_available():
+        return torch.bfloat16
+        #return torch.float32
     return torch.float16
 
 
@@ -372,6 +379,10 @@ def _load_model(tier: str, *, allow_cpu_offload: bool = False) -> None:
 
     if torch.cuda.is_available():
         load_kwargs["device_map"] = "auto" if allow_cpu_offload else {"": "cuda:0"}
+    elif hasattr(torch, 'mps') and torch.mps.is_available():
+        load_kwargs["device_map"] = "mps"
+    elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+        load_kwargs["device_map"] = "xpu"
     else:
         load_kwargs["device_map"] = "cpu"
 
@@ -560,7 +571,7 @@ def generate_caption(
                 raise last_error
             return None
 
-        last_oom: Optional[torch.cuda.OutOfMemoryError] = None
+        last_oom: Optional[torch._C.OutOfMemoryError] = None
         for attempt in attempts:
             try:
                 generate_started = time.perf_counter()
@@ -579,7 +590,7 @@ def generate_caption(
                 with torch.inference_mode():
                     text_ids = _model.generate(**gen_kwargs)
                 break
-            except torch.cuda.OutOfMemoryError as exc:
+            except torch._C.OutOfMemoryError as exc:
                 last_oom = exc
                 text_ids = None
                 _clear_cuda_memory()
@@ -622,7 +633,7 @@ def generate_caption(
 
         logger.warning("Local model returned empty for: %s - %s", artist, title)
         return None
-    except torch.cuda.OutOfMemoryError as exc:
+    except torch._C.OutOfMemoryError as exc:
         raise LocalCaptionOOMError(
             "Local captioning ran out of GPU memory. Enable CPU offload or switch tiers."
         ) from exc

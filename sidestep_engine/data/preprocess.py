@@ -573,6 +573,10 @@ def _pass1_light(
                     del genre_text_hs, genre_text_mask
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                elif hasattr(torch, 'mps') and torch.mps.is_available():
+                    torch.mps.empty_cache()
+                elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+                    torch.xpu.empty_cache()
 
                 intermediates.append(tmp_path)
                 _genre_tag = " [+genre]" if has_genre else ""
@@ -754,6 +758,10 @@ def _pass2_heavy(
                     del genre_encoder_hs, genre_encoder_mask
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                elif hasattr(torch, 'mps') and torch.mps.is_available():
+                    torch.mps.empty_cache()
+                elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+                    torch.xpu.empty_cache()
 
                 # Remove intermediate
                 tmp_path.unlink(missing_ok=True)

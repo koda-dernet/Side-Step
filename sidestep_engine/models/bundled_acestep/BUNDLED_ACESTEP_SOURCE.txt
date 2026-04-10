@@ -1,0 +1,2 @@
+Upstream ACE-Step-1.5 files copied from acestep/models/common/ for HuggingFace trust_remote_code.
+Sync commit: 82252c2418de6cb8b3ca99b05592aaf539cc7fb3

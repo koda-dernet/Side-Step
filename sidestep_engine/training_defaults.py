@@ -20,6 +20,7 @@ config dicts produced by the frontend.
 
 from __future__ import annotations
 
+import torch
 import os
 import sys
 
@@ -42,7 +43,7 @@ DEFAULT_DATASET_REPEATS: int = 1
 # Optimizer / scheduler
 # ---------------------------------------------------------------------------
 
-DEFAULT_OPTIMIZER_TYPE: str = "adamw8bit"
+DEFAULT_OPTIMIZER_TYPE: str = "adamw8bit" if torch.cuda.is_available() else "adamw"
 DEFAULT_SCHEDULER_TYPE: str = "cosine"
 DEFAULT_SCHEDULER_FORMULA: str = ""
 

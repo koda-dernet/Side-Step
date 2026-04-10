@@ -68,7 +68,7 @@ class GPUMonitor:
         self._device_type = device.split(":")[0]
         self._interval = interval
         self._last: Optional[VRAMSnapshot] = None
-        self._available = self._device_type == "cuda"
+        self._available = self._device_type in ["cuda", "mps", "xpu"]
         self._name: str = ""
         self._total_mb: float = 0.0
         self._init_static()
@@ -83,9 +83,9 @@ class GPUMonitor:
             import torch
 
             idx = self._cuda_idx()
-            self._name = torch.cuda.get_device_name(idx)
+            self._name = torch.cuda.get_device_name(idx) if torch.cuda.is_available() else "Other GPU"
             self._total_mb = (
-                torch.cuda.get_device_properties(idx).total_memory / (1024 ** 2)
+                torch.cuda.get_device_properties(idx).total_memory / (1024 ** 2) if torch.cuda.is_available() else 0 # TODO
             )
         except Exception:
             self._available = False
@@ -118,11 +118,24 @@ class GPUMonitor:
             import torch
 
             idx = self._cuda_idx()
-            torch.cuda.synchronize(idx)
-            reserved = torch.cuda.memory_reserved(idx) / (1024 ** 2)
-            free_bytes, total_bytes = torch.cuda.mem_get_info(idx)
-            global_free_mb = free_bytes / (1024 ** 2)
-            global_used_mb = max(0.0, (total_bytes - free_bytes) / (1024 ** 2))
+            reserved = 0
+            free_bytes, total_bytes = 0, 0
+            global_free_mb = 0
+            global_used_mb = 0
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize(idx)
+                reserved = torch.cuda.memory_reserved(idx) / (1024 ** 2)
+                free_bytes, total_bytes = torch.cuda.mem_get_info(idx)
+                global_free_mb = free_bytes / (1024 ** 2)
+                global_used_mb = max(0.0, (total_bytes - free_bytes) / (1024 ** 2))
+            elif torch.mps.is_available():
+                torch.mps.synchronize()
+                # TODO
+            elif torch.xpu.is_available():
+                torch.xpu.synchronize(idx)
+                # TODO
+            
             snap = VRAMSnapshot(
                 used_mb=reserved,
                 total_mb=self._total_mb,
@@ -147,6 +160,11 @@ class GPUMonitor:
             return 0.0
         try:
             import torch
-            return torch.cuda.max_memory_allocated(self._cuda_idx()) / (1024 ** 2)
+            if torch.cuda.is_available():
+                return torch.cuda.max_memory_allocated(self._cuda_idx()) / (1024 ** 2)
+            elif torch.mps.is_available():
+                return torch.mps.driver_allocated_memory() / (1024 ** 2) # TODO
+            elif torch.xpu.is_available():
+                return torch.xpu.max_memory_allocated(self._cuda_idx()) / (1024 ** 2)
         except Exception:
             return 0.0

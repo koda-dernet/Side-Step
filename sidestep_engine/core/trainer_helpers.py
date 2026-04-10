@@ -216,14 +216,20 @@ def capture_rng_state(device: Any = None) -> Dict[str, Any]:
         "python": random.getstate(),
         "torch_cpu": torch.random.get_rng_state(),
     }
-    if torch.cuda.is_available() and device is not None:
-        try:
-            dev = torch.device(device)
-            idx = dev.index if dev.index is not None else 0
+    try:
+        dev = torch.device(device)
+        idx = dev.index if dev.index is not None else 0
+        if torch.cuda.is_available():
             rng["cuda_device"] = idx
             rng["cuda_rng"] = torch.cuda.get_rng_state(idx)
-        except Exception as exc:
-            logger.debug("Could not capture CUDA RNG state: %s", exc)
+        elif torch.mps.is_available():
+            rng["mps_device"] = idx
+            rng["mps_rng"] = torch.mps.get_rng_state(dev)
+        elif torch.xpu.is_available():
+            rng["xpu_device"] = idx
+            rng["xpu_rng"] = torch.xpu.get_rng_state(dev)
+    except Exception as exc:
+        logger.debug("Could not capture RNG state: %s", exc)
     return rng
 
 
@@ -266,6 +272,52 @@ def restore_rng_state(rng_state: Dict[str, Any], current_device: Any = None) -> 
             logger.warning(
                 "[WARN] CUDA device changed (saved cuda:%d, current cuda:%d) "
                 "-- CUDA RNG not restored",
+                saved_idx, current_idx,
+            )
+    elif "mps_rng" in rng_state and torch.mps.is_available():
+        saved_idx = rng_state.get("mps_device", 0)
+        current_idx = 0
+        if current_device is not None:
+            dev = torch.device(current_device)
+            current_idx = dev.index if dev.index is not None else 0
+        if saved_idx == current_idx:
+            try:
+                mps_t = rng_state["mps_rng"]
+                if isinstance(mps_t, torch.Tensor):
+                    mps_t = mps_t.cpu()
+                    if mps_t.dtype != torch.uint8:
+                        mps_t = mps_t.to(torch.uint8)
+                torch.mps.set_rng_state(mps_t, current_idx)
+                restored.append("mps_rng")
+            except Exception as exc:
+                logger.warning("[WARN] Could not restore MPS RNG: %s", exc)
+        else:
+            logger.warning(
+                "[WARN] MPS device changed (saved mps:%d, current mps:%d) "
+                "-- MPS RNG not restored",
+                saved_idx, current_idx,
+            )
+    elif "xpu_rng" in rng_state and torch.xpu.is_available():
+        saved_idx = rng_state.get("xpu_device", 0)
+        current_idx = 0
+        if current_device is not None:
+            dev = torch.device(current_device)
+            current_idx = dev.index if dev.index is not None else 0
+        if saved_idx == current_idx:
+            try:
+                xpu_t = rng_state["xpu_rng"]
+                if isinstance(xpu_t, torch.Tensor):
+                    xpu_t = xpu_t.cpu()
+                    if xpu_t.dtype != torch.uint8:
+                        xpu_t = xpu_t.to(torch.uint8)
+                torch.xpu.set_rng_state(xpu_t, current_idx)
+                restored.append("xpu_rng")
+            except Exception as exc:
+                logger.warning("[WARN] Could not restore XPU RNG: %s", exc)
+        else:
+            logger.warning(
+                "[WARN] XPU device changed (saved xpu:%d, current xpu:%d) "
+                "-- XPU RNG not restored",
                 saved_idx, current_idx,
             )
     return restored

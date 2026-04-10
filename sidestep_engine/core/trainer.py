@@ -153,6 +153,10 @@ class FixedLoRATrainer:
             random.seed(cfg.seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(cfg.seed)
+            elif torch.mps.is_available():
+                torch.mps.manual_seed(cfg.seed)
+            elif torch.xpu.is_available():
+                torch.xpu.manual_seed_all(cfg.seed)
 
             # -- Build module -----------------------------------------------
             device = torch.device(cfg.device)
@@ -493,6 +497,10 @@ class FixedLoRATrainer:
                 yield TrainingUpdate(0, 0.0, f"[INFO] Offloaded {offloaded} model components to CPU (saves VRAM)", kind="info")
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                elif torch.mps.is_available():
+                    torch.mps.empty_cache()
+                elif torch.xpu.is_available():
+                    torch.xpu.empty_cache()
 
         # -- dtype setup ----------------------------------------------------
         self.module.model = self.module.model.to(self.module.dtype)
@@ -891,8 +899,14 @@ class FixedLoRATrainer:
 
                     # Periodic CUDA cache cleanup to prevent intra-epoch
                     # memory fragmentation on consumer GPUs.
-                    if torch.cuda.is_available() and global_step % cfg.log_every == 0:
-                        torch.cuda.empty_cache()
+
+                    if global_step % cfg.log_every == 0:
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                        elif torch.mps.is_available():
+                            torch.mps.empty_cache()
+                        elif torch.xpu.is_available():
+                            torch.xpu.empty_cache()
 
             # Flush remainder
             if accumulation_step > 0:
@@ -1077,6 +1091,10 @@ class FixedLoRATrainer:
             # temporaries are also freed.
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            elif torch.mps.is_available():
+                torch.mps.empty_cache()
+            elif torch.xpu.is_available():
+                torch.xpu.empty_cache()
 
         # -- Sanity check: did we actually train? ----------------------------
         if global_step == 0:
@@ -1102,43 +1120,36 @@ class FixedLoRATrainer:
         adapter_label = "LoKR" if self.adapter_type == "lokr" else "LoRA"
         final_loss = self.module.training_losses[-1] if self.module.training_losses else 0.0
 
-        if best_tracking_active and best_epoch > 0 and Path(best_path).exists():
-            import shutil
-            if Path(final_path).exists():
-                shutil.rmtree(final_path)
-            shutil.copytree(best_path, final_path)
-            tb.flush()
-            tb.close()
-            _pw.write_event(kind="complete", step=global_step, loss=final_loss,
-                            best_loss=best_loss, best_epoch=best_epoch)
-            _pw.close()
-            yield TrainingUpdate(
-                step=global_step, loss=final_loss,
-                msg=(
-                    f"[OK] Training complete! {adapter_label} final = best MA5 "
-                    f"(epoch {best_epoch}, MA5: {best_loss:.4f}) saved to {final_path}\n"
-                    f"     For inference, set your LoRA path to: {final_path}"
-                ),
-                kind="complete",
-            )
-        else:
-            self.module.model.decoder.eval()
+        _best_ex = Path(best_path).exists()
+
+        self.module.model.decoder.eval()
+        if _ema is not None:
+            _ema.apply()
+        try:
+            self._save_final(final_path)
+        finally:
             if _ema is not None:
-                _ema.apply()
-            try:
-                self._save_final(final_path)
-            finally:
-                if _ema is not None:
-                    _ema.restore()
-            tb.flush()
-            tb.close()
-            _pw.write_event(kind="complete", step=global_step, loss=final_loss)
-            _pw.close()
-            yield TrainingUpdate(
-                step=global_step, loss=final_loss,
-                msg=(
-                    f"[OK] Training complete! {adapter_label} saved to {final_path}\n"
-                    f"     For inference, set your LoRA path to: {final_path}"
-                ),
-                kind="complete",
+                _ema.restore()
+        tb.flush()
+        tb.close()
+        _complete_kw: Dict[str, Any] = {"kind": "complete", "step": global_step, "loss": final_loss}
+        if best_tracking_active and best_epoch > 0:
+            _complete_kw["best_loss"] = best_loss
+            _complete_kw["best_epoch"] = best_epoch
+        _pw.write_event(**_complete_kw)
+        _pw.close()
+        _best_note = ""
+        if best_tracking_active and best_epoch > 0 and _best_ex:
+            _best_note = (
+                f"\n     Best MA5 weights: {best_path} "
+                f"(epoch {best_epoch}, MA5: {best_loss:.4f})"
             )
+        yield TrainingUpdate(
+            step=global_step, loss=final_loss,
+            msg=(
+                f"[OK] Training complete! {adapter_label} saved to {final_path} "
+                f"(last epoch / training state){_best_note}\n"
+                f"     For inference, set your LoRA path to: {final_path}"
+            ),
+            kind="complete",
+        )
