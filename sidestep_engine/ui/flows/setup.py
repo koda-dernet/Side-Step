@@ -84,7 +84,7 @@ def _step_checkpoint(data: dict) -> None:
             break
         else:
             print_rich("  [yellow]No model directories found in that location.[/]")
-            print_rich("  [dim]Examples: acestep-v15-base, acestep-v15-sft, acestep-v15-turbo[/]")
+            print_rich("  [dim]Examples: acestep-v15-base, acestep-v15-sft, acestep-v15-turbo, acestep-v15-xl-base, acestep-v15-xl-sft, acestep-v15-xl-turbo[/]")
             if not ask_bool("Try a different path?", default=True, allow_back=False):
                 print_rich("  [red]Setup requires at least one valid model directory.[/]")
                 raise KeyboardInterrupt

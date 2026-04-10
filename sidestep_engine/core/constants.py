@@ -17,6 +17,9 @@ VARIANT_DIR_MAP: Dict[str, str] = {
     "turbo": "acestep-v15-turbo",
     "base": "acestep-v15-base",
     "sft": "acestep-v15-sft",
+    "xl-turbo": "acestep-v15-xl-turbo",
+    "xl-base": "acestep-v15-xl-base",
+    "xl-sft": "acestep-v15-xl-sft",
 }
 
 # ---------------------------------------------------------------------------

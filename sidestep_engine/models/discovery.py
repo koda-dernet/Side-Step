@@ -110,6 +110,15 @@ def detect_base_model(config: Dict, dir_name: str = "") -> str:
 
     # Match by directory name for official models
     name_lower = dir_name.lower()
+    
+    # Check for XL variants first (they inherit from base, sft, turbo)
+    # e.g., "acestep-v15-xl-turbo" -> "turbo"
+    for variant in ("xl-turbo", "xl-base", "xl-sft"):
+        if variant in name_lower:
+            # Map XL variants to their base types
+            return variant.split('-')[1]  # "xl-turbo" -> "turbo", etc.
+    
+    # Check for regular variants
     for variant in ("turbo", "base", "sft"):
         if variant in name_lower:
             return variant
