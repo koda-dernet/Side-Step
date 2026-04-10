@@ -84,6 +84,8 @@ from sidestep_engine.training_defaults import (
     DEFAULT_WARMUP_START_FACTOR,
     DEFAULT_WARMUP_STEPS,
     DEFAULT_WEIGHT_DECAY,
+    DEFAULT_WEIGHT_QTYPE,
+    DEFAULT_WEIGHT_QUANTIZE,
 )
 
 
@@ -325,6 +327,8 @@ def build_train_namespace(a: dict, mode: str = "train") -> argparse.Namespace:
         gradient_checkpointing=a.get("gradient_checkpointing", DEFAULT_GRADIENT_CHECKPOINTING),
         gradient_checkpointing_ratio=a.get("gradient_checkpointing_ratio", DEFAULT_GRADIENT_CHECKPOINTING_RATIO),
         offload_encoder=a.get("offload_encoder", DEFAULT_OFFLOAD_ENCODER),
+        weight_quantize=bool(a.get("weight_quantize", DEFAULT_WEIGHT_QUANTIZE)),
+        weight_qtype=str(a.get("weight_qtype", DEFAULT_WEIGHT_QTYPE)),
         chunk_duration=a.get("chunk_duration"),
         max_latent_length=a.get("max_latent_length"),
         crop_mode=a.get("crop_mode"),

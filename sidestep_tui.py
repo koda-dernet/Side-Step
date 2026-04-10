@@ -37,7 +37,6 @@ _BANNER = r"""
 """
 
 
-from sidestep_engine._compat import install_torchao_warning_filter
 
 
 def check_dependencies() -> list[str]:
@@ -73,8 +72,6 @@ def main() -> int:
     print("  ║     Use 'python train.py' for the CLI wizard instead.   ║")
     print("  ╚══════════════════════════════════════════════════════════╝")
     print()
-
-    install_torchao_warning_filter()
 
     missing = check_dependencies()
     if missing:

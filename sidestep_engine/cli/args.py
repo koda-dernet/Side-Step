@@ -69,6 +69,8 @@ from sidestep_engine.training_defaults import (
     DEFAULT_WARMUP_START_FACTOR,
     DEFAULT_WARMUP_STEPS,
     DEFAULT_WEIGHT_DECAY,
+    DEFAULT_WEIGHT_QUANTIZE,
+    DEFAULT_WEIGHT_QTYPE,
     DEFAULT_TIMESTEP_MODE,
     DEFAULT_ADAPTIVE_TIMESTEP_RATIO,
     DEFAULT_VAL_SPLIT,
@@ -444,6 +446,21 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_train.add_argument("--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=True, help="Recompute activations to save VRAM (~40-60%% less, ~10-30%% slower). On by default; use --no-gradient-checkpointing to disable")
     g_train.add_argument("--gradient-checkpointing-ratio", type=float, default=DEFAULT_GRADIENT_CHECKPOINTING_RATIO, help=f"Fraction of decoder layers to checkpoint (0.0=none, 0.5=half, 1.0=all). Only applies when --gradient-checkpointing is on (default: {DEFAULT_GRADIENT_CHECKPOINTING_RATIO})")
     g_train.add_argument("--offload-encoder", action=argparse.BooleanOptionalAction, default=True, help="Move encoder/VAE to CPU after setup (saves ~2-4GB VRAM). On by default; use --no-offload-encoder to disable")
+    g_train.add_argument(
+        "--weight-quantize",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_WEIGHT_QUANTIZE,
+        help="Quantize frozen backbone weights with optimum-quanto after load (install: side-step[quantize]). Off by default",
+    )
+    g_train.add_argument(
+        "--weight-qtype",
+        type=str,
+        default=DEFAULT_WEIGHT_QTYPE,
+        help=(
+            f"optimum-quanto qtype (e.g. qfloat8, qint8); torchao keys (int8, float8) are not "
+            f"supported with LoRA — default: {DEFAULT_WEIGHT_QTYPE}"
+        ),
+    )
 
     # -- All the Levers (experimental enhancements) -------------------------
     g_levers = parser.add_argument_group("All the Levers (experimental)")

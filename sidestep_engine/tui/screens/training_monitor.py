@@ -339,6 +339,8 @@ class TrainingMonitorScreen(Screen):
             variant=training_config.model_variant,
             device=gpu.device,
             precision=gpu.precision,
+            weight_quantize=getattr(training_config, "weight_quantize", False),
+            weight_qtype=getattr(training_config, "weight_qtype", "qfloat8"),
         )
 
         # Patch resolved device/precision back into the config

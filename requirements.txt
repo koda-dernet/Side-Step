@@ -4,8 +4,10 @@
 # ╚══════════════════════════════════════════════════════════════╝
 #
 # CANONICAL SOURCE: pyproject.toml (install via `uv sync`).
-# This file is a simplified reference for pip users and may
-# diverge from the exact versions/extras in pyproject.toml.
+# Default `uv sync` installs the **training/preprocess core** only.
+# Match the old all-in-one bundle:  uv sync --extra full
+#   (or: pip install -e ".[full]")
+# Piecemeal: --extra gui --extra captions --extra audio_analyze --extra lycoris --extra optimizers --extra tui
 #
 # NOTE: uv is the recommended package manager (handles PyTorch
 # CUDA wheels automatically). If using pip, install PyTorch with
@@ -16,7 +18,6 @@ transformers>=4.51.0,<4.58.0
 diffusers
 lightning>=2.3.3
 peft>=0.18.0
-accelerate>=1.12.0
 safetensors
 einops>=0.8.1
 
@@ -30,7 +31,6 @@ pyloudnorm>=0.1.0
 
 # ── Model runtime ────────────────────────────────────────────
 vector-quantize-pytorch>=1.27.15
-torchao>=0.14.1,<0.16.0
 
 # ── Logging / monitoring ─────────────────────────────────────
 loguru>=0.7.3
@@ -39,27 +39,18 @@ tensorboard>=2.20.0
 # ── CLI ───────────────────────────────────────────────────────
 rich>=13.0.0
 
-# ── AI sidecar enrichment (captions + lyrics) ────────────────
-lyricsgenius>=3.0.1
-google-genai>=1.0.0
-openai>=1.54.0
-qwen-omni-utils>=0.0.6         # Local captioner audio preprocessing
+# ── AI sidecar (optional extra: captions) ───────────────────
+# lyricsgenius, google-genai, openai, qwen-omni-utils
 
-# ── Adapter libraries ────────────────────────────────────────
-lycoris-lora>=2.0.0
-bitsandbytes>=0.45.0
-prodigyopt>=1.1.2
+# ── Adapters / optimizers (optional: lycoris, optimizers) ─────
+# lycoris-lora, bitsandbytes, prodigyopt
 
-# ── Local audio analysis (BPM, key, time signature) ──────
-demucs>=4.0.0
+# ── Demucs stems (optional: audio_analyze); librosa is core ──
+# demucs>=4.0.0
 librosa>=0.10.0
 
-# ── GUI ───────────────────────────────────────────────────────
-mutagen>=1.47.0
-fastapi>=0.115.0
-uvicorn[standard]>=0.34.0
-nvidia-ml-py>=12.0.0
-pywebview>=5.0
+# ── GUI (optional extra: gui) + native window (extra: native) ──
+# mutagen, fastapi, uvicorn[standard], nvidia-ml-py, pywebview
 # On Linux, also install Qt backend for native window:
 #   pip install qtpy PyQt6 PyQt6-WebEngine
 # On Windows, pywebview uses built-in Edge — no extras needed.

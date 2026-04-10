@@ -188,8 +188,11 @@ def generate_caption(
     try:
         client = _make_client(api_key)
     except ImportError:
-        logger.error("google-genai is not installed. "
-                     "Install with: pip install google-genai")
+        logger.error(
+            "google-genai is not installed. "
+            "Install with: uv pip install 'side-step[captions]' "
+            "(or: pip install google-genai)",
+        )
         return None
     generation = resolve_generation_settings(
         temperature=temperature,

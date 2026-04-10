@@ -63,6 +63,14 @@ _PYLOUDNORM = OptionalDependency(
     impact_if_missing="Preprocessing fails if LUFS is kept.",
 )
 
+_OPTIMUM_QUANTO = OptionalDependency(
+    key="optimum-quanto",
+    module="optimum.quanto",
+    install_spec="optimum-quanto>=0.2.4",
+    reason="Weight quantization (--weight-quantize) was enabled",
+    impact_if_missing="Cannot quantize backbone; install side-step[quantize] or disable --weight-quantize.",
+)
+
 
 def _has_module(module_name: str) -> bool:
     """Return True when a module import target exists."""
@@ -124,6 +132,9 @@ def required_training_optionals(train_cfg) -> list[OptionalDependency]:
     log_heavy_every = int(getattr(train_cfg, "log_heavy_every", 0) or 0)
     if log_every > 0 or log_heavy_every > 0:
         deps.append(_TENSORBOARD)
+
+    if bool(getattr(train_cfg, "weight_quantize", False)):
+        deps.append(_OPTIMUM_QUANTO)
     return deps
 
 

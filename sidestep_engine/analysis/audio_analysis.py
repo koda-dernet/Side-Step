@@ -1131,7 +1131,16 @@ def analyze_audio(
             drums_path = audio_path
             harmonics_path = audio_path
         else:
-            # Demucs stem separation (mid / sas)
+            # Demucs stem separation (mid / sas) — optional dependency
+            try:
+                import demucs  # noqa: F401
+            except ImportError as exc:
+                raise ImportError(
+                    "Demucs is required for mid/sas audio analysis. "
+                    "Install with: uv pip install 'side-step[audio_analyze]' "
+                    "(or pip install 'side-step[audio_analyze]'). "
+                    "Alternatively use mode faf (no stems)."
+                ) from exc
             drums_path, harmonics_path = separate_stems(
                 audio_path, tmp_dir, device=device,
             )

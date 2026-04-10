@@ -109,6 +109,8 @@ _GROUPS_TEMPLATE: List[Tuple[str, List[Tuple[str, str]]]] = [
         ("gradient_checkpointing", "Gradient checkpointing"),
         ("gradient_checkpointing_ratio", "Checkpointing ratio"),
         ("offload_encoder", "Offload encoder"),
+        ("weight_quantize", "Weight quantization"),
+        ("weight_qtype", "Weight qtype"),
     ]),
     ("Sequence Cropping", [
         ("crop_mode", "Crop mode"),

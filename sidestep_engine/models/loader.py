@@ -170,6 +170,9 @@ def load_decoder_for_training(
     variant: str = "turbo",
     device: str = "cpu",
     precision: str = "bf16",
+    *,
+    weight_quantize: bool = False,
+    weight_qtype: str = "qfloat8",
 ) -> Any:
     """Load the full ``AceStepConditionGenerationModel`` for training.
 
@@ -182,6 +185,8 @@ def load_decoder_for_training(
         variant: 'turbo', 'base', or 'sft'.
         device: Target device string.
         precision: 'bf16', 'fp16', or 'fp32'.
+        weight_quantize: If True, apply optimum-quanto weight quantization (needs ``side-step[quantize]``).
+        weight_qtype: optimum-quanto qtype name (e.g. ``qfloat8``, ``qint8``). TorchAO-only keys are rejected.
 
     Returns:
         The loaded ``AceStepConditionGenerationModel`` instance.
@@ -320,14 +325,21 @@ def load_decoder_for_training(
             f"Failed to load model from {model_dir}: {last_err}"
         ) from last_err
 
+    model = model.to(device=device, dtype=dtype)
+    model.eval()
+
+    if weight_quantize:
+        from sidestep_engine.quantization.weights import apply_weight_quantization
+
+        apply_weight_quantization(model, weight_qtype, device_hint=device)
+
     # Freeze everything by default -- trainer will unfreeze LoRA params
     for param in model.parameters():
         param.requires_grad = False
 
-    model = model.to(device=device, dtype=dtype)
-    model.eval()
-
     logger.info("[OK] Model on %s (%s), all params frozen", device, dtype)
+    if weight_quantize:
+        logger.info("[OK] Weight quantization enabled (qtype=%s)", weight_qtype)
     return model
 
 

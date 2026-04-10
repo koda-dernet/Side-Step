@@ -86,6 +86,9 @@ const APICli = (() => {
     addNoBool('--gradient-checkpointing', config.gradient_checkpointing);
     addBool('--offload-encoder', config.offload_encoder);
     addNoBool('--offload-encoder', config.offload_encoder);
+    addBool('--weight-quantize', config.weight_quantize);
+    addNoBool('--weight-quantize', config.weight_quantize);
+    addNonDefault('--weight-qtype', config.weight_qtype, 'qfloat8');
     addNonDefault('--gradient-checkpointing-ratio', config.gradient_checkpointing_ratio, '1.0');
     if (config.chunk_duration && config.chunk_duration !== '0') {
       add('--chunk-duration', config.chunk_duration);

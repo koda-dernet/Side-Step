@@ -49,6 +49,8 @@
   "full-timestep-mode":       "continuous",
 
   "full-offload-encoder":     true,
+  "full-weight-quantize":     false,
+  "full-weight-qtype":        "qfloat8",
   "full-grad-ckpt-ratio":     "1.0",
   "full-crop-mode":           "full",
   "full-chunk-duration":      "0",

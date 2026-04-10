@@ -147,6 +147,7 @@ PRESET_TYPES: dict[str, type] = {
     "save_every": int, "log_every": int, "log_heavy_every": int,
     "save_best_after": int, "early_stop_patience": int,
     "gradient_checkpointing_ratio": float,
+    "weight_qtype": str,
     # Cruise control
     "target_loss": float, "target_loss_floor": float,
     "target_loss_warmup": int, "target_loss_smoothing": float,
@@ -187,6 +188,7 @@ PRESET_FIELDS = frozenset([
     "save_best", "save_best_after", "early_stop_patience",
     "target_loss", "target_loss_floor", "target_loss_warmup", "target_loss_smoothing",
     "gradient_checkpointing", "gradient_checkpointing_ratio", "offload_encoder",
+    "weight_quantize", "weight_qtype",
     # "All the Levers"
     "ema_decay", "ema_start_step", "val_split", "adaptive_timestep_ratio",
     "warmup_start_factor", "cosine_eta_min_ratio", "cosine_restarts_count",

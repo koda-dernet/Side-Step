@@ -104,6 +104,8 @@ from sidestep_engine.training_defaults import (
     DEFAULT_LR_SCALE_SELF_ATTN,
     DEFAULT_LR_SCALE_CROSS_ATTN,
     DEFAULT_LR_SCALE_MLP,
+    DEFAULT_WEIGHT_QUANTIZE,
+    DEFAULT_WEIGHT_QTYPE,
 )
 
 logger = logging.getLogger(__name__)
@@ -396,6 +398,8 @@ def build_training_config(
         dataset_dir=p["dataset_dir"],
         device=gpu_info.device,
         precision=gpu_info.precision,
+        weight_quantize=bool(_get(p, "weight_quantize", DEFAULT_WEIGHT_QUANTIZE)),
+        weight_qtype=str(_get(p, "weight_qtype", DEFAULT_WEIGHT_QTYPE)),
         resume_from=_get(p, "resume_from", ""),
         strict_resume=_get(p, "strict_resume", DEFAULT_STRICT_RESUME),
         run_name=_get(p, "run_name"),

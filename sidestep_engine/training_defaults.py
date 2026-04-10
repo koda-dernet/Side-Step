@@ -177,6 +177,10 @@ DEFAULT_ADAPTER_TYPE: str = "lora"
 DEFAULT_DEVICE: str = "auto"
 DEFAULT_PRECISION: str = "auto"
 
+# Optimum-quanto (optional extra ``quantize``)
+DEFAULT_WEIGHT_QUANTIZE: bool = False
+DEFAULT_WEIGHT_QTYPE: str = "qfloat8"
+
 # ---------------------------------------------------------------------------
 # Aggregate dict — backend parameter names → default values.
 # Used by /api/defaults endpoint and review_summary _DEFAULTS.
@@ -188,6 +192,8 @@ TRAINING_DEFAULTS: dict = {
     "adapter_type": DEFAULT_ADAPTER_TYPE,
     "device": DEFAULT_DEVICE,
     "precision": DEFAULT_PRECISION,
+    "weight_quantize": DEFAULT_WEIGHT_QUANTIZE,
+    "weight_qtype": DEFAULT_WEIGHT_QTYPE,
     # Training
     "learning_rate": DEFAULT_LEARNING_RATE,
     "batch_size": DEFAULT_BATCH_SIZE,
@@ -342,6 +348,8 @@ GUI_FIELD_MAP: dict = {
     "t_bias": "full-t-bias",
     "legacy_loss": "full-legacy-loss",
     "offload_encoder": "full-offload-encoder",
+    "weight_quantize": "full-weight-quantize",
+    "weight_qtype": "full-weight-qtype",
     "gradient_checkpointing_ratio": "full-grad-ckpt-ratio",
     "chunk_decay_every": "full-chunk-decay-every",
     "optimizer_type": "full-optimizer",

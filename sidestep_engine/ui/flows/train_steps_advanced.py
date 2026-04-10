@@ -6,6 +6,10 @@ Extracted from ``train_steps.py`` to meet the module LOC policy.
 
 from __future__ import annotations
 
+from sidestep_engine.training_defaults import (
+    DEFAULT_WEIGHT_QUANTIZE,
+    DEFAULT_WEIGHT_QTYPE,
+)
 from sidestep_engine.ui.prompt_helpers import (
     IS_WINDOWS,
     DEFAULT_NUM_WORKERS,
@@ -218,6 +222,26 @@ def step_advanced_vram(a: dict) -> None:
         default=a.get("offload_encoder", True),
         allow_back=True,
     )
+
+    print_message(
+        "Weight quantization (optimum-quanto) reduces VRAM for the frozen backbone.\n"
+        "  Install: pip install 'side-step[quantize]'. On Apple Silicon, qfloat8 is\n"
+        "  mapped to qint8 automatically.",
+        kind="dim",
+    )
+    a["weight_quantize"] = ask_bool(
+        "Quantize frozen backbone weights after load?",
+        default=bool(a.get("weight_quantize", DEFAULT_WEIGHT_QUANTIZE)),
+        allow_back=True,
+    )
+    if a["weight_quantize"]:
+        a["weight_qtype"] = ask(
+            "Weight qtype (optimum-quanto name: qfloat8, qint8, qint4, … — not torchao int8/float8)",
+            default=str(a.get("weight_qtype", DEFAULT_WEIGHT_QTYPE)),
+            allow_back=True,
+        ).strip() or DEFAULT_WEIGHT_QTYPE
+    else:
+        a["weight_qtype"] = str(a.get("weight_qtype", DEFAULT_WEIGHT_QTYPE))
 
     print_message(
         "Gradient checkpointing recomputes layer activations during\n"

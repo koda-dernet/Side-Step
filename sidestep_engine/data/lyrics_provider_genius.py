@@ -116,7 +116,8 @@ def fetch_lyrics(
     except ImportError:
         logger.error(
             "lyricsgenius is not installed. "
-            "Install it with: pip install lyricsgenius"
+            "Install with: uv pip install 'side-step[captions]' "
+            "(or: pip install lyricsgenius)"
         )
         return None
 

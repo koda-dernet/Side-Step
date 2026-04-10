@@ -358,6 +358,12 @@ class TrainingConfigV2(TrainingConfig):
     precision: str = "auto"
     """Precision: 'auto', 'bf16', 'fp16', 'fp32'."""
 
+    weight_quantize: bool = False
+    """Apply optimum-quanto weight-only quantization to the full model after load (VRAM)."""
+
+    weight_qtype: str = "qfloat8"
+    """Quanto qtype string (e.g. ``qfloat8``, ``qint8``) or torchao key (``int8``, ``float8``)."""
+
     # --- Checkpointing ------------------------------------------------------
     resume_from: Optional[str] = None
     """Path to checkpoint directory to resume training from."""
@@ -723,6 +729,8 @@ class TrainingConfigV2(TrainingConfig):
                 "dataset_dir": self.dataset_dir,
                 "device": self.device,
                 "precision": self.precision,
+                "weight_quantize": self.weight_quantize,
+                "weight_qtype": self.weight_qtype,
                 "resume_from": self.resume_from,
                 "strict_resume": self.strict_resume,
                 "run_name": self.run_name,

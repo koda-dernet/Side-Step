@@ -94,8 +94,11 @@ def generate_caption(
     try:
         openai = _get_openai()
     except ImportError:
-        logger.error("openai is not installed. "
-                     "Install with: pip install openai")
+        logger.error(
+            "openai is not installed. "
+            "Install with: uv pip install 'side-step[captions]' "
+            "(or: pip install openai)",
+        )
         return None
 
     client_kwargs: dict[str, Any] = {"api_key": api_key}

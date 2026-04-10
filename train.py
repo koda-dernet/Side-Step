@@ -61,10 +61,6 @@ except OSError:
 logging.basicConfig(level=logging.DEBUG, handlers=_log_handlers)
 logger = logging.getLogger("train")
 
-from sidestep_engine._compat import install_torchao_warning_filter
-install_torchao_warning_filter()
-
-
 # ---------------------------------------------------------------------------
 # Deprecation shim -- translates legacy CLI syntax to Beta 1 equivalents
 # ---------------------------------------------------------------------------

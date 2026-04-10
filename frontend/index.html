@@ -290,6 +290,7 @@
               <div class="review-table__group">VRAM</div>
               <div class="review-table__row"><span class="review-table__key">Checkpointing</span><span class="review-table__val" id="ez-rev-ckpt-mode">full</span></div>
               <div class="review-table__row"><span class="review-table__key">Offload encoder</span><span class="review-table__val" id="ez-rev-offload">yes</span></div>
+              <div class="review-table__row"><span class="review-table__key">Weight quant</span><span class="review-table__val" id="ez-rev-weight-q">off</span></div>
               <div class="review-table__group">Logging</div>
               <div class="review-table__row"><span class="review-table__key">Save every</span><span class="review-table__val" id="ez-rev-save-every">50 epochs</span></div>
               <div class="review-table__row"><span class="review-table__key">Save best</span><span class="review-table__val" id="ez-rev-save-best">yes</span></div>
@@ -957,6 +958,35 @@
                 <div class="hint">Frees ~2-4 GB VRAM with zero speed impact.</div>
               </div>
               <div class="form-group">
+                <label class="toggle">
+                  <input type="checkbox" id="full-weight-quantize" class="vram-input">
+                  <span class="toggle__track"></span>
+                  Quantize backbone weights (optimum-quanto) <span class="help-icon" data-help="help-full-weight-q">?</span>
+                </label>
+                <div id="help-full-weight-q" class="help-panel">
+                  <p><strong>Simple:</strong> After loading, frozen decoder/encoder weights can be compressed with <code>optimum-quanto</code> to reduce VRAM. LoRA adapters stay trainable on top.</p>
+                  <p>Requires <code>pip install 'side-step[quantize]'</code>. On MPS, <code>qfloat8</code> is mapped to <code>qint8</code> automatically.</p>
+                  <span class="badge badge--vram">VRAM: often saves several GB on large models</span>
+                </div>
+                <div class="hint">Off by default; enable if you are VRAM-limited and have the quantize extra installed.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-group__label">Weight qtype <span class="help-icon" data-help="help-full-weight-qtype">?</span></label>
+                <div id="help-full-weight-qtype" class="help-panel">
+                  <p>Use <strong>optimum-quanto</strong> dtype names only (see dropdown). TorchAO-style keys are not compatible with PEFT LoRA in this app.</p>
+                </div>
+                <select class="select vram-input" id="full-weight-qtype" data-default="qfloat8">
+                  <option value="qfloat8" selected>qfloat8</option>
+                  <option value="qint8">qint8</option>
+                  <option value="qint4">qint4</option>
+                  <option value="qint2">qint2</option>
+                  <option value="qfloat8_e4m3fn">qfloat8_e4m3fn</option>
+                  <option value="qfloat8_e4m3fnuz">qfloat8_e4m3fnuz</option>
+                  <option value="qfloat8_e5m2">qfloat8_e5m2</option>
+                </select>
+                <div class="hint">Used only when weight quantization is enabled.</div>
+              </div>
+              <div class="form-group">
                 <label class="form-group__label">Gradient checkpointing ratio <span class="help-icon" data-help="help-full-ckpt-ratio">?</span></label>
                 <div style="display: flex; gap: var(--space-sm); align-items: center; margin-bottom: var(--space-xs);">
                   <button class="btn btn--sm ckpt-preset active" data-ratio="1.0" aria-pressed="true">Full (1.0)</button>
@@ -1577,6 +1607,7 @@
               <div class="review-table__group" data-jump="full-offload-encoder" style="cursor:pointer;">VRAM</div>
               <div class="review-table__row"><span class="review-table__key">Grad ckpt ratio</span><span class="review-table__val" id="rev-ckpt-mode">full</span></div>
               <div class="review-table__row"><span class="review-table__key">Offload encoder</span><span class="review-table__val" id="rev-offload">yes</span></div>
+              <div class="review-table__row"><span class="review-table__key">Weight quant</span><span class="review-table__val" id="rev-weight-q">off</span></div>
               <div class="review-table__row"><span class="review-table__key">Chunk duration</span><span class="review-table__val" id="rev-chunk">off</span></div>
               <div class="review-table__group" data-jump="full-optimizer" style="cursor:pointer;">Optimizer</div>
               <div class="review-table__row"><span class="review-table__key">Optimizer</span><span class="review-table__val" id="rev-optimizer">adamw</span></div>

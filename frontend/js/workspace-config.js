@@ -106,6 +106,24 @@ const WorkspaceConfig = (() => {
     };
     $("full-offload-encoder")?.addEventListener("change", updateOffload);
 
+    const updateWeightQuantReview = () => {
+      const t = $("rev-weight-q");
+      if (t) {
+        const on = $("full-weight-quantize")?.checked;
+        const qt = _v("full-weight-qtype", "qfloat8");
+        t.textContent = on ? qt : "off";
+        const defOn = $("full-weight-quantize")?.dataset?.default === "true";
+        const defQt = ($("full-weight-qtype")?.dataset?.default || "qfloat8").toString();
+        const isDefault = (on === defOn) && (!on || qt === defQt);
+        t.classList.toggle("review-table__val--modified", !isDefault);
+      }
+      const sel = $("full-weight-qtype");
+      if (sel) sel.disabled = !$("full-weight-quantize")?.checked;
+    };
+    $("full-weight-quantize")?.addEventListener("change", updateWeightQuantReview);
+    $("full-weight-qtype")?.addEventListener("change", updateWeightQuantReview);
+    updateWeightQuantReview();
+
     const updateSaveBest = () => {
       const t = $("rev-save-best");
       if (t) t.textContent = $("full-save-best")?.checked ? "yes" : "no";
@@ -265,6 +283,7 @@ const WorkspaceConfig = (() => {
       "ez-rev-warmup": () => _v("full-warmup","100") + " steps",
       "ez-rev-ckpt-mode": () => { const r = parseFloat(_v("full-grad-ckpt-ratio","1")); return r >= 1 ? "full" : r > 0 ? "ratio " + r : "off"; },
       "ez-rev-offload": () => _c("full-offload-encoder") ? "yes" : "no",
+      "ez-rev-weight-q": () => _c("full-weight-quantize") ? _v("full-weight-qtype", "qfloat8") : "off",
       "ez-rev-save-every": () => _v("full-save-every","50") + " epochs",
       "ez-rev-save-best": () => _c("full-save-best") ? "yes" : "no", "ez-rev-optimizer": () => _v("full-optimizer","adamw8bit"),
     };
@@ -440,6 +459,8 @@ const WorkspaceConfig = (() => {
       legacy_loss: _c("full-legacy-loss"),
       ema_start_step: _v("full-ema-start-step", "2000"),
       offload_encoder: _c("full-offload-encoder"),
+      weight_quantize: _c("full-weight-quantize"),
+      weight_qtype: _v("full-weight-qtype", "qfloat8"),
       gradient_checkpointing: gradCkptEnabled,
       gradient_checkpointing_ratio: _v("full-grad-ckpt-ratio", "1.0"),
       crop_mode: _v("full-crop-mode", "full"),

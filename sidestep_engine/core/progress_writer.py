@@ -1,21 +1,13 @@
 """
-Time-gated JSONL progress file for GUI telemetry.
+JSONL progress file for GUI telemetry (``{output_dir}/.progress.jsonl``).
 
-Writes one JSON line per call, throttled to at most once per second
-(configurable).  The file lives at ``{output_dir}/.progress.jsonl``
-and is consumed by the GUI server via tail + WebSocket.
+**Per-step loss:** When ``maybe_write(..., step=...)`` is called with an
+integer *step*, each **new** optimizer step writes a line immediately so
+loss charts stay aligned with training steps. Fast runs (many steps per
+second) are not collapsed to 1 Hz.
 
-Usage in the training loop::
-
-    pw = ProgressWriter(output_dir)
-    # ... every optimizer step:
-    pw.maybe_write(step=global_step, epoch=epoch+1, max_epochs=...,
-                   loss=avg_loss, lr=_lr, best_loss=best_loss,
-                   best_epoch=best_epoch, steps_per_epoch=steps_per_epoch)
-    # ... at end:
-    pw.write_event(kind="complete", step=global_step, epoch=epoch+1,
-                   max_epochs=max_epochs, loss=final_loss)
-    pw.close()
+Calls **without** a numeric ``step`` still use time-only throttling (see
+``interval``) for backward compatibility.
 """
 
 from __future__ import annotations
@@ -51,12 +43,13 @@ _sanitize_floats = sanitize_floats
 
 
 class ProgressWriter:
-    """Time-gated JSONL writer for training progress telemetry."""
+    """JSONL writer for training progress telemetry."""
 
     def __init__(self, output_dir: str | Path, interval: float = 1.0) -> None:
         self._path = Path(output_dir) / ".progress.jsonl"
         self._interval = interval
         self._last_write = 0.0
+        self._last_step: Optional[int] = None
         self._fh: Optional[Any] = None
 
     def _ensure_open(self) -> None:
@@ -65,8 +58,23 @@ class ProgressWriter:
             self._fh = open(self._path, "a", encoding="utf-8")
 
     def maybe_write(self, **kwargs: Any) -> None:
-        """Write a progress line if >= interval seconds since last write."""
+        """Write a training step line: once per new *step*, else time-gated."""
         now = time.monotonic()
+        raw = kwargs.get("step")
+        step: Optional[int] = None
+        if isinstance(raw, int):
+            step = raw
+        elif isinstance(raw, float) and raw == int(raw):
+            step = int(raw)
+
+        if step is not None:
+            if step == self._last_step:
+                return
+            self._last_step = step
+            self._last_write = now
+            self._write_line(kind="step", **kwargs)
+            return
+
         if now - self._last_write < self._interval:
             return
         self._last_write = now

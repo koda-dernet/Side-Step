@@ -10,7 +10,6 @@ This module checks that critical vendored modules are importable.
 from __future__ import annotations
 
 import logging
-import os
 import sys
 
 logger = logging.getLogger(__name__)
@@ -89,42 +88,3 @@ def check_compatibility() -> None:
         )
         logger.warning(fa_msg)
         print(f"\n{fa_msg}\n")
-
-
-# ---------------------------------------------------------------------------
-# Warning filters
-# ---------------------------------------------------------------------------
-
-_TORCHAO_CPP_WARN_SNIPPET = "Skipping import of cpp extensions due to incompatible torch version"
-
-
-_torchao_filter_installed = False
-
-
-def install_torchao_warning_filter() -> None:
-    """Suppress one known non-fatal torchao compatibility warning.
-
-    Call early in every entry point (``train.py``, ``sidestep_tui.py``)
-    so the user never sees irrelevant torchao noise.  Idempotent.
-    """
-    global _torchao_filter_installed
-    if _torchao_filter_installed:
-        return
-    if os.getenv("SIDESTEP_DISABLE_TORCHAO_WARN_FILTER", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }:
-        return
-
-    def _drop_only_known_torchao_warning(record: logging.LogRecord) -> bool:
-        if not record.name.startswith("torchao"):
-            return True
-        try:
-            msg = record.getMessage()
-        except Exception:
-            msg = str(record.msg)
-        return _TORCHAO_CPP_WARN_SNIPPET not in msg
-
-    root_logger = logging.getLogger()
-    root_logger.addFilter(_drop_only_known_torchao_warning)
-    logging.getLogger("torchao").addFilter(_drop_only_known_torchao_warning)
-    _torchao_filter_installed = True

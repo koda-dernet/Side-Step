@@ -266,6 +266,8 @@ def run_fixed(args: argparse.Namespace) -> int:
                 variant=train_cfg.model_variant,
                 device=train_cfg.device,
                 precision=train_cfg.precision,
+                weight_quantize=getattr(train_cfg, "weight_quantize", False),
+                weight_qtype=getattr(train_cfg, "weight_qtype", "qfloat8"),
             )
             attention_backend = str(getattr(model, "_side_step_attn_backend", "unknown"))
             if session_cfg_path is not None:

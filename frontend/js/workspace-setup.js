@@ -203,6 +203,7 @@ const WorkspaceSetup = (() => {
       adaptive_timestep_ratio:"full-adaptive-timestep", save_best_every_n_steps:"full-save-best-every-n-steps",
       lr_scale_self_attn:"full-lr-scale-self-attn", lr_scale_cross_attn:"full-lr-scale-cross-attn", lr_scale_mlp:"full-lr-scale-mlp",
       ema_start_step:"full-ema-start-step",
+      weight_qtype:"full-weight-qtype",
       target_loss:"full-target-loss", target_loss_floor:"full-target-loss-floor",
       target_loss_warmup:"full-target-loss-warmup", target_loss_smoothing:"full-target-loss-smoothing",
       timestep_mu:"full-timestep-mu", timestep_sigma:"full-timestep-sigma", num_workers:"full-num-workers", prefetch_factor:"full-prefetch-factor",
@@ -214,6 +215,7 @@ const WorkspaceSetup = (() => {
     const chkMap = {
       target_mlp:"full-target-mlp", offload_encoder:"full-offload-encoder",
       channel_balance:"full-channel-balance", vae_channel_prior:"full-vae-channel-prior", legacy_loss:"full-legacy-loss",
+      weight_quantize:"full-weight-quantize",
       save_best:"full-save-best", pin_memory:"full-pin-memory",
       persistent_workers:"full-persistent-workers",
       lokr_decompose_both:"full-lokr-decompose-both", lokr_use_tucker:"full-lokr-use-tucker",

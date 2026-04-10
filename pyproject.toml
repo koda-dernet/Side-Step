@@ -22,48 +22,65 @@ dependencies = [
     "diffusers",
     "lightning>=2.0.0",
     "peft>=0.18.0",
-    "accelerate>=1.12.0",
+    # accelerate: not listed — peft requires accelerate>=0.21.0 (installed transitively).
     "safetensors",
     "einops>=0.8.1",
     # ── Audio loading & normalization (needed for preprocessing) ────
     "torchcodec>=0.9.1",
     "soundfile>=0.13.1",
     "pyloudnorm>=0.1.0",
-    # ── Model runtime (needed by the checkpoint's modeling.py) ────────
+    # ── Model runtime (ResidualFSQ in HF modeling.py — not torchao) ───
     "vector-quantize-pytorch>=1.27.15",
-    "torchao>=0.14.1,<0.16.0",
     # ── Logging / monitoring ─────────────────────────────────────────
     "loguru>=0.7.3",
     "tensorboard>=2.20.0",
     # ── CLI / TUI ────────────────────────────────────────────────────
     "rich>=13.0.0",
-    # ── AI sidecar enrichment (captions + lyrics) ─────────────────────
-    "lyricsgenius>=3.0.1",
-    "google-genai>=1.0.0",
-    "openai>=1.54.0",
-    "qwen-omni-utils>=0.0.6",       # Local captioner audio preprocessing
-    # ── Adapter libraries ─────────────────────────────────────────
-    "lycoris-lora>=2.0.0",           # LoKR adapter support
-    "bitsandbytes>=0.45.0",          # 8-bit optimizers (AdamW8bit)
-    "prodigyopt>=1.1.2",             # Prodigy adaptive optimizer
+    # (AI sidecar / optional adapters / GUI — see [project.optional-dependencies])
     # ── Flash Attention (prebuilt wheels -- no compilation) ────────
     # Auto-installed on supported platforms; runtime falls back to
     # SDPA silently when flash-attn is absent (macOS, Python != 3.11).
     "flash-attn; sys_platform != 'darwin' and python_version == '3.11'",
-    # ── Local audio analysis (BPM, key, time signature) ──────────────
-    "demucs>=4.0.0",
+    # librosa: used by preprocess_audio resampling (soundfile path); keep in core.
     "librosa>=0.10.0",
-    # ── GUI (Electron is the primary window; FastAPI serves the frontend) ──
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
-    "nvidia-ml-py>=12.0.0",
-    "mutagen>=1.47.0",
 ]
 
 [project.scripts]
 sidestep = "train:main"
 
 [project.optional-dependencies]
+# Web UI: FastAPI + GPU telemetry + cover-art metadata (sidestep gui)
+gui = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "nvidia-ml-py>=12.0.0",
+    "mutagen>=1.47.0",
+]
+# Remote / local caption & lyrics APIs (sidestep captions, dataset AI flows)
+captions = [
+    "lyricsgenius>=3.0.1",
+    "google-genai>=1.0.0",
+    "openai>=1.54.0",
+    "qwen-omni-utils>=0.0.6",
+]
+# Stem separation for offline BPM/key/ts analysis (sidestep audio-analyze)
+audio_analyze = [
+    "demucs>=4.0.0",
+]
+# LoKR / LoHA (not needed for plain LoRA / DoRA / OFT)
+lycoris = [
+    "lycoris-lora>=2.0.0",
+]
+# AdamW8bit and Prodigy (training falls back to AdamW if missing)
+optimizers = [
+    "bitsandbytes>=0.45.0",
+    "prodigyopt>=1.1.2",
+]
+# Optimum-quanto (+ torchao transitive); training uses Quanto qtypes only (qfloat8, qint8, …)
+quantize = [
+    "optimum-quanto>=0.2.4",
+    "torchao>=0.14.1,<0.16.0",
+]
 tui = ["textual>=0.47.0"]
 native = [
     # pywebview fallback (used when Electron is not installed)
@@ -71,8 +88,9 @@ native = [
     "pywebview>=5.0; sys_platform != 'linux'",
     "pygobject>=3.54.5; sys_platform == 'linux'",
 ]
-gui = [
-    # Kept for backwards compat
+# One-shot install matching the previous all-in-one dependency set
+full = [
+    "side-step[gui,captions,audio_analyze,lycoris,optimizers,quantize,tui]",
 ]
 
 [[tool.uv.index]]
