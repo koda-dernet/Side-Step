@@ -138,8 +138,15 @@ const TrainingChart = (() => {
    * @param {Object} opts - { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight }
    */
   function render(opts) {
-    const { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight } = opts;
-    if (fullLoss.length < 2) return;
+    let { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight } = opts;
+    if (fullLoss.length < 1) return;
+    // SVG polyline with a single point is invisible. Duplicate so callers that
+    // pass exactly one sample (e.g. first step before epoch completes) still
+    // see a flat baseline rather than a blank canvas.
+    if (fullLoss.length === 1) {
+      fullLoss = [fullLoss[0], fullLoss[0]];
+      fullLr = fullLr.length === 1 ? [fullLr[0], fullLr[0]] : fullLr;
+    }
     const svg = $('monitor-loss-svg');
     const lossLine = $('monitor-loss-line');
     const rawLine = $('monitor-loss-raw');
@@ -248,7 +255,7 @@ const TrainingChart = (() => {
    */
   function getPointCoords(dataIdx, opts) {
     const { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight } = opts;
-    if (fullLoss.length < 2) return null;
+    if (fullLoss.length < 1) return null;
     const totalLen = fullLoss.length;
     let startIdx, endIdx;
     if (viewXMin !== null && viewXMax !== null) {
