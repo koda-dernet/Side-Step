@@ -13,6 +13,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Silence the third-party ``lyricsgenius`` logger without relying on the
+# ``verbose`` constructor kwarg -- it was removed from ``Genius.__init__``
+# in recent releases and raises ``TypeError``.
+logging.getLogger("lyricsgenius").setLevel(logging.WARNING)
+
 # Retry configuration
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 2.0
@@ -97,7 +102,6 @@ def fetch_lyrics(
     genius = lyricsgenius.Genius(
         api_token,
         timeout=timeout,
-        verbose=False,
         remove_section_headers=False,
     )
 
@@ -189,9 +193,7 @@ def validate_token(api_token: str, timeout: int = 10) -> bool:
     try:
         # Strip invisible non-ASCII from copy-paste (tokens are pure ASCII)
         api_token = api_token.encode("ascii", "ignore").decode("ascii").strip()
-        genius = lyricsgenius.Genius(
-            api_token, timeout=timeout, verbose=False
-        )
+        genius = lyricsgenius.Genius(api_token, timeout=timeout)
         genius.search_song("test", "test")
         return True
     except Exception:
