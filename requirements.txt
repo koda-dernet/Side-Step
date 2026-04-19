@@ -30,7 +30,6 @@ pyloudnorm>=0.1.0
 
 # ── Model runtime ────────────────────────────────────────────
 vector-quantize-pytorch>=1.27.15
-torchao>=0.14.1,<0.16.0
 
 # ── Logging / monitoring ─────────────────────────────────────
 loguru>=0.7.3
