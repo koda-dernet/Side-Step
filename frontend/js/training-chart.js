@@ -138,9 +138,25 @@ const TrainingChart = (() => {
    * @param {Object} opts - { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight, xOffset }
    */
   function render(opts) {
-    const { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight, xOffset } = opts;
+    let { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight, xOffset } = opts;
     const xOff = xOffset || 0;  // offset for resumed training X-axis labels
-    if (fullLoss.length < 2) return;
+    if (fullLoss.length < 1) return;
+    // SVG polyline with a single point is invisible. Duplicate so callers that
+    // pass exactly one sample (e.g. first step before epoch completes) still
+    // see a flat baseline rather than a blank canvas.
+    if (fullLoss.length === 1) {
+      fullLoss = [fullLoss[0], fullLoss[0]];
+      // Normalize fullLr to match fullLoss length (always 2 after duplication)
+      const lrSlice = fullLr.slice(0, 2);
+      if (lrSlice.length < 2) {
+        // Pad by duplicating the last available LR value (or single value)
+        const lastLr = lrSlice.length > 0 ? lrSlice[lrSlice.length - 1] : 0;
+        while (lrSlice.length < 2) {
+          lrSlice.push(lastLr);
+        }
+      }
+      fullLr = lrSlice;
+    }
     const svg = $('monitor-loss-svg');
     const lossLine = $('monitor-loss-line');
     const rawLine = $('monitor-loss-raw');
@@ -249,7 +265,7 @@ const TrainingChart = (() => {
    */
   function getPointCoords(dataIdx, opts) {
     const { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight } = opts;
-    if (fullLoss.length < 2) return null;
+    if (fullLoss.length < 1) return null;
     const totalLen = fullLoss.length;
     let startIdx, endIdx;
     if (viewXMin !== null && viewXMax !== null) {

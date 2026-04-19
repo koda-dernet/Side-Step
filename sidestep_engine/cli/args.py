@@ -355,8 +355,9 @@ def _add_model_args(parser: argparse.ArgumentParser) -> None:
         metavar="MODEL",
         help=(
             f"Model variant or subfolder name (default: {DEFAULT_MODEL_VARIANT}). "
-            "Official: base, sft, turbo. "
-            "For fine-tunes: use the exact folder name under checkpoint-dir."
+            "Official ACE-Step 1.5: base, sft, turbo. "
+            "Official XL: xl-base, xl-sft, xl-turbo (see VARIANT_DIR_MAP in core/constants). "
+            "Custom fine-tunes: exact subdirectory name under checkpoint-dir."
         ),
     )
 
@@ -619,6 +620,17 @@ def _add_train_args(parser: argparse.ArgumentParser) -> None:
                    help="Bypass auto-detection of fisher_map.json in --dataset-dir")
     g.add_argument("--dataset-repeats", "-R", type=int, default=DEFAULT_DATASET_REPEATS,
                    help=f"Global dataset repetition multiplier (1 = no repetition, default: {DEFAULT_DATASET_REPEATS})")
+    g.add_argument(
+        "--crop-mode",
+        type=str,
+        default=None,
+        dest="crop_mode",
+        metavar="MODE",
+        help=(
+            "Crop/chunk mode hint for the trainer: full, seconds, or latent (wizard-aligned); "
+            "pairs with chunk_duration / max_latent_length. Default: unset"
+        ),
+    )
 
 
 def _add_preprocess_subcommand_args(parser: argparse.ArgumentParser) -> None:

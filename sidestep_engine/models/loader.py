@@ -281,6 +281,15 @@ def load_decoder_for_training(
     model = None
     last_err: Optional[Exception] = None
 
+    # ``device_map`` tells transformers/accelerate to place weights directly on
+    # the target device during ``from_pretrained``. This avoids a later
+    # ``model.to(device)`` that fails on non-persistent buffers (e.g.
+    # ``Qwen3RotaryEmbedding.inv_freq``) left on the ``meta`` device when
+    # low_cpu_mem_usage meta-init ran against submodules built from a
+    # ``copy.deepcopy(config)`` -- observed on XL checkpoints where
+    # encoder/tokenizer/detokenizer use a separate encoder config.
+    device_map = {"": device}
+
     for idx, attn_impl in enumerate(attn_candidates):
         try:
             model = AutoModel.from_pretrained(
@@ -288,6 +297,7 @@ def load_decoder_for_training(
                 trust_remote_code=True,
                 attn_implementation=attn_impl,
                 torch_dtype=dtype,
+                device_map=device_map,
             )
             setattr(model, "_side_step_attn_backend", attn_impl)
             logger.info("[OK] Model loaded with attn_implementation=%s", attn_impl)
@@ -325,7 +335,12 @@ def load_decoder_for_training(
             f"Failed to load model from {model_dir}: {last_err}"
         ) from last_err
 
-    model = model.to(device=device, dtype=dtype)
+    # ``device_map`` already placed weights on *device* in *dtype*. A plain
+    # ``.to(device=device)`` would re-trigger the meta-tensor copy path for
+    # non-persistent buffers on XL checkpoints. Only enforce dtype if any
+    # parameter slipped through (e.g. a future change to the upstream config).
+    if any(p.dtype != dtype for p in model.parameters()):
+        model = model.to(dtype=dtype)
     model.eval()
 
     if weight_quantize:

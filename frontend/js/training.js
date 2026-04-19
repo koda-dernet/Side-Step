@@ -169,6 +169,9 @@ const Training = (() => {
         loss.push(_epochLossAccum / _epochStepCount);
         lr.push(_lr);
       }
+      // TrainingChart.render() now handles single-point rendering via duplication,
+      // so return only real samples here to keep getDataAtIndex()/getChartView()
+      // consumers working correctly without synthetic leading points.
       return { loss, lr, label: 'Epoch' };
     }
     return { loss: _lossHistory, lr: _lrHistory, label: 'Step' };

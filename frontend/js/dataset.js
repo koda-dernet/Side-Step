@@ -605,7 +605,15 @@ const Dataset = (() => {
       try {
         const result = await API.createMixDataset(root, destRoot, mixName, filePaths, sidecarMode);
         if (result.ok) {
-          showToast('Mix dataset created: ' + mixName + ' (' + result.created + ' files)', 'ok');
+          const n = Number(result.created || 0);
+          if (!n && filePaths.length) {
+            const errTail = Array.isArray(result.errors) && result.errors.length
+              ? ' ' + result.errors.slice(0, 2).join('; ')
+              : '';
+            showToast('Mix folder created but no files were added (paths or permissions).' + errTail, 'error');
+          } else {
+            showToast('Mix dataset created: ' + mixName + ' (' + n + ' files)', 'ok');
+          }
           await refreshFromSettings();
           if (typeof WorkspaceSetup !== 'undefined') WorkspaceSetup.populatePickers();
         } else {
