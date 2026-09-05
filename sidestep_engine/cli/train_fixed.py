@@ -78,6 +78,56 @@ def _session_artifact_paths(train_cfg: Any, session_name: str) -> tuple[Path, Pa
     )
 
 
+def _run_lm_chain(args: argparse.Namespace, train_cfg: Any, session_ui_log_path) -> int:
+    """Run the planner LM adapter pipeline as a subprocess.
+
+    A subprocess guarantees a clean VRAM lifecycle on both sides of the
+    DiT run and streams its stdout into the same console/GUI log.
+    """
+    import subprocess
+
+    train_py = Path(__file__).resolve().parents[2] / "train.py"
+    lm_out = str(Path(train_cfg.output_dir) / "lm")
+    export_name = getattr(args, "lm_export_name", None) or Path(train_cfg.output_dir).name
+
+    cmd = [
+        sys.executable, str(train_py), "lm-train", "--plain", "--yes",
+        "--checkpoint-dir", str(train_cfg.checkpoint_dir),
+        "--model", str(train_cfg.model_variant),
+        "--dataset-dir", str(train_cfg.dataset_dir),
+        "--output-dir", lm_out,
+        "--device", str(train_cfg.device),
+        "--precision", str(train_cfg.precision),
+        "--lm-size", str(getattr(args, "lm_size", "4B")),
+        "--lm-rank", str(getattr(args, "lm_rank", 16)),
+        "--lm-alpha", str(getattr(args, "lm_alpha", 32)),
+        "--lm-dropout", str(getattr(args, "lm_dropout", 0.05)),
+        "--lm-lr", str(getattr(args, "lm_lr", 1e-4)),
+        "--lm-epochs", str(getattr(args, "lm_epochs", 4)),
+        "--lm-grad-accum", str(getattr(args, "lm_grad_accum", 4)),
+        "--lm-max-len", str(getattr(args, "lm_max_len", 8192)),
+        "--lm-seed", str(getattr(args, "lm_seed", 42)),
+        "--lm-target-loss", str(getattr(args, "lm_target_loss", 0.0)),
+        "--lm-export-name", export_name,
+        "--lm-export-mode", str(getattr(args, "lm_export_mode", "adapter")),
+    ]
+    if not getattr(args, "lm_loss_on_cot", True):
+        cmd.append("--no-lm-loss-on-cot")
+    if getattr(args, "lm_refresh_codes", False):
+        cmd.append("--lm-refresh-codes")
+    if getattr(args, "lm_models_root", None):
+        cmd += ["--lm-models-root", str(args.lm_models_root)]
+
+    show_info(f"Planner LM adapter: launching chained run -> {lm_out}")
+    if session_ui_log_path is not None:
+        _append_session_log(session_ui_log_path, f"[INFO] Planner LM chain: {' '.join(cmd[2:])}")
+    proc = subprocess.run(cmd)
+    if session_ui_log_path is not None:
+        level = "[OK]" if proc.returncode == 0 else "[WARN]"
+        _append_session_log(session_ui_log_path, f"{level} Planner LM chain finished (rc={proc.returncode})")
+    return proc.returncode
+
+
 def _append_session_log(path: Path, msg: str) -> None:
     """Append one timestamped line to the session UI log."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -250,6 +300,13 @@ def run_fixed(args: argparse.Namespace) -> int:
             level = "[OK]" if launched else "[WARN]"
             _append_session_log(session_ui_log_path, f"{level} {launch_msg}")
 
+    # -- Planner LM chaining: BEFORE DiT training --------
+    _lm_when = getattr(args, "lm_train", "off") or "off"
+    if _lm_when == "before":
+        rc = _run_lm_chain(args, train_cfg, session_ui_log_path)
+        if rc != 0:
+            show_info(f"[WARN] Planner LM training failed (rc={rc}) — continuing with DiT training")
+
     model = None
     trainer = None
     try:
@@ -321,6 +378,16 @@ def run_fixed(args: argparse.Namespace) -> int:
                 _append_session_log(session_ui_log_path, f"[FAIL] Training failed: {exc}")
             handle_error(exc, context="Training", show_traceback=True)
             return 1
+
+        # -- Planner LM chaining: AFTER DiT training -----
+        if _lm_when == "after":
+            # Free the DiT model FIRST — the LM subprocess needs the VRAM.
+            trainer = None
+            model = None
+            _cleanup_gpu()
+            rc = _run_lm_chain(args, train_cfg, session_ui_log_path)
+            if rc != 0:
+                show_info(f"[WARN] Planner LM training failed (rc={rc}) — DiT adapter is unaffected")
 
         return 0
     finally:

@@ -115,6 +115,13 @@ def build_root_parser() -> argparse.ArgumentParser:
     )
     _add_common_training_args(p_train)
     _add_train_args(p_train)
+    g_lm_chain = p_train.add_argument_group("Planner LM chaining")
+    g_lm_chain.add_argument(
+        "--lm-train", type=str, default="off", choices=["off", "before", "after"],
+        dest="lm_train",
+        help="Also train a 5Hz planner LM adapter before or after DiT training (default: off)",
+    )
+    _add_lm_args(p_train)
 
     # -- preprocess (promoted to top-level) ----------------------------------
     p_preprocess = subparsers.add_parser(
@@ -123,6 +130,43 @@ def build_root_parser() -> argparse.ArgumentParser:
         formatter_class=formatter_class,
     )
     _add_preprocess_subcommand_args(p_preprocess)
+
+    # -- lm-train (5Hz planner LM adapters) ---------------
+    p_lm = subparsers.add_parser(
+        "lm-train",
+        help="Train a LoRA adapter for the ACE-Step 5Hz planner LM (extract -> train -> export)",
+        formatter_class=formatter_class,
+    )
+    _add_model_args(p_lm)
+    _add_device_args(p_lm)
+    g_lm_io = p_lm.add_argument_group("Data / output")
+    g_lm_io.add_argument("--dataset-dir", "-d", type=str, default=None,
+                         help="Preprocessed tensor dataset directory (same one used for DiT training)")
+    g_lm_io.add_argument("--output-dir", "-o", type=str, default=None,
+                         help="Output directory for the LM adapter + code JSONL")
+    _add_lm_args(p_lm)
+    g_lm_st = p_lm.add_argument_group("Stages")
+    g_lm_st.add_argument("--lm-stages", type=str, default="all",
+                         help="Pipeline stages: all, or comma list of extract,train,export (default: all)")
+
+    # -- lm-batch (planner-LM adapters for ALL datasets) ----------------------
+    p_lmb = subparsers.add_parser(
+        "lm-batch",
+        help="Batch planner-LM adapters for every preprocessed dataset (burst extract/train, resumable, watch mode)",
+        formatter_class=formatter_class,
+    )
+    _add_model_args(p_lmb)
+    _add_device_args(p_lmb)
+    g_lmb = p_lmb.add_argument_group("Batch")
+    g_lmb.add_argument("--tensors-root", type=str, required=True,
+                       help="Root containing one preprocessed dataset dir per artist")
+    g_lmb.add_argument("--output-root", type=str, required=True,
+                       help="Root for per-dataset training outputs + batch log")
+    g_lmb.add_argument("--watch", action="store_true", default=False,
+                       help="Keep polling for datasets as a concurrent preprocessing job completes them")
+    g_lmb.add_argument("--idle-exit-mins", type=int, default=120,
+                       help="Watch mode: exit after this many idle minutes (default: 120)")
+    _add_lm_args(p_lmb)
 
     # -- analyze (was: fisher) -----------------------------------------------
     p_analyze = subparsers.add_parser(
@@ -323,6 +367,40 @@ def build_root_parser() -> argparse.ArgumentParser:
 # ===========================================================================
 # Argument groups
 # ===========================================================================
+
+def _add_lm_args(parser: argparse.ArgumentParser) -> None:
+    """LM (5Hz planner) adapter hyperparameters.
+
+    Shared between the standalone ``lm-train`` subcommand and the DiT
+    ``train`` subcommand (for ``--lm-train before|after`` chaining), so
+    dest names — and therefore GUI/preset JSON keys — are identical.
+    """
+    g = parser.add_argument_group("Planner LM adapter")
+    g.add_argument("--lm-size", type=str, default="4B", choices=["0.6B", "1.7B", "4B"],
+                   help="Which acestep-5Hz-lm base to adapt (default: 4B)")
+    g.add_argument("--lm-rank", type=int, default=16, help="LoRA rank (default: 16)")
+    g.add_argument("--lm-alpha", type=int, default=32, help="LoRA alpha (default: 32)")
+    g.add_argument("--lm-dropout", type=float, default=0.05, help="LoRA dropout (default: 0.05)")
+    g.add_argument("--lm-lr", type=float, default=1e-4, help="Learning rate (default: 1e-4)")
+    g.add_argument("--lm-epochs", type=int, default=4, help="Training epochs (default: 4 — small data overfits fast). With --lm-target-loss this is the safety CAP")
+    g.add_argument("--lm-target-loss", type=float, default=0.0,
+                   help="Stop when the epoch's mean CE/token reaches this (0 = off). Normalizes fit across dataset sizes; ~4.0 recommended")
+    g.add_argument("--lm-grad-accum", type=int, default=4, help="Gradient accumulation (default: 4)")
+    g.add_argument("--lm-max-len", type=int, default=8192,
+                   help="Skip songs whose prompt+codes exceed this token count (default: 8192)")
+    g.add_argument("--lm-loss-on-cot", action=argparse.BooleanOptionalAction, default=True,
+                   help="Also train the CoT metas block (artist-typical bpm/keys; default: True)")
+    g.add_argument("--lm-seed", type=int, default=42, help="Training seed (default: 42)")
+    g.add_argument("--lm-export-name", type=str, default=None,
+                   help="Name for the exported adapter/model (default: run name)")
+    g.add_argument("--lm-export-mode", type=str, default="adapter", choices=["adapter", "merged", "both"],
+                   help="adapter: deploy PEFT dir to the models root's adapters/lm/ for runtime LoRA (default); "
+                        "merged: bake a full merged HF model into models/; both: do both")
+    g.add_argument("--lm-models-root", type=str, default=None,
+                   help="Override the export destination root (default: derived from checkpoint dir)")
+    g.add_argument("--lm-refresh-codes", action="store_true", default=False,
+                   help="Re-run code extraction even if a cached lm_codes.jsonl exists")
+
 
 def _add_model_args(parser: argparse.ArgumentParser) -> None:
     """Add --model (was --model-variant) and --checkpoint-dir."""

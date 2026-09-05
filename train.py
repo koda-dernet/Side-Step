@@ -122,6 +122,7 @@ def _apply_deprecation_shim() -> None:
 _KNOWN_SUBCOMMANDS = {
     "train", "preprocess", "analyze", "audio-analyze", "dataset",
     "captions", "tags", "settings", "history", "export", "gui",
+    "lm-train", "lm-batch",
 }
 
 
@@ -268,9 +269,9 @@ def _dispatch(args) -> int:
     _auto_resolve_shift_steps(args)
 
     # -- Validate required fields (relaxed from argparse for --config/--preprocess)
-    if sub in ("train", "analyze"):
+    if sub in ("train", "analyze", "lm-train"):
         required = [("checkpoint_dir", "--checkpoint-dir / -c"), ("dataset_dir", "--dataset-dir / -d")]
-        if sub == "train":
+        if sub in ("train", "lm-train"):
             required.append(("output_dir", "--output-dir / -o"))
         if not _validate_required_args(args, required):
             return 1
@@ -282,6 +283,12 @@ def _dispatch(args) -> int:
     if sub == "train":
         from sidestep_engine.cli.train_fixed import run_fixed
         return run_fixed(args)
+
+    elif sub == "lm-train":
+        return _run_lm_train(args)
+
+    elif sub == "lm-batch":
+        return _run_lm_batch(args)
 
     elif sub == "analyze":
         return _run_fisher(args)
@@ -526,6 +533,110 @@ def _run_preprocess_subcommand(args) -> int:
     print(f"\n[INFO] You can now train with:")
     print(f"       sidestep train -d {result['output_dir']} ...")
     return 0
+
+
+def _lm_params_from_args(args) -> dict:
+    """Collect shared --lm-* args into run_lm_pipeline kwargs."""
+    import torch as _torch
+    device = getattr(args, "device", "auto") or "auto"
+    if device == "auto":
+        device = "cuda" if _torch.cuda.is_available() else "cpu"
+    precision = getattr(args, "precision", "auto") or "auto"
+    if precision == "auto":
+        precision = "bf16" if device.startswith("cuda") else "fp32"
+    return {
+        "dataset_dir": getattr(args, "dataset_dir", None),
+        "checkpoint_dir": getattr(args, "checkpoint_dir", None),
+        "model_variant": getattr(args, "model_variant", "base"),
+        "lm_size": getattr(args, "lm_size", "4B"),
+        "rank": getattr(args, "lm_rank", 16),
+        "alpha": getattr(args, "lm_alpha", 32),
+        "dropout": getattr(args, "lm_dropout", 0.05),
+        "learning_rate": getattr(args, "lm_lr", 1e-4),
+        "epochs": getattr(args, "lm_epochs", 4),
+        "grad_accum": getattr(args, "lm_grad_accum", 4),
+        "max_len": getattr(args, "lm_max_len", 8192),
+        "loss_on_cot": getattr(args, "lm_loss_on_cot", True),
+        "target_loss": getattr(args, "lm_target_loss", 0.0),
+        "seed": getattr(args, "lm_seed", 42),
+        "device": device,
+        "precision": precision,
+        "export_name": getattr(args, "lm_export_name", None),
+        "models_root": getattr(args, "lm_models_root", None),
+        "refresh_codes": getattr(args, "lm_refresh_codes", False),
+        "export_mode": getattr(args, "lm_export_mode", "adapter"),
+    }
+
+
+def _run_lm_train(args) -> int:
+    """Standalone 5Hz planner LM adapter training."""
+    from sidestep_engine.lm.run import run_lm_pipeline
+
+    print("\n" + "=" * 60)
+    print("  Planner LM adapter training (5Hz LM)")
+    print("=" * 60)
+    print(f"  Checkpoint root: {args.checkpoint_dir}")
+    print(f"  Dataset:         {args.dataset_dir}")
+    print(f"  Output:          {args.output_dir}")
+    print(f"  LM size:         {getattr(args, 'lm_size', '4B')}")
+    print("=" * 60)
+
+    try:
+        params = _lm_params_from_args(args)
+        params["output_dir"] = args.output_dir
+        params["stages"] = getattr(args, "lm_stages", "all")
+        run_lm_pipeline(**params)
+        return 0
+    except KeyboardInterrupt:
+        print("[WARN] LM training interrupted by user", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        print(f"[FAIL] LM adapter training failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def _run_lm_batch(args) -> int:
+    """Batch planner-LM adapters across all preprocessed datasets."""
+    from sidestep_engine.lm.batch import run_lm_batch
+
+    p = _lm_params_from_args(args)
+    print("\n" + "=" * 60)
+    print("  Planner LM adapter BATCH campaign")
+    print("=" * 60)
+    print(f"  Tensors root:    {args.tensors_root}")
+    print(f"  Output root:     {args.output_root}")
+    print(f"  LM size/epochs:  {p['lm_size']} / {p['epochs']}")
+    print(f"  Watch mode:      {getattr(args, 'watch', False)}")
+    print("=" * 60)
+
+    try:
+        summary = run_lm_batch(
+            tensors_root=args.tensors_root,
+            checkpoint_dir=args.checkpoint_dir,
+            output_root=args.output_root,
+            model_variant=p["model_variant"],
+            lm_size=p["lm_size"], rank=p["rank"], alpha=p["alpha"],
+            dropout=p["dropout"], learning_rate=p["learning_rate"],
+            epochs=p["epochs"], grad_accum=p["grad_accum"], max_len=p["max_len"],
+            loss_on_cot=p["loss_on_cot"], target_loss=p["target_loss"], seed=p["seed"],
+            device=p["device"], precision=p["precision"],
+            deploy_root=p["models_root"],
+            watch=getattr(args, "watch", False),
+            idle_exit_mins=getattr(args, "idle_exit_mins", 120),
+        )
+        print(f"[OK] Batch campaign finished: {summary['done']} trained, "
+              f"{summary['failed']} failed, {summary['hours']}h — log: {summary['log']}")
+        return 0 if summary["failed"] == 0 else 3
+    except KeyboardInterrupt:
+        print("[WARN] Batch interrupted — safe to relaunch, it resumes where it left off", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        print(f"[FAIL] LM batch failed: {exc}", file=sys.stderr)
+        return 1
 
 
 def _run_fisher(args) -> int:
