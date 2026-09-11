@@ -58,6 +58,7 @@ def _step_provider_keys(a: dict) -> None:
             ("gemini", "Gemini"),
             ("openai", "OpenAI / OpenAI-compatible"),
             ("local_8-10gb", "Local 8-10GB (Qwen2.5-Omni 4-bit)"),
+            ("local_12gb", "Local 12GB (Qwen2.5-Omni 8-bit)"),
             ("local_16gb", "Local 16GB+ (Qwen2.5-Omni bf16)"),
             ("music_flamingo", "Music Flamingo"),
             ("skip", "Skip AI captions"),
@@ -69,7 +70,7 @@ def _step_provider_keys(a: dict) -> None:
 
     # Resolve caption API key + model
     a["_caption_key"] = None
-    if a["caption_provider"] in ("local_8-10gb", "local_16gb"):
+    if a["caption_provider"] in ("local_8-10gb", "local_12gb", "local_16gb"):
         print_message(
             "Local model: Qwen2.5-Omni-7B (~15 GB download on first use).\n"
             "No API key required. Run the installer script to pre-download.",

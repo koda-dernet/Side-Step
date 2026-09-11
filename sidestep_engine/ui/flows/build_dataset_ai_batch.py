@@ -117,9 +117,9 @@ def build_caption_fn(
     generation_kwargs = _caption_generation_kwargs(answers)
 
     # Local providers don't need an API key
-    if provider in ("local_8-10gb", "local_16gb"):
+    if provider in ("local_8-10gb", "local_12gb", "local_16gb"):
         from sidestep_engine.data.caption_provider_local import generate_caption as _local_cap
-        tier = "8-10gb" if provider == "local_8-10gb" else "16gb"
+        tier = {"local_8-10gb": "8-10gb", "local_12gb": "12gb"}.get(provider, "16gb")
         return lambda title, artist, excerpt, audio_path: _local_cap(
             title, artist, audio_path=audio_path, lyrics_excerpt=excerpt,
             tier=tier,

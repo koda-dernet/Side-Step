@@ -671,7 +671,7 @@ const WorkspaceLab = (() => {
     const lyricsProv = $("caption-lyrics-provider")?.value || "none";
     const isLyrics = prov === "lyrics_only" || ((prov === "none") && lyricsProv !== "none");
     const isNone = prov === "none" && lyricsProv === "none";
-    const isLocal = prov === "local_8-10gb" || prov === "local_16gb";
+    const isLocal = prov === "local_8-10gb" || prov === "local_12gb" || prov === "local_16gb";
     const genBtn = $("btn-gen-captions");
     const runBtn = $("btn-run-captions");
     const label = isLyrics ? "Fetch Lyrics" : isNone ? "Run Enrichment" : isLocal ? "Run Local Captions" : "Generate AI Captions";
@@ -691,7 +691,7 @@ const WorkspaceLab = (() => {
   function initAICaptions() {
     $("caption-provider")?.addEventListener("change", () => {
       const prov = $("caption-provider").value;
-      const isLocal = prov === "local_8-10gb" || prov === "local_16gb";
+      const isLocal = prov === "local_8-10gb" || prov === "local_12gb" || prov === "local_16gb";
       $("caption-gemini-settings").style.display = prov === "gemini" ? "block" : "none";
       $("caption-openai-settings").style.display = prov === "openai" ? "block" : "none";
       $("caption-local-settings").style.display = isLocal ? "block" : "none";
