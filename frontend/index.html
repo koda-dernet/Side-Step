@@ -381,6 +381,22 @@
               <button class="btn btn--sm btn--refresh" title="Refresh dataset list">R</button>
             </div>
             <div class="detect" id="full-dataset-detect"></div>
+            <div id="full-dataset-multi" style="display:none; margin-top:var(--space-sm); max-height:240px; overflow-y:auto; border:1px solid var(--border); border-radius:var(--radius); padding:var(--space-sm);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-xs);">
+                <span style="font-size:var(--font-size-sm); color:var(--muted);">Select datasets to queue:</span>
+                <span style="display:flex; gap:var(--space-xs);">
+                  <button class="btn btn--sm" id="btn-batch-select-all" title="Select all">All</button>
+                  <button class="btn btn--sm" id="btn-batch-select-none" title="Deselect all">None</button>
+                </span>
+              </div>
+              <div id="full-dataset-multi-list"></div>
+            </div>
+            <div style="margin-top:var(--space-xs);">
+              <label style="display:flex; align-items:center; gap:var(--space-xs); cursor:pointer; font-size:var(--font-size-sm); color:var(--muted);">
+                <input type="checkbox" id="full-batch-mode">
+                Batch mode — select multiple datasets to queue
+              </label>
+            </div>
             <div id="help-full-dataset" class="help-panel">
               <p>Datasets found in your configured tensors and audio directories.</p>
               <p><em>Can't find your dataset? Check Settings.</em></p>
@@ -393,6 +409,12 @@
             <div id="help-full-run-name" class="help-panel">
               <p><strong>Simple:</strong> A human-readable name for this training run. Used in file paths, logs, and the History tab to identify your experiment.</p>
               <p>Auto-generated from adapter type + model variant. A timestamp is appended when training starts to prevent overwriting previous runs.</p>
+            </div>
+            <div style="display:flex; align-items:center; gap:var(--space-sm); margin-top:var(--space-xs);">
+              <label style="display:flex; align-items:center; gap:var(--space-xs); cursor:pointer; font-size:var(--font-size-sm); color:var(--muted);">
+                <input type="checkbox" id="full-auto-name-dataset">
+                Use dataset name as run name
+              </label>
             </div>
             <div class="hint">Auto-generated from adapter + model. Timestamp added at start.</div>
           </div>
@@ -1474,6 +1496,7 @@
             <div style="margin-top: var(--space-lg); display: flex; flex-direction: column; align-items: center; gap: var(--space-xs);">
               <div style="display:flex; gap:var(--space-sm);">
                 <button class="btn btn--success" id="btn-start-full">Start Training</button>
+                <button class="btn btn--success" id="btn-queue-selected" style="display:none;">Queue Selected</button>
                 <button class="btn btn--sm" id="btn-export-cli" title="Copy CLI command to clipboard">Export CLI</button>
               </div>
               <div id="full-queue-status" style="display:none;font-size:var(--font-size-sm);margin-top:var(--space-xs);color:var(--muted);text-align:center;"></div>
@@ -1700,10 +1723,11 @@
           <div>
             <!-- Controls (toggled, never destroyed) -->
             <div id="monitor-controls" style="display: flex; gap: var(--space-md); margin-bottom: var(--space-lg);">
+              <button class="btn btn--warning" id="btn-pause">&#x23F8; Pause</button>
               <button class="btn btn--danger" id="btn-stop">Stop Training</button>
               <button class="btn btn--danger" id="btn-stop-all" style="display:none;">Stop All</button>
               <button class="btn" id="btn-open-output">Open Output Dir</button>
-              <span style="color: var(--muted); font-size: var(--font-size-sm); align-self: center;">Stop skips current run. Stop All cancels the queue.</span>
+              <span style="color: var(--muted); font-size: var(--font-size-sm); align-self: center;">Pause saves &amp; frees VRAM. Stop skips current run. Stop All cancels the queue.</span>
             </div>
 
             <!-- Completion banner (shown after training ends, hidden on new run) -->
@@ -1945,6 +1969,7 @@
             <button class="btn btn--sm btn--refresh" id="btn-refresh-audio-library" title="Refresh audio library">R</button>
             <button class="btn btn--sm btn--accent" id="btn-analyze-audio" disabled>Analyze Audio</button>
             <button class="btn btn--sm btn--primary" id="btn-gen-captions" disabled>Generate AI Captions</button>
+            <button class="btn btn--sm btn--success" id="btn-run-both" disabled title="Pipeline: analyse each track then send it to AI captioning">&#x26A1; Analyze &#x2192; Caption</button>
             <button class="btn btn--sm" id="btn-add-trigger">Add Trigger Tag to All</button>
           </div>
         </div>

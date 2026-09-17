@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
@@ -730,6 +731,63 @@ def run_basic_training_loop(
                 kind="checkpoint", epoch=epoch + 1, max_epochs=cfg.max_epochs,
                 checkpoint_path=ckpt_dir,
             )
+
+        # -- Pause detection (file-based IPC from GUI) ---------------------
+        _pause_file = output_dir / ".pause_requested"
+        if _pause_file.exists():
+            _paused_dir = str(output_dir / "paused")
+            module.model.decoder.eval()
+            _rt_pause = {
+                "rng_state": capture_rng_state(module.device),
+                "tracker_state": {
+                    "best_loss": best_loss,
+                    "best_epoch": best_epoch,
+                    "patience_counter": patience_counter,
+                    "best_tracking_active": best_tracking_active,
+                    "recent_losses": list(recent_losses),
+                    "cruise_ema": _cruise_ema,
+                },
+            }
+            if _chunk_sampler is not None:
+                _rt_pause["chunk_coverage_state"] = _chunk_sampler.state_dict()
+            if _ema is not None:
+                _rt_pause["ema_state"] = _ema.state_dict()
+            if _adaptive_sampler is not None:
+                _rt_pause["adaptive_sampler_state"] = _adaptive_sampler.state_dict()
+            if _ema is not None:
+                _ema.apply()
+            try:
+                save_checkpoint(
+                    trainer, optimizer, scheduler, epoch + 1, global_step,
+                    _paused_dir, _rt_pause,
+                )
+            finally:
+                if _ema is not None:
+                    _ema.restore()
+            try:
+                _pause_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+            _pw.write_event(
+                kind="paused", step=global_step, loss=avg_epoch_loss,
+                best_loss=best_loss, best_epoch=best_epoch,
+            )
+            _pw.close()
+            tb.flush()
+            tb.close()
+            yield TrainingUpdate(
+                step=global_step, loss=avg_epoch_loss,
+                msg=(
+                    f"[OK] Training paused at epoch {epoch + 1}, step {global_step}. "
+                    f"Checkpoint saved to {_paused_dir}"
+                ),
+                kind="complete",
+            )
+            logger.info(
+                "[Side-Step] Training paused at epoch %d, step %d -> %s",
+                epoch + 1, global_step, _paused_dir,
+            )
+            sys.exit(42)
 
         # Clear CUDA cache AFTER checkpoint save so serialization
         # temporaries are also freed.

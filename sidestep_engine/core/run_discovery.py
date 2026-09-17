@@ -356,19 +356,66 @@ def load_run_config(
     adapters_root: Optional[Path] = None,
     extra_roots: Optional[List[Path]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Load the training config for a run."""
+    """Load the training config for a run.
+
+    Also merges adapter config (``sidestep_adapter_config.json``) so that
+    adapter-specific fields like ``rank`` are available to callers (e.g. the
+    GUI resume dialog).
+    """
     run_dir = find_run_dir(run_name, adapters_root, extra_roots)
     if run_dir is None:
         return None
 
+    data: Optional[Dict[str, Any]] = None
     for name in ("sidestep_training_config.json", "training_config.json"):
         for tc in (run_dir / "final" / name, run_dir / name):
             if tc.is_file():
                 try:
-                    return json.loads(tc.read_text(encoding="utf-8"))
+                    data = json.loads(tc.read_text(encoding="utf-8"))
+                    break
                 except (json.JSONDecodeError, OSError):
                     pass
-    return None
+        if data is not None:
+            break
+
+    if data is None:
+        return None
+
+    # Merge adapter config so callers get rank/alpha/dropout etc.
+    # The adapter config may live at the run root, in final/, or inside a
+    # checkpoint subdirectory (for in-progress runs that have no final/ yet).
+    ac_candidates = [
+        run_dir / "final" / "sidestep_adapter_config.json",
+        run_dir / "sidestep_adapter_config.json",
+    ]
+    ckpt_root = run_dir / "checkpoints"
+    if ckpt_root.is_dir():
+        # Pick the highest-numbered epoch dir that has the file
+        epoch_dirs = sorted(
+            (d for d in ckpt_root.iterdir()
+             if d.is_dir() and d.name.startswith("epoch_")),
+            key=lambda d: parse_epoch_num(d.name),
+            reverse=True,
+        )
+        for ed in epoch_dirs:
+            ac_candidates.append(ed / "sidestep_adapter_config.json")
+
+    for ac in ac_candidates:
+        if ac.is_file():
+            try:
+                adapter_data = json.loads(ac.read_text(encoding="utf-8"))
+                # Map adapter field 'r' -> 'rank' for GUI convenience
+                if "r" in adapter_data and "rank" not in adapter_data:
+                    adapter_data["rank"] = adapter_data["r"]
+                # Only inject keys that aren't already in the training config
+                for k, v in adapter_data.items():
+                    if k not in data:
+                        data[k] = v
+                break
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    return data
 
 
 def load_run_curve(

@@ -552,6 +552,64 @@ document.addEventListener("keydown", (e) => {
       });
     });
 
+    // Batch mode toggle: show/hide multi-select list and Queue Selected button
+    $("full-batch-mode")?.addEventListener("change", () => {
+      const on = $("full-batch-mode").checked;
+      const multi = $("full-dataset-multi");
+      const queueBtn = $("btn-queue-selected");
+      if (multi) multi.style.display = on ? "" : "none";
+      if (queueBtn) queueBtn.style.display = on ? "" : "none";
+    });
+
+    $("btn-batch-select-all")?.addEventListener("click", () => {
+      document.querySelectorAll(".batch-dataset-cb").forEach(cb => { cb.checked = true; });
+    });
+    $("btn-batch-select-none")?.addEventListener("click", () => {
+      document.querySelectorAll(".batch-dataset-cb").forEach(cb => { cb.checked = false; });
+    });
+
+    // Queue Selected: generate one config per checked dataset, enqueue all
+    $("btn-queue-selected")?.addEventListener("click", () => {
+      const checked = [...document.querySelectorAll(".batch-dataset-cb:checked")];
+      if (checked.length === 0) {
+        showToast("No datasets selected — tick at least one", "warn");
+        return;
+      }
+      if (typeof Validation !== 'undefined') {
+        const result = Validation.validateAll();
+        if (result !== true) {
+          showToast(result.slice(0, 3).join(' \u00b7 '), "error");
+          return;
+        }
+      }
+      const _baseName = (typeof WorkspaceConfig !== 'undefined' && WorkspaceConfig.datasetBaseName)
+        ? WorkspaceConfig.datasetBaseName
+        : (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean).pop() || '';
+      let enqueued = 0;
+      checked.forEach(cb => {
+        const dsPath = cb.dataset.path || '';
+        const dsName = cb.dataset.name || _baseName(dsPath.replace(/^audio:/, ''));
+        if (!dsPath) return;
+        const config = typeof WorkspaceConfig !== 'undefined' ? WorkspaceConfig.gatherFullConfig() : {};
+        config.dataset_dir = dsPath;
+        // Always use dataset name for batch runs (+ timestamp for uniqueness)
+        config.run_name = (dsName || "run") + "_" + _timestamp();
+        config.steps_per_epoch = _stepsPerEpoch(config.batch_size, config.grad_accum);
+        config.output_dir = _joinPath(
+          $("settings-adapters-dir")?.value || Defaults.get("settings-adapters-dir") || "trained_adapters",
+          config.adapter_type || "lora",
+          config.run_name
+        );
+        if (_isAudioDataset(dsPath)) {
+          _preprocessThenTrain(config);
+        } else {
+          Training.enqueue(config);
+        }
+        enqueued++;
+      });
+      showToast("Queued " + enqueued + " training run" + (enqueued > 1 ? "s" : ""), "ok");
+    });
+
     // Monitor controls
     $("btn-stop")?.addEventListener("click", () => {
       Training.stop();

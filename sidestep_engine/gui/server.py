@@ -712,6 +712,37 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
         result = tm.stop_training()
         return JSONResponse(result)
 
+    @app.post("/api/train/pause")
+    async def pause_training():
+        result = tm.pause_training()
+        return JSONResponse(result)
+
+    # -- Persistent training queue state -----------------------------------
+
+    _QUEUE_STATE_FILE = _PROJECT_ROOT / ".sidestep" / "training_queue.json"
+
+    @app.get("/api/train/queue")
+    async def get_training_queue():
+        """Return the persisted training queue state (survives restarts)."""
+        try:
+            if _QUEUE_STATE_FILE.exists():
+                return JSONResponse(json.loads(_QUEUE_STATE_FILE.read_text("utf-8")))
+        except Exception:
+            logger.warning("[train/queue] Failed to read %s", _QUEUE_STATE_FILE)
+        return JSONResponse({"entries": [], "counter": 0})
+
+    @app.post("/api/train/queue")
+    async def save_training_queue(request: Request):
+        """Persist the current training queue state to disk."""
+        try:
+            body = await request.json()
+            _QUEUE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _QUEUE_STATE_FILE.write_text(json.dumps(body, indent=2), "utf-8")
+        except Exception as exc:
+            logger.warning("[train/queue] Failed to write %s: %s", _QUEUE_STATE_FILE, exc)
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        return JSONResponse({"ok": True})
+
     # ======================================================================
     # Task control (preprocess, PP++, captions)
     # ======================================================================
@@ -734,6 +765,11 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
     @app.post("/api/audio-analyze/start")
     async def start_audio_analyze(body: Dict[str, Any]):
         result = tm.start_audio_analyze(body)
+        return JSONResponse(result)
+
+    @app.post("/api/pipeline/start")
+    async def start_pipeline(body: Dict[str, Any]):
+        result = tm.start_pipeline(body)
         return JSONResponse(result)
 
     @app.post("/api/audio-analyze/one")

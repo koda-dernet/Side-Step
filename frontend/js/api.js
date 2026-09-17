@@ -145,6 +145,12 @@ const API = (() => {
 
   async function startTraining(config) { return _post('/api/train/start', { config }); }
   async function stopTraining() { return _post('/api/train/stop', {}); }
+  async function pauseTraining() { return _post('/api/train/pause', {}); }
+
+  // ---- Persistent Training Queue ----------------------------------------
+
+  async function loadTrainingQueue() { return _get('/api/train/queue'); }
+  async function saveTrainingQueue(data) { return _post('/api/train/queue', data); }
 
   // ---- Dataset Scanning -------------------------------------------------
 
@@ -185,6 +191,7 @@ const API = (() => {
 
   async function runAICaptions(config) { return _post('/api/captions/start', config); }
   async function runAudioAnalyze(config) { return _post('/api/audio-analyze/start', config); }
+  async function runPipeline(config) { return _post('/api/pipeline/start', config); }
   async function analyzeOneFile(path, opts) {
     const o = opts || {};
     return _post('/api/audio-analyze/one', {
@@ -391,6 +398,9 @@ const API = (() => {
     deleteHistoryFolder,
     startTraining,
     stopTraining,
+    pauseTraining,
+    loadTrainingQueue,
+    saveTrainingQueue,
     browseDir,
     scanTensorsDir,
     scanAudioFolder,
@@ -401,6 +411,7 @@ const API = (() => {
     validateApiKey,
     runAICaptions,
     runAudioAnalyze,
+    runPipeline,
     analyzeOneFile,
     bulkWriteTriggerTag,
     buildCLICommand,

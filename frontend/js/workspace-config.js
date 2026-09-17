@@ -229,27 +229,50 @@ const WorkspaceConfig = (() => {
 
   function _autoRunName() {
     if (_runNameManuallyEdited) return;
-    const adapter = $("full-adapter-type")?.value || "lora";
-    const variant = $("full-model-variant")?.value || "turbo";
-    const name = adapter + "_" + variant;
-    const input = $("full-run-name");
-    if (input) {
-      input.value = name;
-      input.dataset.default = name;
-      input.dispatchEvent(new Event("input"));
+    const useDatasetName = $('full-auto-name-dataset')?.checked;
+    const input = $('full-run-name');
+    if (!input) return;
+    if (useDatasetName) {
+      const dsVal = $('full-dataset-dir')?.value || '';
+      const dsName = _baseName(dsVal.replace(/^audio:/, ''));
+      if (dsName) {
+        input.value = dsName;
+        input.dataset.default = dsName;
+        input.dispatchEvent(new Event('input'));
+        return;
+      }
     }
+    const adapter = $('full-adapter-type')?.value || 'lora';
+    const variant = $('full-model-variant')?.value || 'turbo';
+    const name = adapter + '_' + variant;
+    input.value = name;
+    input.dataset.default = name;
+    input.dispatchEvent(new Event('input'));
+  }
+
+  /** Extract the last path segment (folder or file name) from a path. */
+  function _baseName(p) {
+    return String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean).pop() || '';
   }
 
   function initRunNameTracking() {
-    const input = $("full-run-name");
+    const input = $('full-run-name');
     if (!input) return;
-    input.addEventListener("input", () => {
+    input.addEventListener('input', () => {
       _runNameManuallyEdited = true;
     });
-    input.addEventListener("focus", () => {
+    input.addEventListener('focus', () => {
       const val = input.value;
       if (val === input.dataset.default) _runNameManuallyEdited = false;
     });
+    // Auto-name from dataset checkbox
+    const autoNameCb = $('full-auto-name-dataset');
+    if (autoNameCb) {
+      autoNameCb.addEventListener('change', () => {
+        _runNameManuallyEdited = false;
+        _autoRunName();
+      });
+    }
   }
 
   /* ---- Ez Review Table (reactive) ---- */
@@ -384,6 +407,7 @@ const WorkspaceConfig = (() => {
 
       _updateConsole("Dataset: " + folder.name + " (" + folder.files + " files)");
     } catch (e) { console.error('[Config] tensor scan failed:', e); }
+    _autoRunName();
   }
 
   /* ---- PP++ Fisher Map Status Check ---- */
@@ -521,5 +545,5 @@ const WorkspaceConfig = (() => {
     initPPPlusStatus();
   }
 
-  return { init, gatherFullConfig, updateEzReview, _autoRunName: _autoRunName };
+  return { init, gatherFullConfig, updateEzReview, _autoRunName: _autoRunName, datasetBaseName: _baseName };
 })();

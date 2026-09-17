@@ -590,9 +590,71 @@ const WorkspaceLab = (() => {
     if (runBtn) runBtn.disabled = !hasFiles;
   }
 
+  /**
+   * Start audio analysis. Extracted so it can be called from the "Run Both" button.
+   * @param {Object} [opts]  Optional { onDone: Function } callback fired when the task finishes.
+   * @returns {Promise<boolean>}  true if the task was started successfully.
+   */
+  async function _startAnalyze(opts) {
+    const selectedPaths = (typeof Dataset !== "undefined" && Dataset.hasSelection()) ? Dataset.getSelectedAudioPaths() : [];
+    const config = {
+      device: $("analyze-device")?.value || "auto",
+      policy: $("analyze-policy")?.value || "fill_missing",
+      mode: $("analyze-mode")?.value || "mid",
+      chunks: parseInt($("analyze-chunks")?.value || "5", 10),
+      dataset_dir: $("lab-dataset-path")?.value,
+    };
+    if (selectedPaths.length) {
+      config.audio_files = selectedPaths;
+      showToast(`Analyzing ${selectedPaths.length} selected file${selectedPaths.length > 1 ? "s" : ""}`, "info");
+    }
+    if (!config.dataset_dir && !selectedPaths.length) { showToast("Set audio directory first", "warn"); return false; }
+
+    $("analyze-batch-progress").style.display = "block";
+    $("btn-run-analyze").style.display = "none";
+    $("btn-stop-analyze").style.display = "inline-block";
+    const log = $("analyze-log"); if (log) log.innerHTML = "";
+    let written = 0, skipped = 0, failed = 0;
+
+    const _finish = (msg) => {
+      $("btn-run-analyze").style.display = "inline-block";
+      $("btn-stop-analyze").style.display = "none";
+      if (msg && msg.type === "cancelled") { showToast("Audio analysis cancelled", "warn"); if (opts?.onDone) opts.onDone(msg); return; }
+      const payload = msg?.result || msg || {};
+      if (payload.written != null) written = payload.written;
+      if (payload.skipped != null) skipped = payload.skipped;
+      if (payload.failed != null) failed = payload.failed;
+      showToast(`Audio Analysis: ${written} written, ${skipped} skipped, ${failed} failed`, written > 0 ? "ok" : "warn");
+      if (typeof Dataset !== "undefined") Dataset.scan($("lab-dataset-path")?.value);
+      if (opts?.onDone) opts.onDone(msg);
+    };
+
+    const result = await API.runAudioAnalyze(config);
+    if (result.error) {
+      _finish({ type: "error", failed: failed + 1 });
+      showToast("Audio analysis failed to start: " + result.error, "error");
+      return false;
+    }
+    const taskId = result.task_id;
+    if (taskId) {
+      _streamTask(taskId, "audio_analyze", {
+        barId: "analyze-progress-bar", labelId: "analyze-progress-label", pctId: "analyze-progress-pct", logId: "analyze-log",
+        onProgress: (msg) => {
+          if (msg.written != null) { written = msg.written; skipped = msg.skipped || 0; failed = msg.failed || 0; }
+          const ws = $("analyze-stat-written"); if (ws) ws.textContent = written + " written";
+          const ss = $("analyze-stat-skipped"); if (ss) ss.textContent = skipped + " skipped";
+          const fs = $("analyze-stat-failed"); if (fs) fs.textContent = failed + " failed";
+        },
+        onDone: _finish,
+      });
+    } else {
+      _finish(result);
+    }
+    return true;
+  }
+
   function initAudioAnalysis() {
     $("btn-analyze-audio")?.addEventListener("click", () => {
-      // Scroll to / expand the Audio Analysis section-group
       const panel = $("audio-analyze-panel");
       if (panel) {
         const group = panel.closest(".section-group");
@@ -603,61 +665,7 @@ const WorkspaceLab = (() => {
       }
     });
 
-    $("btn-run-analyze")?.addEventListener("click", async () => {
-      const selectedPaths = (typeof Dataset !== "undefined" && Dataset.hasSelection()) ? Dataset.getSelectedAudioPaths() : [];
-      const config = {
-        device: $("analyze-device")?.value || "auto",
-        policy: $("analyze-policy")?.value || "fill_missing",
-        mode: $("analyze-mode")?.value || "mid",
-        chunks: parseInt($("analyze-chunks")?.value || "5", 10),
-        dataset_dir: $("lab-dataset-path")?.value,
-      };
-      if (selectedPaths.length) {
-        config.audio_files = selectedPaths;
-        showToast(`Analyzing ${selectedPaths.length} selected file${selectedPaths.length > 1 ? "s" : ""}`, "info");
-      }
-      if (!config.dataset_dir && !selectedPaths.length) { showToast("Set audio directory first", "warn"); return; }
-
-      $("analyze-batch-progress").style.display = "block";
-      $("btn-run-analyze").style.display = "none";
-      $("btn-stop-analyze").style.display = "inline-block";
-      const log = $("analyze-log"); if (log) log.innerHTML = "";
-      let written = 0, skipped = 0, failed = 0;
-
-      const _finish = (msg) => {
-        $("btn-run-analyze").style.display = "inline-block";
-        $("btn-stop-analyze").style.display = "none";
-        if (msg && msg.type === "cancelled") { showToast("Audio analysis cancelled", "warn"); return; }
-        const payload = msg?.result || msg || {};
-        if (payload.written != null) written = payload.written;
-        if (payload.skipped != null) skipped = payload.skipped;
-        if (payload.failed != null) failed = payload.failed;
-        showToast(`Audio Analysis: ${written} written, ${skipped} skipped, ${failed} failed`, written > 0 ? "ok" : "warn");
-        if (typeof Dataset !== "undefined") Dataset.scan($("lab-dataset-path")?.value);
-      };
-
-      const result = await API.runAudioAnalyze(config);
-      if (result.error) {
-        _finish({ type: "error", failed: failed + 1 });
-        showToast("Audio analysis failed to start: " + result.error, "error");
-        return;
-      }
-      const taskId = result.task_id;
-      if (taskId) {
-        _streamTask(taskId, "audio_analyze", {
-          barId: "analyze-progress-bar", labelId: "analyze-progress-label", pctId: "analyze-progress-pct", logId: "analyze-log",
-          onProgress: (msg) => {
-            if (msg.written != null) { written = msg.written; skipped = msg.skipped || 0; failed = msg.failed || 0; }
-            const ws = $("analyze-stat-written"); if (ws) ws.textContent = written + " written";
-            const ss = $("analyze-stat-skipped"); if (ss) ss.textContent = skipped + " skipped";
-            const fs = $("analyze-stat-failed"); if (fs) fs.textContent = failed + " failed";
-          },
-          onDone: _finish,
-        });
-      } else {
-        _finish(result);
-      }
-    });
+    $("btn-run-analyze")?.addEventListener("click", () => _startAnalyze());
 
     $("btn-stop-analyze")?.addEventListener("click", async () => {
       _stopTask("audio_analyze");
@@ -688,6 +696,112 @@ const WorkspaceLab = (() => {
     if (runBtn) runBtn.disabled = !hasFiles;
   }
 
+  const _MASK_CHAR = "•";
+  const _isMaskedRuntimeSecret = (v) => (typeof v === "string" && v.length > 0 && /^[\u2022\s]+$/.test(v));
+  const _unmaskRuntimeSecret = (v) => (_isMaskedRuntimeSecret(v) ? "" : v);
+
+  /**
+   * Start AI caption generation. Extracted so it can be called from "Run Both".
+   * @param {Object} [opts]  Optional { onDone: Function } callback fired when the task finishes.
+   * @returns {Promise<boolean>}  true if the task was started successfully.
+   */
+  async function _startCaptions(opts) {
+    const provider = $("caption-provider")?.value;
+    const lyricsProvider = $("caption-lyrics-provider")?.value || (provider === "lyrics_only" ? "genius" : "none");
+    if (lyricsProvider === "genius") {
+      const geniusToken = ($("settings-genius-token")?.value || "").trim();
+      if (!geniusToken) { showToast("Genius token not configured — set it in Settings", "warn"); return false; }
+    }
+    if (lyricsProvider === "transcriber_server") {
+      const transcriberUrl = ($("settings-transcriber-server-url")?.value || "").trim();
+      if (!transcriberUrl) { showToast("Transcriber Server URL not configured — set it in Settings", "warn"); return false; }
+    }
+    if (provider === "music_flamingo") {
+      const musicFlamingoUrl = ($("settings-music-flamingo-url")?.value || "").trim();
+      if (!musicFlamingoUrl) { showToast("Music Flamingo URL not configured — set it in Settings", "warn"); return false; }
+    }
+    const selectedPaths = (typeof Dataset !== "undefined" && Dataset.hasSelection()) ? Dataset.getSelectedAudioPaths() : [];
+    const config = {
+      metadata_provider: provider,
+      provider: provider,
+      lyrics_provider: lyricsProvider,
+      overwrite: $("caption-overwrite")?.value,
+      gemini_key: $("settings-gemini-key")?.value,
+      gemini_model: $("caption-gemini-model")?.value,
+      openai_key: $("settings-openai-key")?.value,
+      openai_model: $("caption-openai-model")?.value,
+      openai_base: $("caption-openai-base")?.value || $("settings-openai-base")?.value,
+      genius_token: _unmaskRuntimeSecret($("settings-genius-token")?.value),
+      transcriber_server_url: $("settings-transcriber-server-url")?.value,
+      music_flamingo_url: $("settings-music-flamingo-url")?.value,
+      hf_token: _unmaskRuntimeSecret($("settings-hf-token")?.value),
+      default_artist: $("caption-default-artist")?.value,
+      dataset_dir: $("lab-dataset-path")?.value,
+      caption_local_cpu_offload: !!$("caption-local-cpu-offload")?.checked,
+      gemini_google_search: !!$("caption-gemini-google-search")?.checked,
+    };
+    if (selectedPaths.length) {
+      config.audio_files = selectedPaths;
+      showToast(`Processing ${selectedPaths.length} selected file${selectedPaths.length > 1 ? 's' : ''}`, "info");
+    }
+    if (!config.dataset_dir && !selectedPaths.length) { showToast("Select an audio folder first", "warn"); return false; }
+
+    $("caption-batch-progress").style.display = "block";
+    $("btn-run-captions").style.display = "none";
+    $("btn-stop-captions").style.display = "inline-block";
+    const log = $("caption-log"); if (log) log.innerHTML = "";
+    let written = 0, skipped = 0, failed = 0;
+
+    const _finish = (msg) => {
+      $("btn-run-captions").style.display = "inline-block";
+      $("btn-stop-captions").style.display = "none";
+      if (msg?.error_code === "local_caption_oom") {
+        const reason = msg?.msg || msg?.error || "Local captioning ran out of GPU memory. Enable CPU offload or switch tiers.";
+        showToast("AI Captions cancelled due to local OOM", "error");
+        _showCaptionOOMAlert(reason);
+        _notifyDesktop("Side-Step: Local Caption OOM", reason).catch(() => {});
+        if (opts?.onDone) opts.onDone(msg);
+        return;
+      }
+      if (msg && msg.type === "cancelled") { showToast("AI Captions cancelled", "warn"); if (opts?.onDone) opts.onDone(msg); return; }
+      const payload = msg?.result || msg || {};
+      if (payload.written != null) written = payload.written;
+      if (payload.skipped != null) skipped = payload.skipped;
+      if (payload.failed != null) failed = payload.failed;
+      showToast(`AI Captions: ${written} written, ${skipped} skipped, ${failed} failed`, written > 0 ? "ok" : "warn");
+      if (typeof Dataset !== "undefined") Dataset.scan($("lab-dataset-path")?.value);
+      if (opts?.onDone) opts.onDone(msg);
+    };
+
+    const result = await API.runAICaptions(config);
+    if (result.error) {
+      _finish({ type: "error", failed: failed + 1 });
+      showToast("AI Captions failed to start: " + result.error, "error");
+      return false;
+    }
+    const taskId = result.task_id;
+    if (taskId) {
+      _streamTask(taskId, "captions", {
+        barId: "caption-progress-bar", labelId: "caption-progress-label", pctId: "caption-progress-pct", logId: "caption-log",
+        onProgress: (msg) => {
+          if (msg.written != null) { written = msg.written; skipped = msg.skipped || 0; failed = msg.failed || 0; }
+          const ws = $("caption-stat-written"); if (ws) ws.textContent = written + " written";
+          const ss = $("caption-stat-skipped"); if (ss) ss.textContent = skipped + " skipped";
+          const fs = $("caption-stat-failed"); if (fs) fs.textContent = failed + " failed";
+        },
+        onDone: _finish,
+      });
+    } else {
+      _finish(result);
+    }
+    return true;
+  }
+
+  function _isCaptionProviderLocal() {
+    const prov = $("caption-provider")?.value || "";
+    return prov === "local_8-10gb" || prov === "local_12gb" || prov === "local_16gb";
+  }
+
   function initAICaptions() {
     $("caption-provider")?.addEventListener("change", () => {
       const prov = $("caption-provider").value;
@@ -708,7 +822,6 @@ const WorkspaceLab = (() => {
     });
 
     $("btn-gen-captions")?.addEventListener("click", () => {
-      // Expand and scroll to the AI Caption Generation section within Audio Library
       const panel = $("ai-caption-panel");
       if (!panel) return;
       const group = panel.closest(".section-group");
@@ -718,11 +831,36 @@ const WorkspaceLab = (() => {
       setTimeout(() => panel.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80);
     });
 
-    const _MASK_CHAR = "•";
-    const _isMaskedRuntimeSecret = (v) => (typeof v === "string" && v.length > 0 && /^[\u2022\s]+$/.test(v));
-    const _unmaskRuntimeSecret = (v) => (_isMaskedRuntimeSecret(v) ? "" : v);
+    $("btn-run-captions")?.addEventListener("click", () => _startCaptions());
 
-    $("btn-run-captions")?.addEventListener("click", async () => {
+    $("btn-stop-captions")?.addEventListener("click", async () => {
+      _stopTask("captions");
+      showToast("Caption generation cancellation requested", "info");
+    });
+  }
+
+  /* ---- Run Both (Audio Analysis + AI Captions concurrently) ---- */
+  function _updateBothButtonState() {
+    const hasFiles = document.querySelectorAll("#dataset-tbody tr.dataset-file-row").length > 0;
+    const btn = $("btn-run-both");
+    if (btn) btn.disabled = !hasFiles;
+  }
+
+  function _expandSectionGroup(panelId) {
+    const panel = $(panelId);
+    if (!panel) return;
+    const group = panel.closest(".section-group");
+    if (group && !group.classList.contains("open")) {
+      group.querySelector(".section-group__toggle")?.click();
+    }
+  }
+
+  function initRunBoth() {
+    $("btn-run-both")?.addEventListener("click", async () => {
+      const datasetDir = $("lab-dataset-path")?.value;
+      if (!datasetDir) { showToast("Set audio directory first", "warn"); return; }
+
+      // ---- Validate captions config first (same checks as _startCaptions) ----
       const provider = $("caption-provider")?.value;
       const lyricsProvider = $("caption-lyrics-provider")?.value || (provider === "lyrics_only" ? "genius" : "none");
       if (lyricsProvider === "genius") {
@@ -737,84 +875,141 @@ const WorkspaceLab = (() => {
         const musicFlamingoUrl = ($("settings-music-flamingo-url")?.value || "").trim();
         if (!musicFlamingoUrl) { showToast("Music Flamingo URL not configured — set it in Settings", "warn"); return; }
       }
-      // Use selected files if there's a selection, otherwise process whole directory
+
+      // Expand both section groups so the user can see progress
+      _expandSectionGroup("audio-analyze-panel");
+      _expandSectionGroup("ai-caption-panel");
+
+      // Build selected files (if any)
       const selectedPaths = (typeof Dataset !== "undefined" && Dataset.hasSelection()) ? Dataset.getSelectedAudioPaths() : [];
-      const config = {
-        metadata_provider: provider,
-        provider: provider,
-        lyrics_provider: lyricsProvider,
-        overwrite: $("caption-overwrite")?.value,
-        gemini_key: $("settings-gemini-key")?.value,
-        gemini_model: $("caption-gemini-model")?.value,
-        openai_key: $("settings-openai-key")?.value,
-        openai_model: $("caption-openai-model")?.value,
-        openai_base: $("caption-openai-base")?.value || $("settings-openai-base")?.value,
-        genius_token: _unmaskRuntimeSecret($("settings-genius-token")?.value),
-        transcriber_server_url: $("settings-transcriber-server-url")?.value,
-        music_flamingo_url: $("settings-music-flamingo-url")?.value,
-        hf_token: _unmaskRuntimeSecret($("settings-hf-token")?.value),
-        default_artist: $("caption-default-artist")?.value,
-        dataset_dir: $("lab-dataset-path")?.value,
-        caption_local_cpu_offload: !!$("caption-local-cpu-offload")?.checked,
-        gemini_google_search: !!$("caption-gemini-google-search")?.checked,
+
+      // ---- Build pipeline config ----
+      const pipelineConfig = {
+        dataset_dir: datasetDir,
+        analyze: {
+          device: $("analyze-device")?.value || "auto",
+          policy: $("analyze-policy")?.value || "fill_missing",
+          mode: $("analyze-mode")?.value || "mid",
+          chunks: parseInt($("analyze-chunks")?.value || "5", 10),
+          dataset_dir: datasetDir,
+        },
+        captions: {
+          metadata_provider: provider,
+          provider: provider,
+          lyrics_provider: lyricsProvider,
+          overwrite: $("caption-overwrite")?.value,
+          gemini_key: $("settings-gemini-key")?.value,
+          gemini_model: $("caption-gemini-model")?.value,
+          openai_key: $("settings-openai-key")?.value,
+          openai_model: $("caption-openai-model")?.value,
+          openai_base: $("caption-openai-base")?.value || $("settings-openai-base")?.value,
+          genius_token: _unmaskRuntimeSecret($("settings-genius-token")?.value),
+          transcriber_server_url: $("settings-transcriber-server-url")?.value,
+          music_flamingo_url: $("settings-music-flamingo-url")?.value,
+          hf_token: _unmaskRuntimeSecret($("settings-hf-token")?.value),
+          default_artist: $("caption-default-artist")?.value,
+          dataset_dir: datasetDir,
+          caption_local_cpu_offload: !!$("caption-local-cpu-offload")?.checked,
+          gemini_google_search: !!$("caption-gemini-google-search")?.checked,
+        },
       };
       if (selectedPaths.length) {
-        config.audio_files = selectedPaths;
-        showToast(`Processing ${selectedPaths.length} selected file${selectedPaths.length > 1 ? 's' : ''}`, "info");
+        pipelineConfig.audio_files = selectedPaths;
+        showToast(`Pipeline: ${selectedPaths.length} selected file${selectedPaths.length > 1 ? "s" : ""}`, "info");
       }
-      if (!config.dataset_dir && !selectedPaths.length) { showToast("Select an audio folder first", "warn"); return; }
+
+      // ---- Fire pipeline ----
+      showToast("\u26A1 Starting Analysis \u2192 Caption pipeline", "ok");
+
+      // Show both progress panels
+      $("analyze-batch-progress").style.display = "block";
+      $("btn-run-analyze").style.display = "none";
+      $("btn-stop-analyze").style.display = "inline-block";
+      const aLog = $("analyze-log"); if (aLog) aLog.innerHTML = "";
 
       $("caption-batch-progress").style.display = "block";
       $("btn-run-captions").style.display = "none";
       $("btn-stop-captions").style.display = "inline-block";
-      const log = $("caption-log"); if (log) log.innerHTML = "";
-      let written = 0, skipped = 0, failed = 0;
+      const cLog = $("caption-log"); if (cLog) cLog.innerHTML = "";
 
-      const _finish = (msg) => {
+      let aWritten = 0, aSkipped = 0, aFailed = 0;
+      let cWritten = 0, cSkipped = 0, cFailed = 0;
+
+      const _finishAnalyze = (msg) => {
+        $("btn-run-analyze").style.display = "inline-block";
+        $("btn-stop-analyze").style.display = "none";
+        if (msg && msg.type === "cancelled") { showToast("Pipeline: analysis cancelled", "warn"); return; }
+        const payload = msg?.result || msg || {};
+        if (payload.written != null) aWritten = payload.written;
+        if (payload.skipped != null) aSkipped = payload.skipped;
+        if (payload.failed != null) aFailed = payload.failed;
+        showToast(`Analysis done: ${aWritten} written, ${aSkipped} skipped, ${aFailed} failed`, aWritten > 0 ? "ok" : "warn");
+      };
+
+      const _finishCaptions = (msg) => {
         $("btn-run-captions").style.display = "inline-block";
         $("btn-stop-captions").style.display = "none";
         if (msg?.error_code === "local_caption_oom") {
-          const reason = msg?.msg || msg?.error || "Local captioning ran out of GPU memory. Enable CPU offload or switch tiers.";
-          showToast("AI Captions cancelled due to local OOM", "error");
+          const reason = msg?.msg || msg?.error || "Local captioning ran out of GPU memory.";
+          showToast("Pipeline: caption OOM", "error");
           _showCaptionOOMAlert(reason);
-          _notifyDesktop("Side-Step: Local Caption OOM", reason).catch(() => {});
+          _notifyDesktop("Side-Step: Pipeline Caption OOM", reason).catch(() => {});
           return;
         }
-        if (msg && msg.type === "cancelled") { showToast("AI Captions cancelled", "warn"); return; }
+        if (msg && msg.type === "cancelled") { showToast("Pipeline: captions cancelled", "warn"); return; }
         const payload = msg?.result || msg || {};
-        if (payload.written != null) written = payload.written;
-        if (payload.skipped != null) skipped = payload.skipped;
-        if (payload.failed != null) failed = payload.failed;
-        showToast(`AI Captions: ${written} written, ${skipped} skipped, ${failed} failed`, written > 0 ? "ok" : "warn");
-        if (typeof Dataset !== "undefined") Dataset.scan($("lab-dataset-path")?.value);
+        if (payload.written != null) cWritten = payload.written;
+        if (payload.skipped != null) cSkipped = payload.skipped;
+        if (payload.failed != null) cFailed = payload.failed;
+        showToast(`Captions done: ${cWritten} written, ${cSkipped} skipped, ${cFailed} failed`, cWritten > 0 ? "ok" : "warn");
+        if (typeof Dataset !== "undefined") Dataset.scan(datasetDir);
       };
 
-      const result = await API.runAICaptions(config);
-      if (result.error) {
-        _finish({ type: "error", failed: failed + 1 });
-        showToast("AI Captions failed to start: " + result.error, "error");
-        return;
-      }
-      const taskId = result.task_id;
-      if (taskId) {
-        _streamTask(taskId, "captions", {
-          barId: "caption-progress-bar", labelId: "caption-progress-label", pctId: "caption-progress-pct", logId: "caption-log",
-          onProgress: (msg) => {
-            if (msg.written != null) { written = msg.written; skipped = msg.skipped || 0; failed = msg.failed || 0; }
-            const ws = $("caption-stat-written"); if (ws) ws.textContent = written + " written";
-            const ss = $("caption-stat-skipped"); if (ss) ss.textContent = skipped + " skipped";
-            const fs = $("caption-stat-failed"); if (fs) fs.textContent = failed + " failed";
-          },
-          onDone: _finish,
-        });
-      } else {
-        _finish(result);
-      }
-    });
+      try {
+        const result = await API.runPipeline(pipelineConfig);
+        if (result.error) {
+          $("btn-run-analyze").style.display = "inline-block";
+          $("btn-stop-analyze").style.display = "none";
+          $("btn-run-captions").style.display = "inline-block";
+          $("btn-stop-captions").style.display = "none";
+          showToast("Pipeline failed to start: " + result.error, "error");
+          return;
+        }
 
-    $("btn-stop-captions")?.addEventListener("click", async () => {
-      _stopTask("captions");
-      showToast("Caption generation cancellation requested", "info");
+        // Stream both task progress independently
+        if (result.analyze_task_id) {
+          _streamTask(result.analyze_task_id, "audio_analyze", {
+            barId: "analyze-progress-bar", labelId: "analyze-progress-label",
+            pctId: "analyze-progress-pct", logId: "analyze-log",
+            onProgress: (msg) => {
+              if (msg.written != null) { aWritten = msg.written; aSkipped = msg.skipped || 0; aFailed = msg.failed || 0; }
+              const ws = $("analyze-stat-written"); if (ws) ws.textContent = aWritten + " written";
+              const ss = $("analyze-stat-skipped"); if (ss) ss.textContent = aSkipped + " skipped";
+              const fs = $("analyze-stat-failed"); if (fs) fs.textContent = aFailed + " failed";
+            },
+            onDone: _finishAnalyze,
+          });
+        }
+        if (result.caption_task_id) {
+          _streamTask(result.caption_task_id, "captions", {
+            barId: "caption-progress-bar", labelId: "caption-progress-label",
+            pctId: "caption-progress-pct", logId: "caption-log",
+            onProgress: (msg) => {
+              if (msg.written != null) { cWritten = msg.written; cSkipped = msg.skipped || 0; cFailed = msg.failed || 0; }
+              const ws = $("caption-stat-written"); if (ws) ws.textContent = cWritten + " written";
+              const ss = $("caption-stat-skipped"); if (ss) ss.textContent = cSkipped + " skipped";
+              const fs = $("caption-stat-failed"); if (fs) fs.textContent = cFailed + " failed";
+            },
+            onDone: _finishCaptions,
+          });
+        }
+      } catch (e) {
+        $("btn-run-analyze").style.display = "inline-block";
+        $("btn-stop-analyze").style.display = "none";
+        $("btn-run-captions").style.display = "inline-block";
+        $("btn-stop-captions").style.display = "none";
+        showToast("Pipeline failed: " + (e.message || e), "error");
+      }
     });
   }
 
@@ -920,12 +1115,14 @@ const WorkspaceLab = (() => {
     document.addEventListener("sidestep:dataset-scanned", () => {
       _updateCaptionButtonStates();
       _updateAnalyzeButtonStates();
+      _updateBothButtonState();
     });
     $("btn-cancel-pp-queue")?.addEventListener("click", _cancelQueue);
-    [initOutputOverride, initNormalizeTargets, initPreprocess, initPPPlus, initResume, initAudioAnalysis, initAICaptions, initTriggerTagBulk, initHistoryRefresh, initExport].forEach(fn => fn());
+    [initOutputOverride, initNormalizeTargets, initPreprocess, initPPPlus, initResume, initAudioAnalysis, initAICaptions, initRunBoth, initTriggerTagBulk, initHistoryRefresh, initExport].forEach(fn => fn());
     _updateCaptionButtonLabels();
     _updateCaptionButtonStates();
     _updateAnalyzeButtonStates();
+    _updateBothButtonState();
   }
 
   return { init, queuePreprocess };
