@@ -147,6 +147,61 @@ def _populate_defaults_cache() -> None:
 
 
 
+def apply_preset(args: argparse.Namespace) -> None:
+    """Merge a wizard/GUI preset (``--preset NAME``) into the namespace.
+
+    Unlike ``--config`` (which expects argparse dest names), presets use
+    wizard field names (``target_modules_str``, ``crop_mode``,
+    ``chunk_duration``, ``dataset_repeats``, ...).  This routes the preset
+    through the wizard's own ``build_train_namespace`` so every field —
+    including ones with no CLI flag — translates exactly as it does in an
+    interactive wizard session.  Explicitly-passed CLI args keep priority.
+    """
+    preset_name = getattr(args, "preset", None)
+    if not preset_name:
+        return
+
+    from sidestep_engine.ui.presets import get_last_preset_error, load_preset
+
+    answers = load_preset(preset_name)
+    if answers is None:
+        detail = get_last_preset_error() or "not found in local/global/built-in preset dirs"
+        raise FileNotFoundError(f"Preset '{preset_name}': {detail}")
+    logger.info("[Side-Step] Loaded preset '%s' (%d fields)", preset_name, len(answers))
+
+    # Presets never store paths/devices; borrow them from the CLI so
+    # build_train_namespace's required keys are present.
+    for key in ("checkpoint_dir", "dataset_dir", "output_dir", "model_variant",
+                "base_model", "device", "precision", "resume_from", "run_name",
+                "log_dir"):
+        val = getattr(args, key, None)
+        if val is not None:
+            answers[key] = val
+        else:
+            answers.setdefault(key, None)
+
+    from sidestep_engine.ui.flows.common import build_train_namespace
+    preset_ns = build_train_namespace(answers)
+
+    # Overlay: preset values fill any arg the user left at its default;
+    # explicit CLI args win (same contract as --config).  Control keys are
+    # excluded — _from_wizard in particular would skip the CLI config
+    # summary + confirmation prompt.
+    _SKIP_DESTS = {"subcommand", "_from_wizard", "yes", "plain", "config", "preset"}
+    _populate_defaults_cache()
+    for dest, value in vars(preset_ns).items():
+        if dest in _SKIP_DESTS:
+            continue
+        current = getattr(args, dest, _SENTINEL)
+        if current is _SENTINEL:
+            # Wizard-only dest with no CLI flag (crop_mode, use_dora, ...)
+            setattr(args, dest, value)
+            continue
+        default = _DEFAULTS_CACHE.get(dest, _SENTINEL)
+        if current == default or current is None:
+            setattr(args, dest, value)
+
+
 def _resolve_model_config_path(ckpt_root: Path, variant: str) -> Path:
     """Find config.json for *variant*, supporting custom folder names.
 

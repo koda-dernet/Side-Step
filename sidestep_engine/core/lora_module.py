@@ -45,8 +45,10 @@ from sidestep_engine.core.configs import (
 )
 from sidestep_engine.core.timestep_sampling import (
     apply_cfg_dropout,
+    constrain_timestep_window,
     sample_discrete_timesteps,
     sample_timesteps,
+    windowed_discrete_schedule,
 )
 from sidestep_engine.core.types import TrainingUpdate
 
@@ -188,6 +190,17 @@ class FixedLoRAModule(nn.Module):
         # -- Training strategy -------------------------------------------------
         self._is_turbo: bool = getattr(training_config, "is_turbo", False)
         self._timestep_mode: str = getattr(training_config, "timestep_mode", "continuous")
+        # Timestep window (interval-expert adapters): restrict training to a
+        # slice of the trajectory. Full range [0, 1] = disabled.
+        self._t_window_min: float = float(getattr(training_config, "timestep_window_min", 0.0))
+        self._t_window_max: float = float(getattr(training_config, "timestep_window_max", 1.0))
+        self._t_windowed: bool = self._t_window_min > 0.0 or self._t_window_max < 1.0
+        if self._t_windowed:
+            logger.info(
+                "[OK] Timestep window active: training only t in [%.2f, %.2f] "
+                "(interval-expert adapter)",
+                self._t_window_min, self._t_window_max,
+            )
 
         # Timestep sampling params (used for all variants)
         self._timestep_mu = training_config.timestep_mu
@@ -196,6 +209,28 @@ class FixedLoRAModule(nn.Module):
         self._cfg_ratio = training_config.cfg_ratio
         self._loss_weighting = training_config.loss_weighting
         self._snr_gamma = training_config.snr_gamma
+        self._loss_fn = training_config.loss_fn
+        self._huber_delta = training_config.huber_delta
+        self._channel_balance = training_config.channel_balance
+        self._dynamic_channel_balance = training_config.dynamic_channel_balance
+        self._vae_channel_prior = training_config.vae_channel_prior
+        self._latent_noise_scale = training_config.latent_noise
+        self._t_bias = training_config.t_bias
+        self._legacy_loss = training_config.legacy_loss
+
+        # Legacy mode overrides: revert everything to flat MSE
+        if self._legacy_loss:
+            self._loss_weighting = "none"
+            self._loss_fn = "mse"
+            self._channel_balance = False
+            self._latent_noise_scale = 0.0
+
+        # Per-channel weights and std (set by trainer from channel_stats.json)
+        self._channel_weights: Optional[torch.Tensor] = None  # [64]
+        self._channel_std: Optional[torch.Tensor] = None       # [64]
+
+        # Running EMA of per-channel loss for dynamic rebalancing (lazy init)
+        self._ema_ch_loss: Optional[torch.Tensor] = None  # [64]
 
         # Adaptive timestep sampler (set by trainer when enabled, None = off)
         self._adaptive_sampler = None
@@ -207,9 +242,10 @@ class FixedLoRAModule(nn.Module):
         )
         logger.info(
             "[OK] %s detected -- using %s sampling + CFG dropout "
-            "(ratio=%.2f), loss_weighting=%s",
+            "(ratio=%.2f), loss_weighting=%s, loss_fn=%s%s",
             _variant_label, _mode_label,
-            self._cfg_ratio, self._loss_weighting,
+            self._cfg_ratio, self._loss_weighting, self._loss_fn,
+            " [LEGACY]" if self._legacy_loss else "",
         )
 
         # Rolling buffer of sampled timesteps (CPU tensors) for TensorBoard
@@ -232,6 +268,10 @@ class FixedLoRAModule(nn.Module):
 
         # One-shot flag: emit detailed NaN diagnostic only once per run
         self._nan_diagnosed = False
+
+        # Auxiliary metrics stashed by training_step for TB logging.
+        # Populated every step, drained by the training loop at log_every.
+        self._step_metrics: Dict[str, float] = {}
 
     # -----------------------------------------------------------------------
     # Adapter injection helpers
@@ -339,6 +379,16 @@ class FixedLoRAModule(nn.Module):
         self._timestep_buffer.clear()
         return result
 
+    def drain_step_metrics(self) -> Dict[str, float]:
+        """Return and clear auxiliary metrics from the last training step.
+
+        Called by the training loop at ``log_every`` intervals to feed
+        TensorBoard without changing ``training_step``'s return type.
+        """
+        m = dict(self._step_metrics)
+        self._step_metrics.clear()
+        return m
+
     # -----------------------------------------------------------------------
     # Training step
     # -----------------------------------------------------------------------
@@ -388,6 +438,9 @@ class FixedLoRAModule(nn.Module):
                     batch_size=bsz,
                     device=self.device,
                     dtype=self.dtype,
+                    # Windowed: train only on the schedule values inside the window.
+                    timesteps=(windowed_discrete_schedule(self._t_window_min, self._t_window_max)
+                               if self._t_windowed else None),
                 )
             elif self._adaptive_sampler is not None:
                 t, _r = self._adaptive_sampler.sample(
@@ -410,13 +463,38 @@ class FixedLoRAModule(nn.Module):
                     timestep_sigma=self._timestep_sigma,
                     use_meanflow=False,
                 )
+            # Interval-expert window: rejection-resample out-of-window timesteps
+            # from the base logit-normal so the in-window distribution keeps its
+            # shape. Applied after the adaptive sampler too — replacements come
+            # from the base distribution (adaptive bins still guide the rest).
+            # Discrete mode is already windowed via the filtered schedule above.
+            if self._t_windowed and self._timestep_mode != "discrete":
+                t = constrain_timestep_window(
+                    t, self._t_window_min, self._t_window_max,
+                    resampler=lambda n: sample_timesteps(
+                        batch_size=n,
+                        device=self.device,
+                        dtype=self.dtype,
+                        data_proportion=self._data_proportion,
+                        timestep_mu=self._timestep_mu,
+                        timestep_sigma=self._timestep_sigma,
+                        use_meanflow=False,
+                    )[0],
+                )
 
             # Record sampled timesteps for TensorBoard histogram logging.
             self._timestep_buffer.append(t.detach().cpu())
 
-            # ---- Flow matching noise ----------------------------------------
-            x1 = torch.randn_like(target_latents)  # noise
+            # ---- Per-channel latent noise regularization ----------------------
             x0 = target_latents  # data
+            if self._latent_noise_scale > 0 and self._channel_std is not None:
+                ch_std = self._channel_std.to(
+                    device=x0.device, dtype=x0.dtype,
+                )
+                x0 = x0 + torch.randn_like(x0) * (self._latent_noise_scale * ch_std)
+
+            # ---- Flow matching noise ----------------------------------------
+            x1 = torch.randn_like(x0)  # noise
             t_ = t.unsqueeze(-1).unsqueeze(-1)
 
             # ---- Interpolate x_t -------------------------------------------
@@ -437,33 +515,124 @@ class FixedLoRAModule(nn.Module):
 
             # ---- Flow matching loss ----------------------------------------
             flow = x1 - x0
+            pred = decoder_outputs[0]
 
-            if self._loss_weighting == "min_snr":
-                per_sample_loss = F.mse_loss(
-                    decoder_outputs[0], flow, reduction="none",
+            # Per-element loss computation
+            _is_x0 = self._loss_fn.startswith("x0_")
+            if _is_x0:
+                # x₀-prediction: loss on reconstructed clean latent
+                # x0_pred = xt - t * pred_velocity; target = x0
+                _error = (xt - t_ * pred) - x0  # [B, T, 64]
+            else:
+                # Velocity-prediction: loss on predicted flow
+                _error = pred - flow  # [B, T, 64]
+
+            _fn = self._loss_fn.replace("x0_", "")  # strip x0_ prefix
+            if _fn == "huber":
+                per_element = F.smooth_l1_loss(
+                    _error, torch.zeros_like(_error),
+                    beta=self._huber_delta, reduction="none",
                 )
-                per_sample_loss = per_sample_loss.mean(dim=(-1, -2))
-                # Upcast to fp32 to avoid overflow on fp16 devices (MPS):
-                # ((1-t)/t)^2 can reach ~1e8 which exceeds fp16 max (65504).
+            elif _fn == "pseudo_huber":
+                _d = self._huber_delta
+                per_element = _d * _d * (torch.sqrt(1.0 + (_error / _d) ** 2) - 1.0)
+            else:
+                per_element = _error ** 2  # MSE
+
+            # Per-channel fidelity balancing
+            if self._channel_balance and self._channel_weights is not None:
+                cw = self._channel_weights.to(
+                    device=per_element.device, dtype=per_element.dtype,
+                )
+                # Dynamic rebalancing: blend static VAE prior with live loss EMA
+                if self._dynamic_channel_balance:
+                    with torch.no_grad():
+                        _pch = per_element.detach().mean(dim=(0, 1))  # [64]
+                        if self._ema_ch_loss is None:
+                            self._ema_ch_loss = _pch.clone()
+                        else:
+                            self._ema_ch_loss = self._ema_ch_loss.to(
+                                device=_pch.device, dtype=_pch.dtype,
+                            )
+                            self._ema_ch_loss.lerp_(_pch, 0.01)
+                        _dyn_w = self._ema_ch_loss / self._ema_ch_loss.mean().clamp(min=1e-8)
+                        cw = 0.5 * cw + 0.5 * _dyn_w
+                per_element = per_element * cw  # [B, T, 64] * [64]
+
+            # Attention-mask-weighted loss (skip zero-padded positions)
+            if not self._legacy_loss:
+                mask = attention_mask.unsqueeze(-1)  # [B, T, 1]
+                masked_sum = (per_element * mask).sum()
+                n_valid = mask.sum() * per_element.shape[-1]
+                per_sample_loss_raw = (per_element * mask).sum(dim=(-1, -2)) / (
+                    mask.sum(dim=(-1, -2)) * per_element.shape[-1]
+                ).clamp(min=1e-8)
+            else:
+                masked_sum = per_element.sum()
+                n_valid = torch.tensor(
+                    per_element.numel(), device=per_element.device,
+                    dtype=per_element.dtype,
+                )
+                per_sample_loss_raw = per_element.mean(dim=(-1, -2))
+
+            # Timestep weighting
+            if self._loss_weighting == "flow_snr":
+                t_f32 = t.float().clamp(min=1e-4, max=1.0 - 1e-4)
+                w = ((1.0 - t_f32) ** self._t_bias) / (t_f32 * (1.0 - t_f32))
+                w = w.clamp(max=self._snr_gamma)
+                _w_pre_norm = w.clone()  # snapshot before normalization for telemetry
+                w = w / w.mean().clamp(min=1e-8)  # normalize to preserve scale
+                diffusion_loss = (w.to(per_sample_loss_raw.dtype) * per_sample_loss_raw).mean()
+            elif self._loss_weighting == "min_snr":
                 t_f32 = t.float().clamp(min=1e-4, max=1.0 - 1e-4)
                 snr = ((1.0 - t_f32) / t_f32) ** 2
                 snr = snr.clamp(max=1e6)
                 weights = torch.clamp(snr, max=self._snr_gamma) / snr.clamp(min=1e-6)
-                diffusion_loss = (weights.to(per_sample_loss.dtype) * per_sample_loss).mean()
+                diffusion_loss = (weights.to(per_sample_loss_raw.dtype) * per_sample_loss_raw).mean()
             else:
-                diffusion_loss = F.mse_loss(decoder_outputs[0], flow)
+                diffusion_loss = masked_sum / n_valid.clamp(min=1e-8)
 
             # Update adaptive sampler with per-sample losses (if enabled)
             if self._adaptive_sampler is not None:
                 with torch.no_grad():
-                    if self._loss_weighting == "min_snr":
-                        # Reuse already-computed per_sample_loss (raw MSE)
-                        self._adaptive_sampler.update(t, per_sample_loss.detach())
-                    else:
-                        _per_sample = F.mse_loss(
-                            decoder_outputs[0], flow, reduction="none",
-                        ).mean(dim=(-1, -2))
-                        self._adaptive_sampler.update(t, _per_sample)
+                    self._adaptive_sampler.update(t, per_sample_loss_raw.detach())
+
+            # -- Auxiliary metrics for TensorBoard --------------------------
+            with torch.no_grad():
+                sm = self._step_metrics
+                sm["fidelity/timestep_mean"] = float(t.mean())
+                sm["fidelity/raw_loss"] = float(per_sample_loss_raw.mean())
+                sm["fidelity/weighted_loss"] = float(diffusion_loss)
+                if self._loss_weighting == "flow_snr":
+                    sm["fidelity/snr_weight_mean"] = float(_w_pre_norm.mean())
+                    sm["fidelity/snr_weight_max"] = float(_w_pre_norm.max())
+                    if _w_pre_norm.numel() > 1:
+                        sm["fidelity/snr_weight_spread"] = float(
+                            _w_pre_norm.max() / _w_pre_norm.min().clamp(min=1e-8)
+                        )
+                elif self._loss_weighting == "min_snr":
+                    sm["fidelity/snr_weight_mean"] = float(weights.mean())
+                    sm["fidelity/snr_weight_max"] = float(weights.max())
+                if self._channel_balance and self._channel_weights is not None:
+                    per_ch = per_element.mean(dim=(0, 1))  # [64]
+                    sm["fidelity/ch_loss_max"] = float(per_ch.max())
+                    sm["fidelity/ch_loss_min"] = float(per_ch.min())
+                    sm["fidelity/ch_loss_ratio"] = float(
+                        per_ch.max() / per_ch.min().clamp(min=1e-8)
+                    )
+                    if self._dynamic_channel_balance and self._ema_ch_loss is not None:
+                        sm["fidelity/ch_dynamic_blend_range"] = float(
+                            cw.max() / cw.min().clamp(min=1e-8)
+                        )
+                # Arrangement vs detail split (always logged)
+                _t_flat = t.detach()
+                _loss_flat = per_sample_loss_raw.detach()
+                _hi = _t_flat > 0.5
+                _lo = ~_hi
+                if _hi.any():
+                    sm["fidelity/arrangement_loss"] = float(_loss_flat[_hi].mean())
+                if _lo.any():
+                    sm["fidelity/detail_loss"] = float(_loss_flat[_lo].mean())
 
         # fp32 for stable backward
         diffusion_loss = diffusion_loss.float()

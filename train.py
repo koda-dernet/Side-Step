@@ -214,6 +214,19 @@ def _dispatch(args) -> int:
     """
     from sidestep_engine.cli.common import validate_paths
 
+    # -- Preset merge (wizard presets, headless via --preset) ---------------
+    if getattr(args, "preset", None):
+        from sidestep_engine.cli.config_builder import (
+            apply_preset,
+            _populate_defaults_cache,
+        )
+        try:
+            _populate_defaults_cache()
+            apply_preset(args)
+        except Exception as exc:
+            print(f"[FAIL] Could not load --preset: {exc}", file=sys.stderr)
+            return 1
+
     # -- Config file merge (JSON values fill unset CLI args) ----------------
     if getattr(args, "config", None):
         from sidestep_engine.cli.config_builder import (

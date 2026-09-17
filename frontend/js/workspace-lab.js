@@ -93,6 +93,7 @@ const WorkspaceLab = (() => {
     if (cfg.gradient_accumulation_steps != null && cfg.grad_accum == null) cfg.grad_accum = cfg.gradient_accumulation_steps;
     if (cfg.max_epochs != null && cfg.epochs == null) cfg.epochs = cfg.max_epochs;
     if (cfg.save_every_n_epochs != null && cfg.save_every == null) cfg.save_every = cfg.save_every_n_epochs;
+    if (cfg.sample_every_n_epochs != null && cfg.sample_every == null) cfg.sample_every = cfg.sample_every_n_epochs;
     if (cfg.log_every_n_steps != null && cfg.log_every == null) cfg.log_every = cfg.log_every_n_steps;
     if (Array.isArray(cfg.target_modules) && cfg.projections == null) cfg.projections = cfg.target_modules.join(" ");
     if (Array.isArray(cfg.self_target_modules) && cfg.self_projections == null) cfg.self_projections = cfg.self_target_modules.join(" ");

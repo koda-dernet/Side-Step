@@ -183,6 +183,7 @@ const WorkspaceSetup = (() => {
     const _aliases = {
       learning_rate:"lr", gradient_accumulation:"grad_accum", gradient_accumulation_steps:"grad_accum",
       scheduler_type:"scheduler", max_epochs:"epochs", save_every_n_epochs:"save_every",
+      sample_every_n_epochs:"sample_every",
       log_every_n_steps:"log_every", gradient_checkpointing:"gradient_checkpointing_ratio",
       target_modules_str:"projections", target_modules:"projections",
       self_target_modules_str:"self_projections", cross_target_modules_str:"cross_projections",
@@ -192,13 +193,22 @@ const WorkspaceSetup = (() => {
       adapter_type:"full-adapter-type", model_variant:"full-model-variant", rank:"full-rank", alpha:"full-alpha", dropout:"full-dropout",
       lr:"full-lr", batch_size:"full-batch", grad_accum:"full-grad-accum", epochs:"full-epochs", warmup_steps:"full-warmup",
       max_steps:"full-max-steps", dataset_repeats:"full-dataset-repeats", shift:"full-shift", num_inference_steps:"full-inference-steps",
-      timestep_mode:"full-timestep-mode", cfg_ratio:"full-cfg-dropout", loss_weighting:"full-loss-weighting", snr_gamma:"full-snr-gamma", gradient_checkpointing_ratio:"full-grad-ckpt-ratio",
+      timestep_mode:"full-timestep-mode", cfg_ratio:"full-cfg-dropout", loss_weighting:"full-loss-weighting", snr_gamma:"full-snr-gamma",
+      loss_fn:"full-loss-fn", huber_delta:"full-huber-delta", latent_noise:"full-latent-noise", t_bias:"full-t-bias",
+      gradient_checkpointing_ratio:"full-grad-ckpt-ratio",
       chunk_duration:"full-chunk-duration", max_latent_length:"full-max-latent-length", chunk_decay_every:"full-chunk-decay-every", optimizer_type:"full-optimizer", scheduler:"full-scheduler",
       scheduler_formula:"full-scheduler-formula", device:"full-device", precision:"full-precision", save_every:"full-save-every",
+      sample_every:"full-sample-every",
+      sample_duration:"full-sample-duration", sample_steps:"full-sample-steps",
+      sample_seed:"full-sample-seed", sample_lyrics:"full-sample-lyrics",
+      loss_milestone_interval:"full-loss-milestone-interval",
+      timestep_window_min:"full-timestep-window-min", timestep_window_max:"full-timestep-window-max",
       log_every:"full-log-every", log_heavy_every:"full-log-heavy-every", save_best_after:"full-save-best-after", early_stop:"full-early-stop",
       weight_decay:"full-weight-decay", max_grad_norm:"full-max-grad-norm", seed:"full-seed", warmup_start_factor:"full-warmup-start-factor",
       cosine_eta_min_ratio:"full-cosine-eta-min", cosine_restarts_count:"full-cosine-restarts", ema_decay:"full-ema-decay", val_split:"full-val-split",
       adaptive_timestep_ratio:"full-adaptive-timestep", save_best_every_n_steps:"full-save-best-every-n-steps",
+      lr_scale_self_attn:"full-lr-scale-self-attn", lr_scale_cross_attn:"full-lr-scale-cross-attn", lr_scale_mlp:"full-lr-scale-mlp",
+      ema_start_step:"full-ema-start-step",
       target_loss:"full-target-loss", target_loss_floor:"full-target-loss-floor",
       target_loss_warmup:"full-target-loss-warmup", target_loss_smoothing:"full-target-loss-smoothing",
       timestep_mu:"full-timestep-mu", timestep_sigma:"full-timestep-sigma", num_workers:"full-num-workers", prefetch_factor:"full-prefetch-factor",
@@ -209,8 +219,11 @@ const WorkspaceSetup = (() => {
     };
     const chkMap = {
       target_mlp:"full-target-mlp", offload_encoder:"full-offload-encoder",
+      channel_balance:"full-channel-balance", vae_channel_prior:"full-vae-channel-prior", legacy_loss:"full-legacy-loss",
+      dynamic_channel_balance:"full-dynamic-channel-balance",
       save_best:"full-save-best", pin_memory:"full-pin-memory",
       persistent_workers:"full-persistent-workers",
+      target_loss_auto_stop:"full-target-loss-auto-stop",
       lokr_decompose_both:"full-lokr-decompose-both", lokr_use_tucker:"full-lokr-use-tucker",
       lokr_use_scalar:"full-lokr-use-scalar", lokr_weight_decompose:"full-lokr-weight-decompose",
       loha_use_tucker:"full-loha-use-tucker", loha_use_scalar:"full-loha-use-scalar",
@@ -241,6 +254,12 @@ const WorkspaceSetup = (() => {
       const p = {};
       Object.entries(raw).forEach(([k, v]) => { p[_aliases[k] || k] = v; });
       if (typeof raw.gradient_checkpointing === "boolean") p.gradient_checkpointing_ratio = raw.gradient_checkpointing ? "1.0" : "0.0";
+
+      // Suppress smart-behavior LR overrides while we apply preset values.
+      // The optimizer change handler rewrites LR to "known" values (e.g.
+      // Rose→0.01, Automagic→1e-6) which clobbers the preset's LR.
+      window.__sidestep_preset_applying = true;
+
       const _touched = [];
       Object.entries(valMap).forEach(([k, id]) => { if (p[k] != null) { const el = $(id); if (el) { el.value = p[k]; _touched.push(el); } } });
       Object.entries(chkMap).forEach(([k, id]) => { if (p[k] != null) { const el = $(id); if (el) { el.checked = !!p[k]; _touched.push(el); } } });
@@ -256,6 +275,14 @@ const WorkspaceSetup = (() => {
         el.dispatchEvent(new Event("change", { bubbles: true }));
         if (el.type !== "checkbox" && el.tagName !== "SELECT") el.dispatchEvent(new Event("input", { bubbles: true }));
       });
+
+      // Re-apply LR after all change events have fired (reactivity may
+      // have clobbered it via the optimizer smart handler).
+      const lrEl = $("full-lr");
+      if (lrEl && p.lr != null) lrEl.value = p.lr;
+
+      window.__sidestep_preset_applying = false;
+
       // Sync projection chip checkboxes to match hidden input values
       _syncProjChipsFromHidden();
       $("preset-browser-modal")?.classList.remove("open", "active");

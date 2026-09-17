@@ -143,16 +143,32 @@ PRESET_TYPES: dict[str, type] = {
     "dataset_repeats": int, "shift": float, "num_inference_steps": int,
     "chunk_duration": int, "chunk_decay_every": int,
     "cfg_ratio": float, "snr_gamma": float, "timestep_mode": str,
+    "loss_fn": str, "huber_delta": float, "latent_noise": float, "t_bias": float,
+    "dynamic_channel_balance": bool,
+    # Per-layer-type LR scales
+    "lr_scale_self_attn": float, "lr_scale_cross_attn": float, "lr_scale_mlp": float,
     "save_every": int, "log_every": int, "log_heavy_every": int,
     "save_best_after": int, "early_stop_patience": int,
     "gradient_checkpointing_ratio": float,
     # Cruise control
     "target_loss": float, "target_loss_floor": float,
     "target_loss_warmup": int, "target_loss_smoothing": float,
+    "target_loss_auto_stop": bool,
+    "loss_milestone_interval": float,
+    # Audio previews
+    "sample_every": int, "sample_duration": float, "sample_steps": int,
+    "sample_seed": int, "sample_lyrics": str, "sample_backend": str,
+    # Timestep distribution / windows
+    "timestep_mu": float, "timestep_sigma": float,
+    "timestep_window_min": float, "timestep_window_max": float,
+    # Per-layer-type LR scales
+    "lr_scale_self_attn": float, "lr_scale_cross_attn": float, "lr_scale_mlp": float,
+    "dynamic_channel_balance": bool,
     # "All the Levers"
-    "ema_decay": float, "val_split": float, "adaptive_timestep_ratio": float,
+    "ema_decay": float, "ema_start_step": int, "val_split": float, "adaptive_timestep_ratio": float,
     "warmup_start_factor": float, "cosine_eta_min_ratio": float,
     "cosine_restarts_count": int, "save_best_every_n_steps": int,
+    # Booleans (stored as bool in JSON, no coercion needed but listed for completeness)
 }
 
 
@@ -179,12 +195,19 @@ PRESET_FIELDS = frozenset([
     "crop_mode", "chunk_duration", "max_latent_length", "chunk_decay_every",
     "optimizer_type", "scheduler_type", "scheduler_formula",
     "timestep_mode", "cfg_ratio", "loss_weighting", "snr_gamma",
+    "loss_fn", "huber_delta", "channel_balance", "vae_channel_prior",
+    "latent_noise", "t_bias", "legacy_loss", "dynamic_channel_balance",
+    "timestep_mu", "timestep_sigma", "timestep_window_min", "timestep_window_max",
+    "lr_scale_self_attn", "lr_scale_cross_attn", "lr_scale_mlp",
+    "sample_every", "sample_duration", "sample_steps", "sample_seed", "sample_lyrics",
+    "sample_backend",
     "save_every", "log_every", "log_heavy_every",
     "save_best", "save_best_after", "early_stop_patience",
-    "target_loss", "target_loss_floor", "target_loss_warmup", "target_loss_smoothing",
+    "target_loss", "target_loss_auto_stop", "target_loss_floor",
+    "target_loss_warmup", "target_loss_smoothing", "loss_milestone_interval",
     "gradient_checkpointing", "gradient_checkpointing_ratio", "offload_encoder",
     # "All the Levers"
-    "ema_decay", "val_split", "adaptive_timestep_ratio",
+    "ema_decay", "ema_start_step", "val_split", "adaptive_timestep_ratio",
     "warmup_start_factor", "cosine_eta_min_ratio", "cosine_restarts_count",
     "save_best_every_n_steps",
 ])

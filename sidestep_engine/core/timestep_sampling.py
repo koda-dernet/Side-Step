@@ -115,6 +115,10 @@ def sample_timesteps(
         torch.randn((batch_size,), device=device, dtype=dtype) * timestep_sigma + timestep_mu
     )
 
+    # Clamp endpoints: bf16 sigmoid saturates to exact 0/1 → NaN in loss
+    t = t.clamp(min=1e-5, max=1.0 - 1e-5)
+    r = r.clamp(min=1e-5, max=1.0 - 1e-5)
+
     # Assign t = max, r = min for each pair
     t, r = torch.maximum(t, r), torch.minimum(t, r)
 
@@ -129,6 +133,73 @@ def sample_timesteps(
     r = torch.where(zero_mask, t, r)
 
     return t, r
+
+
+# ---------------------------------------------------------------------------
+# Timestep window (interval-expert training)
+# ---------------------------------------------------------------------------
+
+def constrain_timestep_window(
+    t: torch.Tensor,
+    t_min: float,
+    t_max: float,
+    resampler=None,
+    max_tries: int = 50,
+) -> torch.Tensor:
+    """Constrain sampled timesteps to ``[t_min, t_max]``.
+
+    Used to train interval-expert adapters (timestep-dependent adapters /
+    MoE-over-timesteps): a "structure" expert trained on high-noise timesteps
+    (e.g. ``[0.5, 1.0]``) and a "timbre" expert on low-noise (``[0.0, 0.5]``),
+    gated per sampling step at inference.
+
+    Out-of-window values are rejection-resampled via ``resampler(n)`` (which
+    must return fresh samples from the base distribution, shape ``[n]``) so
+    the in-window distribution keeps the base sampler's shape. After
+    ``max_tries`` rounds, any stragglers fall back to uniform samples inside
+    the window (rare unless the window sits far in the distribution's tail).
+
+    A no-op when the window covers [0, 1].
+    """
+    if t_min <= 0.0 and t_max >= 1.0:
+        return t
+    lo = max(0.0, min(t_min, t_max))
+    hi = min(1.0, max(t_min, t_max))
+    if resampler is not None:
+        for _ in range(max_tries):
+            bad = (t < lo) | (t > hi)
+            n_bad = int(bad.sum().item())
+            if n_bad == 0:
+                return t
+            t = t.clone()
+            t[bad] = resampler(n_bad).to(dtype=t.dtype)
+    bad = (t < lo) | (t > hi)
+    if bool(bad.any()):
+        t = t.clone()
+        n_bad = int(bad.sum().item())
+        t[bad] = lo + (hi - lo) * torch.rand((n_bad,), device=t.device, dtype=t.dtype)
+    return t
+
+
+def windowed_discrete_schedule(
+    t_min: float,
+    t_max: float,
+    timesteps: Optional[List[float]] = None,
+) -> List[float]:
+    """Filter a discrete schedule to values inside ``[t_min, t_max]``.
+
+    Falls back to the single nearest schedule value when the window excludes
+    everything (so training never silently reverts to the full schedule).
+    """
+    if timesteps is None:
+        timesteps = TURBO_SHIFT3_TIMESTEPS
+    lo = max(0.0, min(t_min, t_max))
+    hi = min(1.0, max(t_min, t_max))
+    inside = [v for v in timesteps if lo <= v <= hi]
+    if inside:
+        return inside
+    mid = (lo + hi) / 2.0
+    return [min(timesteps, key=lambda v: abs(v - mid))]
 
 
 # ---------------------------------------------------------------------------

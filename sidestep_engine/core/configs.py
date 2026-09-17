@@ -250,7 +250,7 @@ class TrainingConfigV2(TrainingConfig):
 
     # --- Optimizer / Scheduler ------------------------------------------------
     optimizer_type: str = "adamw"
-    """Optimizer: 'adamw', 'adamw8bit', 'adafactor', 'prodigy'."""
+    """Optimizer: 'adamw', 'adamw8bit', 'adafactor', 'prodigy', 'scao', 'rose', 'automagic'."""
 
     scheduler_type: str = "cosine"
     """LR scheduler: 'cosine', 'cosine_restarts', 'linear', 'constant',
@@ -292,12 +292,39 @@ class TrainingConfigV2(TrainingConfig):
     data_proportion: float = 0.5
     """Data proportion for sample_t_r (from model config)."""
 
-    loss_weighting: str = "none"
-    """Loss weighting strategy: 'none' (flat MSE) or 'min_snr'.
-    min-SNR can yield better results on SFT and base models."""
+    loss_weighting: str = "flow_snr"
+    """Loss weighting strategy: 'flow_snr' (correct for rectified flow),
+    'min_snr' (DDPM formula, legacy), or 'none' (flat)."""
 
     snr_gamma: float = 5.0
-    """Gamma clamp for min-SNR weighting. Only used when loss_weighting='min_snr'."""
+    """Gamma clamp for flow_snr/min_snr weighting."""
+
+    loss_fn: str = "mse"
+    """Loss function: 'mse', 'huber', 'pseudo_huber', 'x0_mse', or 'x0_pseudo_huber'.
+    x0_ prefix computes loss on reconstructed x₀ (implicit t² weighting)."""
+
+    huber_delta: float = 1.0
+    """Delta threshold for huber/pseudo_huber loss variants."""
+
+    channel_balance: bool = True
+    """Per-channel fidelity balancing using inverse-std weights."""
+
+    dynamic_channel_balance: bool = False
+    """Dynamically rebalance channel weights based on running per-channel loss.
+    Blends 50/50 with the static VAE prior so hard channels get more gradient."""
+
+    vae_channel_prior: bool = True
+    """Incorporate VAE decoder channel importance into channel weights."""
+
+    latent_noise: float = 0.02
+    """Per-channel latent noise regularisation scale. 0 = disabled."""
+
+    t_bias: float = 0.5
+    """Asymmetric timestep emphasis toward low-t (detail). 0 = symmetric."""
+
+    legacy_loss: bool = False
+    """Revert all loss math to pre-flow-SNR behavior (flat MSE, no channel
+    balancing, no latent noise, no attention masking in loss)."""
 
     # --- Adapter selection ----------------------------------------------------
     adapter_type: str = "lora"
@@ -308,6 +335,16 @@ class TrainingConfigV2(TrainingConfig):
     for all variants) or 'discrete' (8-step turbo inference schedule).
     Previously turbo always used discrete; as of v1.1.1 continuous is the
     default for all variants."""
+
+    timestep_window_min: float = 0.0
+    timestep_window_max: float = 1.0
+    """Restrict training timesteps to [min, max] ⊂ [0, 1] (t=1 noise, t=0
+    clean). Trains interval-expert adapters for timestep-dependent
+    adapter gating: e.g. a "structure" expert on [0.5, 1.0] and a "timbre"
+    expert on [0.0, 0.5]. Continuous mode rejection-resamples outside the
+    window; discrete mode filters the 8-step schedule. Full range = off.
+    The high-noise expert overfits fastest (T-LoRA) — consider a lower rank
+    for it than for the low-noise expert."""
 
     # --- Model variant detection ---------------------------------------------
     is_turbo: bool = False
@@ -355,9 +392,49 @@ class TrainingConfigV2(TrainingConfig):
     """Stop training if smoothed loss doesn't improve for this many epochs
     after best-model tracking is active.  0 = disabled."""
 
+    sample_every_n_epochs: int = 0
+    """Generate a short audio preview every N epochs (0 = disabled).
+    Uses the live in-memory adapter weights (EMA-applied when active),
+    a caption/bpm/key taken from the first dataset sample's metadata, and
+    a generic verse/chorus lyric.  Written to ``{output_dir}/samples/``."""
+
+    sample_duration: float = 30.0
+    """Duration in seconds of each epoch audio preview."""
+
+    sample_steps: int = 0
+    """Inference steps for epoch previews.  0 = auto (8 turbo / 30 base)."""
+
+    sample_seed: int = 42
+    """Fixed noise seed for epoch previews so samples are comparable
+    across epochs.  Sampling never disturbs training RNG state."""
+
+    sample_lyrics: str = ""
+    """Lyrics for epoch previews.  Empty = built-in generic verse/chorus."""
+
+    sample_backend: str = "auto"
+    """Preview renderer: 'auto' (external ace-synth engine when available,
+    else in-process Python sampler), 'engine', or 'python'.  The engine
+    backend renders the saved adapter snapshot through the exact GGUF
+    inference stack used for real generations."""
+
+    loss_milestone_interval: float = 0.0
+    """Save an inference-ready adapter snapshot (+ audio preview) each time
+    the smoothed epoch loss first crosses a multiple of this value
+    (e.g. 0.1 -> snapshots at loss 0.9, 0.8, ... 0.1).  The milestone
+    ladder starts just below the first observed smoothed loss, so resumed
+    runs never re-save milestones already passed.  0 = disabled.
+    Written to ``{output_dir}/milestones/loss_<value>/``."""
+
     target_loss: float = 0.0
     """Target loss for cruise control.  When smoothed loss reaches this value,
     LR is progressively damped to hold steady.  0 = disabled."""
+
+    target_loss_auto_stop: bool = False
+    """When True and ``target_loss > 0``, training automatically stops
+    (saves best checkpoint and terminates) once the epoch-level MA5
+    smoothed loss drops below ``target_loss``.  Ideal for queued/
+    autonomous runs where you want to free the GPU as soon as the
+    target quality is reached."""
 
     target_loss_floor: float = 0.01
     """Minimum LR multiplier when target loss cruise control is active.
@@ -446,6 +523,12 @@ class TrainingConfigV2(TrainingConfig):
     times per epoch.  1 = no repetition (default).  Higher values effectively
     multiply dataset size without modifying ``.pt`` files."""
 
+    genre_ratio: int = -1
+    """Percentage (0-100) of training steps that use genre conditioning
+    instead of caption.  ``-1`` = auto-detect from ``preprocess_meta.json``
+    (default).  ``0`` = always use caption.  Both variants are stored in
+    the ``.pt`` files; this controls the per-step random selection."""
+
     max_steps: int = 0
     """Maximum optimizer steps.  0 = disabled (use max_epochs only).
     When > 0, training stops at this step count regardless of epoch."""
@@ -461,6 +544,12 @@ class TrainingConfigV2(TrainingConfig):
     """EMA decay rate for adapter weights.  0.0 = disabled (default).
     Typical value: 0.9999.  Maintains a smoothed shadow copy of trainable
     params on CPU; the EMA weights are used for best-model saves."""
+
+    ema_start_step: int = 2000
+    """Optimizer step at which EMA tracking begins.  Before this step
+    no shadow averaging occurs.  At the start step the shadow is
+    re-initialised to current weights and full-rate averaging begins.
+    0 = start immediately (no delay)."""
 
     val_split: float = 0.0
     """Fraction of dataset held out for validation.  0.0 = disabled.
@@ -483,6 +572,18 @@ class TrainingConfigV2(TrainingConfig):
     cosine_restarts_count: int = 4
     """Number of cosine restart cycles (``cosine_restarts`` scheduler only).
     Default 4 matches the current hardcoded value in ``optim.py``."""
+
+    lr_scale_self_attn: float = 1.0
+    """LR multiplier for self-attention LoRA parameters.
+    Applied on top of the base learning_rate.  1.0 = no change."""
+
+    lr_scale_cross_attn: float = 1.0
+    """LR multiplier for cross-attention LoRA parameters.
+    Applied on top of the base learning_rate.  1.0 = no change."""
+
+    lr_scale_mlp: float = 1.0
+    """LR multiplier for MLP/FFN LoRA parameters (gate_proj, up_proj, down_proj).
+    Applied on top of the base learning_rate.  1.0 = no change."""
 
     # -----------------------------------------------------------------------
     # Validation
@@ -513,8 +614,26 @@ class TrainingConfigV2(TrainingConfig):
             errors.append(
                 f"save_every_n_epochs must be >= 1 (got {self.save_every_n_epochs})"
             )
+        if self.sample_every_n_epochs < 0:
+            errors.append(
+                f"sample_every_n_epochs must be >= 0 (got {self.sample_every_n_epochs})"
+            )
+        if self.sample_duration <= 0:
+            errors.append(f"sample_duration must be > 0 (got {self.sample_duration})")
+        if self.sample_steps < 0:
+            errors.append(f"sample_steps must be >= 0 (got {self.sample_steps})")
+        if self.loss_milestone_interval < 0:
+            errors.append(
+                f"loss_milestone_interval must be >= 0 (got {self.loss_milestone_interval})"
+            )
+        if self.sample_backend not in ("auto", "engine", "python"):
+            errors.append(
+                f"sample_backend must be 'auto', 'engine', or 'python' (got {self.sample_backend!r})"
+            )
         if not (0.0 <= self.ema_decay < 1.0):
             errors.append(f"ema_decay must be >= 0 and < 1 (got {self.ema_decay})")
+        if self.ema_start_step < 0:
+            errors.append(f"ema_start_step must be >= 0 (got {self.ema_start_step})")
         if not (0.0 <= self.val_split <= 0.5):
             errors.append(f"val_split must be >= 0 and <= 0.5 (got {self.val_split})")
         if not (0.0 <= self.adaptive_timestep_ratio <= 1.0):
@@ -522,6 +641,17 @@ class TrainingConfigV2(TrainingConfig):
                 f"adaptive_timestep_ratio must be >= 0 and <= 1 "
                 f"(got {self.adaptive_timestep_ratio})"
             )
+        _valid_loss_fns = ("mse", "huber", "pseudo_huber", "x0_mse", "x0_pseudo_huber")
+        if self.loss_fn not in _valid_loss_fns:
+            errors.append(f"loss_fn must be one of {_valid_loss_fns} (got {self.loss_fn!r})")
+        if self.huber_delta <= 0:
+            errors.append(f"huber_delta must be > 0 (got {self.huber_delta})")
+        if self.latent_noise < 0:
+            errors.append(f"latent_noise must be >= 0 (got {self.latent_noise})")
+        if not (0.0 <= self.t_bias <= 2.0):
+            errors.append(f"t_bias must be >= 0 and <= 2 (got {self.t_bias})")
+        if self.loss_weighting not in ("none", "min_snr", "flow_snr"):
+            errors.append(f"loss_weighting must be 'none', 'min_snr', or 'flow_snr' (got {self.loss_weighting!r})")
         if not (0.0 < self.warmup_start_factor <= 1.0):
             errors.append(
                 f"warmup_start_factor must be > 0 and <= 1 "
@@ -537,6 +667,12 @@ class TrainingConfigV2(TrainingConfig):
                 f"cosine_restarts_count must be >= 1 "
                 f"(got {self.cosine_restarts_count})"
             )
+        for _lr_field in ("lr_scale_self_attn", "lr_scale_cross_attn", "lr_scale_mlp"):
+            _lr_val = getattr(self, _lr_field)
+            if not (0.0 <= _lr_val <= 10.0):
+                errors.append(
+                    f"{_lr_field} must be >= 0 and <= 10 (got {_lr_val})"
+                )
         if self.target_loss < 0:
             errors.append(f"target_loss must be >= 0 (got {self.target_loss})")
         if not (0.0 < self.target_loss_floor <= 1.0):
@@ -640,6 +776,13 @@ class TrainingConfigV2(TrainingConfig):
                 "data_proportion": self.data_proportion,
                 "loss_weighting": self.loss_weighting,
                 "snr_gamma": self.snr_gamma,
+                "loss_fn": self.loss_fn,
+                "huber_delta": self.huber_delta,
+                "channel_balance": self.channel_balance,
+                "vae_channel_prior": self.vae_channel_prior,
+                "latent_noise": self.latent_noise,
+                "t_bias": self.t_bias,
+                "legacy_loss": self.legacy_loss,
                 "is_turbo": self.is_turbo,
                 "model_variant": self.model_variant,
                 "checkpoint_dir": self.checkpoint_dir,
@@ -652,7 +795,15 @@ class TrainingConfigV2(TrainingConfig):
                 "save_best": self.save_best,
                 "save_best_after": self.save_best_after,
                 "early_stop_patience": self.early_stop_patience,
+                "sample_every_n_epochs": self.sample_every_n_epochs,
+                "sample_duration": self.sample_duration,
+                "sample_steps": self.sample_steps,
+                "sample_seed": self.sample_seed,
+                "sample_lyrics": self.sample_lyrics,
+                "sample_backend": self.sample_backend,
+                "loss_milestone_interval": self.loss_milestone_interval,
                 "target_loss": self.target_loss,
+                "target_loss_auto_stop": self.target_loss_auto_stop,
                 "target_loss_floor": self.target_loss_floor,
                 "target_loss_warmup": self.target_loss_warmup,
                 "target_loss_smoothing": self.target_loss_smoothing,
@@ -680,11 +831,15 @@ class TrainingConfigV2(TrainingConfig):
                 "rank_max": self.rank_max,
                 "ignore_fisher_map": self.ignore_fisher_map,
                 "ema_decay": self.ema_decay,
+                "ema_start_step": self.ema_start_step,
                 "val_split": self.val_split,
                 "adaptive_timestep_ratio": self.adaptive_timestep_ratio,
                 "warmup_start_factor": self.warmup_start_factor,
                 "cosine_eta_min_ratio": self.cosine_eta_min_ratio,
                 "cosine_restarts_count": self.cosine_restarts_count,
+                "lr_scale_self_attn": self.lr_scale_self_attn,
+                "lr_scale_cross_attn": self.lr_scale_cross_attn,
+                "lr_scale_mlp": self.lr_scale_mlp,
             }
         )
         return base

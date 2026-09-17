@@ -24,10 +24,14 @@ from sidestep_engine.training_defaults import (
     DEFAULT_DROPOUT,
     DEFAULT_EARLY_STOP_PATIENCE,
     DEFAULT_EMA_DECAY,
+    DEFAULT_EMA_START_STEP,
     DEFAULT_TARGET_LOSS,
+    DEFAULT_TARGET_LOSS_AUTO_STOP,
     DEFAULT_TARGET_LOSS_FLOOR,
     DEFAULT_TARGET_LOSS_WARMUP,
     DEFAULT_TARGET_LOSS_SMOOTHING,
+    DEFAULT_LOSS_MILESTONE_INTERVAL,
+    DEFAULT_SAMPLE_BACKEND,
     DEFAULT_EPOCHS,
     DEFAULT_GRADIENT_ACCUMULATION,
     DEFAULT_GRADIENT_CHECKPOINTING_RATIO,
@@ -54,15 +58,30 @@ from sidestep_engine.training_defaults import (
     DEFAULT_SAVE_BEST_AFTER,
     DEFAULT_SAVE_BEST_EVERY_N_STEPS,
     DEFAULT_SAVE_EVERY,
+    DEFAULT_SAMPLE_EVERY,
+    DEFAULT_SAMPLE_DURATION,
+    DEFAULT_SAMPLE_STEPS,
+    DEFAULT_SAMPLE_SEED,
     DEFAULT_SCHEDULER_TYPE,
     DEFAULT_SEED,
     DEFAULT_SNR_GAMMA,
+    DEFAULT_LOSS_FN,
+    DEFAULT_HUBER_DELTA,
+    DEFAULT_CHANNEL_BALANCE,
+    DEFAULT_DYNAMIC_CHANNEL_BALANCE,
+    DEFAULT_VAE_CHANNEL_PRIOR,
+    DEFAULT_LATENT_NOISE,
+    DEFAULT_T_BIAS,
+    DEFAULT_LEGACY_LOSS,
     DEFAULT_WARMUP_START_FACTOR,
     DEFAULT_WARMUP_STEPS,
     DEFAULT_WEIGHT_DECAY,
     DEFAULT_TIMESTEP_MODE,
     DEFAULT_ADAPTIVE_TIMESTEP_RATIO,
     DEFAULT_VAL_SPLIT,
+    DEFAULT_LR_SCALE_SELF_ATTN,
+    DEFAULT_LR_SCALE_CROSS_ATTN,
+    DEFAULT_LR_SCALE_MLP,
 )
 
 from sidestep_engine.core.constants import VARIANT_DIR_MAP
@@ -427,7 +446,7 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
                          help=f"Maximum optimizer steps; 0 = use epochs only (default: {DEFAULT_MAX_STEPS})")
     g_train.add_argument("--shift", type=float, default=None, help=argparse.SUPPRESS)
     g_train.add_argument("--num-inference-steps", type=int, default=None, help=argparse.SUPPRESS)
-    g_train.add_argument("--optimizer-type", type=str, default=DEFAULT_OPTIMIZER_TYPE, choices=["adamw", "adamw8bit", "adafactor", "prodigy"], help=f"Optimizer (default: {DEFAULT_OPTIMIZER_TYPE})")
+    g_train.add_argument("--optimizer-type", type=str, default=DEFAULT_OPTIMIZER_TYPE, choices=["adamw", "adamw8bit", "adafactor", "prodigy", "scao", "rose", "automagic"], help=f"Optimizer (default: {DEFAULT_OPTIMIZER_TYPE})")
     g_train.add_argument("--scheduler-type", type=str, default=DEFAULT_SCHEDULER_TYPE, choices=["cosine", "cosine_restarts", "linear", "constant", "constant_with_warmup", "custom"], help=f"LR scheduler (default: {DEFAULT_SCHEDULER_TYPE})")
     g_train.add_argument("--scheduler-formula", type=str, default="", help="Custom LR formula (Python math expression). Only used with --scheduler-type custom")
     g_train.add_argument("--gradient-checkpointing", action=argparse.BooleanOptionalAction, default=True, help="Recompute activations to save VRAM (~40-60%% less, ~10-30%% slower). On by default; use --no-gradient-checkpointing to disable")
@@ -437,12 +456,16 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     # -- All the Levers (experimental enhancements) -------------------------
     g_levers = parser.add_argument_group("All the Levers (experimental)")
     g_levers.add_argument("--ema-decay", type=float, default=DEFAULT_EMA_DECAY, help=f"EMA decay for adapter weights (0=off, 0.9999=typical, default: {DEFAULT_EMA_DECAY})")
+    g_levers.add_argument("--ema-start-step", type=int, default=DEFAULT_EMA_START_STEP, help=f"Step at which EMA tracking begins (0=immediate, default: {DEFAULT_EMA_START_STEP})")
     g_levers.add_argument("--val-split", type=float, default=DEFAULT_VAL_SPLIT, help=f"Validation holdout fraction (0=off, 0.1=10%%, default: {DEFAULT_VAL_SPLIT})")
     g_levers.add_argument("--adaptive-timestep-ratio", type=float, default=DEFAULT_ADAPTIVE_TIMESTEP_RATIO, help=f"Adaptive timestep sampling ratio (0=off, 0.3=recommended, default: {DEFAULT_ADAPTIVE_TIMESTEP_RATIO}). Base/SFT only")
     g_levers.add_argument("--warmup-start-factor", type=float, default=DEFAULT_WARMUP_START_FACTOR, help=f"LR warmup starts at base_lr * this (default: {DEFAULT_WARMUP_START_FACTOR})")
     g_levers.add_argument("--cosine-eta-min-ratio", type=float, default=DEFAULT_COSINE_ETA_MIN_RATIO, help=f"Cosine scheduler decays LR to base_lr * this (default: {DEFAULT_COSINE_ETA_MIN_RATIO})")
     g_levers.add_argument("--cosine-restarts-count", type=int, default=DEFAULT_COSINE_RESTARTS_COUNT, help=f"Number of cosine restart cycles (default: {DEFAULT_COSINE_RESTARTS_COUNT})")
     g_levers.add_argument("--save-best-every-n-steps", type=int, default=DEFAULT_SAVE_BEST_EVERY_N_STEPS, help=f"Step-level best-model check interval (0=epoch only, default: {DEFAULT_SAVE_BEST_EVERY_N_STEPS})")
+    g_levers.add_argument("--lr-scale-self-attn", type=float, default=DEFAULT_LR_SCALE_SELF_ATTN, help=f"LR multiplier for self-attention params (default: {DEFAULT_LR_SCALE_SELF_ATTN})")
+    g_levers.add_argument("--lr-scale-cross-attn", type=float, default=DEFAULT_LR_SCALE_CROSS_ATTN, help=f"LR multiplier for cross-attention params (default: {DEFAULT_LR_SCALE_CROSS_ATTN})")
+    g_levers.add_argument("--lr-scale-mlp", type=float, default=DEFAULT_LR_SCALE_MLP, help=f"LR multiplier for MLP/FFN params (default: {DEFAULT_LR_SCALE_MLP})")
     g_levers.add_argument("--timestep-mu", type=float, default=None, help="Override logit-normal timestep mean (default: from model config, typically -0.4)")
     g_levers.add_argument("--timestep-sigma", type=float, default=None, help="Override logit-normal timestep sigma (default: from model config, typically 1.0)")
 
@@ -490,11 +513,36 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
     g_cfg = parser.add_argument_group("Config file")
     g_cfg.add_argument("--config", type=str, default=None,
                        help="Load training config from JSON file. CLI args override JSON values.")
+    g_cfg.add_argument("--preset", type=str, default=None,
+                       help="Load a wizard/GUI preset by name (searched in ./presets/, "
+                            "~/.config/sidestep/presets/, then built-ins). Uses the same "
+                            "field translation as the wizard, so presets saved from the "
+                            "wizard work headless. CLI args override preset values.")
 
     # -- Checkpointing -------------------------------------------------------
     g_ckpt = parser.add_argument_group("Checkpointing")
     g_ckpt.add_argument("--output-dir", "-o", type=str, default=None, help="Output directory for adapter weights")
     g_ckpt.add_argument("--save-every", type=int, default=DEFAULT_SAVE_EVERY, help=f"Save checkpoint every N epochs (default: {DEFAULT_SAVE_EVERY})")
+    g_ckpt.add_argument("--sample-every", type=int, default=DEFAULT_SAMPLE_EVERY,
+                         help=f"Generate a short audio preview every N epochs; 0=off (default: {DEFAULT_SAMPLE_EVERY})")
+    g_ckpt.add_argument("--sample-duration", type=float, default=DEFAULT_SAMPLE_DURATION,
+                         help=f"Duration in seconds of epoch audio previews (default: {DEFAULT_SAMPLE_DURATION})")
+    g_ckpt.add_argument("--sample-steps", type=int, default=DEFAULT_SAMPLE_STEPS,
+                         help="Inference steps for epoch previews; 0=auto: 8 turbo / 30 base (default: 0)")
+    g_ckpt.add_argument("--sample-seed", type=int, default=DEFAULT_SAMPLE_SEED,
+                         help=f"Fixed noise seed for epoch previews (default: {DEFAULT_SAMPLE_SEED})")
+    g_ckpt.add_argument("--sample-lyrics", type=str, default="",
+                         help="Lyrics for epoch previews (default: built-in generic verse/chorus)")
+    g_ckpt.add_argument("--sample-backend", type=str, default=DEFAULT_SAMPLE_BACKEND,
+                         choices=["auto", "engine", "python"], dest="sample_backend",
+                         help="Preview renderer: auto = external ace-synth engine when available, "
+                              "else in-process Python sampler (default: auto)")
+    g_ckpt.add_argument("--loss-milestone-interval", type=float,
+                         default=DEFAULT_LOSS_MILESTONE_INTERVAL,
+                         dest="loss_milestone_interval",
+                         help="Save an inference-ready adapter + audio preview each time smoothed "
+                              "loss first crosses a multiple of this value (e.g. 0.1 -> snapshots "
+                              "at loss 0.9, 0.8, ...). 0=off (default: 0)")
     g_ckpt.add_argument("--resume-from", type=str, default=None, help="Path to checkpoint dir to resume from")
     g_ckpt.add_argument("--strict-resume", action=argparse.BooleanOptionalAction, default=True,
                          help="Abort on config mismatch or failed state restore during resume (default: True)")
@@ -518,7 +566,12 @@ def _add_common_training_args(parser: argparse.ArgumentParser) -> None:
                          dest="target_loss_warmup",
                          help=f"Min steps before cruise control engages "
                               f"(default: {DEFAULT_TARGET_LOSS_WARMUP})")
-    g_ckpt.add_argument("--target-loss-smoothing", type=float, default=DEFAULT_TARGET_LOSS_SMOOTHING,
+    g_ckpt.add_argument('--target-loss-auto-stop', action=argparse.BooleanOptionalAction,
+                         default=DEFAULT_TARGET_LOSS_AUTO_STOP,
+                         dest="target_loss_auto_stop",
+                         help="Auto-stop training when MA5 loss drops below target_loss. "
+                              f"For queued/autonomous runs (default: {DEFAULT_TARGET_LOSS_AUTO_STOP})")
+    g_ckpt.add_argument('--target-loss-smoothing', type=float, default=DEFAULT_TARGET_LOSS_SMOOTHING,
                          dest="target_loss_smoothing",
                          help=f"EMA beta for loss smoothing in cruise control; higher=smoother "
                               f"(default: {DEFAULT_TARGET_LOSS_SMOOTHING})")
@@ -553,11 +606,41 @@ def _add_train_args(parser: argparse.ArgumentParser) -> None:
     g.add_argument("--timestep-mode", type=str, default=DEFAULT_TIMESTEP_MODE, choices=["continuous", "discrete"],
                    dest="timestep_mode",
                    help=f"Timestep sampling: 'continuous' (logit-normal, recommended) or 'discrete' (8-step turbo schedule). (default: {DEFAULT_TIMESTEP_MODE})")
+    g.add_argument("--timestep-window-min", type=float, default=0.0, dest="timestep_window_min",
+                   help="Train only on timesteps >= this (t=1 noise, t=0 clean). For interval-expert "
+                        "adapters: structure expert = 0.5..1.0, timbre expert = 0.0..0.5. (default: 0.0)")
+    g.add_argument("--timestep-window-max", type=float, default=1.0, dest="timestep_window_max",
+                   help="Train only on timesteps <= this. See --timestep-window-min. (default: 1.0)")
     g.add_argument("--cfg-ratio", type=float, default=DEFAULT_CFG_RATIO, help=f"CFG dropout probability (default: {DEFAULT_CFG_RATIO})")
-    g.add_argument("--loss-weighting", type=str, default=DEFAULT_LOSS_WEIGHTING, choices=["none", "min_snr"],
-                   help=f"Loss weighting: 'none' (flat MSE) or 'min_snr' (can yield better results on SFT/base, default: {DEFAULT_LOSS_WEIGHTING})")
+    g.add_argument("--loss-weighting", type=str, default=DEFAULT_LOSS_WEIGHTING, choices=["none", "min_snr", "flow_snr"],
+                   help=f"Loss weighting: 'flow_snr' (correct for rectified flow), 'min_snr' (DDPM, legacy), or 'none' (flat). (default: {DEFAULT_LOSS_WEIGHTING})")
     g.add_argument("--snr-gamma", type=float, default=DEFAULT_SNR_GAMMA,
-                   help=f"Gamma for min-SNR weighting (default: {DEFAULT_SNR_GAMMA})")
+                   help=f"Gamma clamp for flow_snr/min_snr weighting (default: {DEFAULT_SNR_GAMMA})")
+    g.add_argument("--loss-fn", type=str, default=DEFAULT_LOSS_FN,
+                   choices=["mse", "huber", "pseudo_huber", "x0_mse", "x0_pseudo_huber"],
+                   dest="loss_fn",
+                   help=f"Loss function. x0_ prefix computes loss on reconstructed x0 (t² weighting). (default: {DEFAULT_LOSS_FN})")
+    g.add_argument("--huber-delta", type=float, default=DEFAULT_HUBER_DELTA,
+                   dest="huber_delta",
+                   help=f"Huber loss delta threshold (default: {DEFAULT_HUBER_DELTA})")
+    g.add_argument("--channel-balance", action=argparse.BooleanOptionalAction, default=DEFAULT_CHANNEL_BALANCE,
+                   dest="channel_balance",
+                   help=f"Per-channel fidelity balancing (default: {DEFAULT_CHANNEL_BALANCE})")
+    g.add_argument("--dynamic-channel-balance", action=argparse.BooleanOptionalAction, default=DEFAULT_DYNAMIC_CHANNEL_BALANCE,
+                   dest="dynamic_channel_balance",
+                   help=f"Dynamically rebalance channel weights from running loss (default: {DEFAULT_DYNAMIC_CHANNEL_BALANCE})")
+    g.add_argument("--vae-channel-prior", action=argparse.BooleanOptionalAction, default=DEFAULT_VAE_CHANNEL_PRIOR,
+                   dest="vae_channel_prior",
+                   help=f"Use VAE decoder channel importance in channel weights (default: {DEFAULT_VAE_CHANNEL_PRIOR})")
+    g.add_argument("--latent-noise", type=float, default=DEFAULT_LATENT_NOISE,
+                   dest="latent_noise",
+                   help=f"Per-channel latent noise regularization scale, 0=off (default: {DEFAULT_LATENT_NOISE})")
+    g.add_argument("--t-bias", type=float, default=DEFAULT_T_BIAS,
+                   dest="t_bias",
+                   help=f"Asymmetric timestep emphasis toward low-t detail, 0=symmetric (default: {DEFAULT_T_BIAS})")
+    g.add_argument("--legacy-loss", action="store_true", default=DEFAULT_LEGACY_LOSS,
+                   dest="legacy_loss",
+                   help="Revert all loss math to pre-flow-SNR behavior (flat MSE, no channel balancing)")
     g.add_argument("--ignore-fisher-map", action="store_true", default=False,
                    help="Bypass auto-detection of fisher_map.json in --dataset-dir")
     g.add_argument("--dataset-repeats", "-R", type=int, default=DEFAULT_DATASET_REPEATS,

@@ -698,6 +698,8 @@
               <div class="field-error"></div>
               <div class="field-warning" id="warn-pp-lr"></div>
               <div id="prodigy-lr-hint" class="u-text-warning" style="display: none; font-size: var(--font-size-sm); margin-top: 2px;">Prodigy auto-tunes LR. Start around 0.1 (not 1e-4).</div>
+              <div id="rose-lr-hint" class="u-text-warning" style="display: none; font-size: var(--font-size-sm); margin-top: 2px;">Rose is stateless — tune LR independently from AdamW. Try 0.01–0.1.</div>
+              <div id="automagic-lr-hint" class="u-text-warning" style="display: none; font-size: var(--font-size-sm); margin-top: 2px;">Automagic self-manages LR per-element. Start LR is clamped to 1e-6 — leave as default.</div>
               <div id="help-full-lr" class="help-panel">
                 <h4>What is Learning Rate?</h4>
                 <p><strong>Simple:</strong> How big a step the AI takes when learning. Too big = chaos. Too small = takes forever.</p>
@@ -818,6 +820,7 @@
                 </div>
               </div>
               <div id="cfg-settings-group">
+                <!-- Row 1: Timestep sampling + CFG -->
                 <div class="form-row">
                   <div class="form-group" id="timestep-mode-group">
                     <label class="form-group__label" for="full-timestep-mode">Timestep sampling <span class="help-icon" data-help="help-full-ts-mode">?</span></label>
@@ -840,26 +843,97 @@
                       <p>Only used by base/sft models. Turbo doesn't use CFG. Default 0.15 means 15% of samples train without text.</p>
                     </div>
                   </div>
-                  <div class="form-group" id="loss-weighting-group">
-                    <label class="form-group__label">Loss weighting <span style="color: var(--muted); font-size: var(--font-size-sm);">(min_snr)</span> <span class="help-icon" data-help="help-full-loss-wt">?</span> <span style="color: var(--muted); font-size: var(--font-size-sm);">(base/sft only)</span></label>
-                    <div id="help-full-loss-wt" class="help-panel">
-                      <p><strong>none:</strong> All timesteps contribute equally to the loss. Standard approach.</p>
-                      <p><strong>min_snr:</strong> Reduces loss contribution from very noisy or very clean timesteps, focusing training on the "informative middle" where the model learns most. Requires setting SNR gamma.</p>
-                      <p>Only relevant for base/sft models that use continuous timestep sampling.</p>
+                </div>
+                <!-- Row 2: Loss function + weighting -->
+                <div class="form-row">
+                  <div class="form-group" id="loss-fn-group">
+                    <label class="form-group__label">Loss function <span class="help-icon" data-help="help-full-loss-fn">?</span></label>
+                    <div id="help-full-loss-fn" class="help-panel">
+                      <p><strong>mse:</strong> Mean squared error on velocity. Equal weight across all timesteps. Standard default.</p>
+                      <p><strong>huber:</strong> Smooth L1 on velocity. Caps gradient for large errors — can wash out arrangement.</p>
+                      <p><strong>pseudo_huber:</strong> Smooth Huber approximation on velocity. Less aggressive clipping than huber.</p>
+                      <p><strong>x0_mse:</strong> MSE on reconstructed x₀. Implicit t² weighting prioritizes arrangement — the paper's intended formulation. Recommended.</p>
+                      <p><strong>x0_pseudo_huber:</strong> Pseudo-Huber on reconstructed x₀. Combines t² arrangement priority with smooth error handling.</p>
                     </div>
-                    <select class="select" id="full-loss-weighting">
-                      <option value="none" selected>none</option>
-                      <option value="min_snr">min_snr</option>
+                    <select class="select" id="full-loss-fn">
+                      <option value="mse" selected>mse</option>
+                      <option value="huber">huber</option>
+                      <option value="pseudo_huber">pseudo_huber</option>
+                      <option value="x0_mse">x0_mse</option>
+                      <option value="x0_pseudo_huber">x0_pseudo_huber</option>
                     </select>
                   </div>
-                  <div class="form-group" id="snr-gamma-group" style="display: none;">
+                  <div class="form-group" id="huber-delta-group">
+                    <label class="form-group__label">Huber delta</label>
+                    <input class="input has-default" type="number" id="full-huber-delta" value="1.0" step="0.1" data-default="1.0" data-validate="gt:0">
+                    <div class="field-error"></div>
+                  </div>
+                  <div class="form-group" id="loss-weighting-group">
+                    <label class="form-group__label">Loss weighting <span class="help-icon" data-help="help-full-loss-wt">?</span></label>
+                    <div id="help-full-loss-wt" class="help-panel">
+                      <p><strong>flow_snr:</strong> Correct loss weighting for rectified flow matching. Uses 1/(t*(1-t)) with asymmetric bias. Recommended default.</p>
+                      <p><strong>min_snr:</strong> DDPM-derived SNR formula. Legacy, technically incorrect for flow matching but still functional.</p>
+                      <p><strong>none:</strong> All timesteps contribute equally. Flat loss.</p>
+                    </div>
+                    <select class="select" id="full-loss-weighting">
+                      <option value="flow_snr" selected>flow_snr</option>
+                      <option value="min_snr">min_snr</option>
+                      <option value="none">none</option>
+                    </select>
+                  </div>
+                  <div class="form-group" id="snr-gamma-group">
                     <label class="form-group__label">SNR gamma <span class="help-icon" data-help="help-full-snr">?</span></label>
                     <div id="help-full-snr" class="help-panel">
-                      <p><strong>Simple:</strong> Clipping threshold for min-SNR loss weighting. Controls how aggressively noisy timesteps are down-weighted.</p>
-                      <p>5.0 is the paper's recommended default. Lower values clip more aggressively.</p>
+                      <p>Clipping threshold for flow_snr/min_snr loss weighting. Controls how aggressively extreme timesteps are down-weighted.</p>
+                      <p>5.0 is the recommended default. Lower values clip more aggressively.</p>
                     </div>
                     <input class="input has-default" type="number" id="full-snr-gamma" value="5.0" step="0.1" data-default="5.0" data-validate="gt:0">
                     <div class="field-error"></div>
+                  </div>
+                  <div class="form-group" id="t-bias-group">
+                    <label class="form-group__label">Timestep bias <span class="help-icon" data-help="help-full-t-bias">?</span></label>
+                    <div id="help-full-t-bias" class="help-panel">
+                      <p>Biases training toward low-t (near-clean, fine-detail) timesteps. Errors at t~0 directly corrupt final output with no further ODE steps to correct.</p>
+                      <p>0 = symmetric, 0.5 = moderate detail bias (recommended), up to 2.0 for extreme bias.</p>
+                    </div>
+                    <input class="input has-default" type="number" id="full-t-bias" value="0.5" step="0.1" data-default="0.5" data-validate="range:0:2">
+                    <div class="field-error"></div>
+                  </div>
+                </div>
+                <!-- Row 3: Channel fidelity controls -->
+                <div class="form-row">
+                  <div class="form-group" id="channel-balance-group">
+                    <label class="form-group__label"><input type="checkbox" id="full-channel-balance" checked> Per-channel fidelity balancing <span class="help-icon" data-help="help-full-ch-bal">?</span></label>
+                    <div id="help-full-ch-bal" class="help-panel">
+                      <p>Weights loss per latent channel by inverse standard deviation. Prevents high-variance channels from dominating gradients.</p>
+                    </div>
+                  </div>
+                  <div class="form-group" id="vae-channel-prior-group">
+                    <label class="form-group__label"><input type="checkbox" id="full-vae-channel-prior" checked> VAE channel importance prior <span class="help-icon" data-help="help-full-vae-prior">?</span></label>
+                    <div id="help-full-vae-prior" class="help-panel">
+                      <p>Incorporates per-channel L2 norms from the VAE decoder into channel weights. Focuses training on channels that most affect what you hear.</p>
+                    </div>
+                  </div>
+                  <div class="form-group" id="dynamic-channel-balance-group">
+                    <label class="form-group__label"><input type="checkbox" id="full-dynamic-channel-balance"> Dynamic channel rebalancing <span class="help-icon" data-help="help-full-dyn-ch">?</span></label>
+                    <div id="help-full-dyn-ch" class="help-panel">
+                      <p>Dynamically adjusts channel weights based on a running average of per-channel loss. Blends 50/50 with the static VAE prior so channels that are struggling get more gradient. Prevents easy channels from dominating training.</p>
+                    </div>
+                  </div>
+                  <div class="form-group" id="latent-noise-group">
+                    <label class="form-group__label">Latent noise scale <span class="help-icon" data-help="help-full-lat-noise">?</span></label>
+                    <div id="help-full-lat-noise" class="help-panel">
+                      <p>Adds per-channel scaled noise to target latents before flow interpolation. Provides regularization proportional to each channel's natural variance.</p>
+                      <p>0 = off, 0.02 = recommended. Higher values increase regularization.</p>
+                    </div>
+                    <input class="input has-default" type="number" id="full-latent-noise" value="0.02" step="0.005" data-default="0.02" data-validate="range:0:1">
+                    <div class="field-error"></div>
+                  </div>
+                  <div class="form-group" id="legacy-loss-group">
+                    <label class="form-group__label"><input type="checkbox" id="full-legacy-loss"> Legacy loss mode <span class="help-icon" data-help="help-full-legacy">?</span></label>
+                    <div id="help-full-legacy" class="help-panel">
+                      <p>Reverts all loss math changes: forces flat MSE with no channel balancing, no latent noise, no attention masking in loss. Use this if you want the exact pre-update behavior.</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -934,12 +1008,18 @@
                     <p><strong>AdamW 8-bit:</strong> Same algorithm but stores states in 8-bit precision. Saves ~30% VRAM with negligible quality impact.</p>
                     <p><strong>AdaFactor:</strong> Uses almost no extra memory by computing running statistics on-the-fly. Good for extreme VRAM constraints.</p>
                     <p><strong>Prodigy:</strong> Automatically tunes the learning rate during training. Set LR to ~0.1 and let it find the right value. Experimental but promising.</p>
+                    <p><strong>SCAO:</strong> Second-order optimizer using sparse curvature (Kronecker factors). Near-AdamW memory cost but potentially faster convergence. Requires <code>uv pip install git+https://github.com/whispering3/scao.git</code>.</p>
+                    <p><strong>Rose:</strong> Stateless range-normalized optimizer. <strong>Zero optimizer VRAM</strong> — all memory goes to model and activations. Requires independent LR tuning (try 0.01–0.1).</p>
+                    <p><strong>Automagic:</strong> Per-element adaptive LR with 8-bit compression. Self-manages learning rate — each weight gets its own LR that adjusts based on gradient consistency. Factored second moments (like Adafactor). Vendored, no install needed.</p>
                   </div>
                   <select class="select vram-input" id="full-optimizer">
                     <option value="adamw">AdamW (standard)</option>
                     <option value="adamw8bit">AdamW 8-bit (saves ~30%)</option>
                     <option value="adafactor">AdaFactor (minimal state)</option>
                     <option value="prodigy">Prodigy (auto-tune LR)</option>
+                    <option value="scao">SCAO (second-order)</option>
+                    <option value="rose">Rose (stateless, zero VRAM)</option>
+                    <option value="automagic">Automagic (per-element adaptive LR)</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -1094,6 +1174,15 @@
                   <div class="field-error"></div>
                 </div>
                 <div class="form-group">
+                  <label class="form-group__label">Audio sample every N epochs <span class="help-icon" data-help="help-full-sample-every">?</span></label>
+                  <div id="help-full-sample-every" class="help-panel">
+                    <p><strong>Simple:</strong> Generates a 30-second audio preview every N epochs using the current adapter weights, so you can hear the style converge. 0 = disabled.</p>
+                    <p>Uses the caption/BPM/key from your dataset's first sample plus a generic verse/chorus, with a fixed seed so previews are directly comparable across epochs. Written to the run's <code>samples/</code> folder. Adds a few seconds per sample; briefly loads the text encoder (first sample) and VAE (each sample).</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-sample-every" value="0" data-default="0" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                </div>
+                <div class="form-group">
                   <label class="form-group__label">Log every N steps <span class="help-icon" data-help="help-full-log-every">?</span></label>
                   <div id="help-full-log-every" class="help-panel">
                     <p><strong>Simple:</strong> How often to write loss values to TensorBoard and the training monitor chart. Lower = more granular graphs but slightly more I/O overhead.</p>
@@ -1110,6 +1199,40 @@
                   <input class="input has-default" type="number" id="full-log-heavy-every" value="50" data-default="50" data-validate="gte:0 int">
                   <div class="field-error"></div>
                   <div class="hint">0 = disabled. Logs gradient norm statistics.</div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Sample duration (s) <span class="help-icon" data-help="help-full-sample-duration">?</span></label>
+                  <div id="help-full-sample-duration" class="help-panel">
+                    <p><strong>Simple:</strong> Length in seconds of each audio preview (epoch previews and loss-milestone previews).</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-sample-duration" value="30" data-default="30" data-validate="gt:0">
+                  <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Sample steps <span class="help-icon" data-help="help-full-sample-steps">?</span></label>
+                  <div id="help-full-sample-steps" class="help-panel">
+                    <p><strong>Simple:</strong> Inference steps for audio previews. 0 = auto (8 for turbo models, 30 for base).</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-sample-steps" value="0" data-default="0" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                  <div class="hint">0 = auto (8 turbo / 30 base)</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Sample seed <span class="help-icon" data-help="help-full-sample-seed">?</span></label>
+                  <div id="help-full-sample-seed" class="help-panel">
+                    <p><strong>Simple:</strong> Fixed noise seed for previews so every sample in a run is directly comparable. Sampling never disturbs training RNG.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-sample-seed" value="42" data-default="42" data-validate="gte:0 int">
+                  <div class="field-error"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Sample lyrics <span class="help-icon" data-help="help-full-sample-lyrics">?</span></label>
+                  <div id="help-full-sample-lyrics" class="help-panel">
+                    <p><strong>Simple:</strong> Lyrics used for audio previews. Leave empty for the built-in generic verse/chorus.</p>
+                  </div>
+                  <textarea class="input" id="full-sample-lyrics" rows="2" placeholder="(built-in generic verse/chorus)"></textarea>
                 </div>
               </div>
               <div class="form-row">
@@ -1240,6 +1363,31 @@
                   <div class="hint">Higher = smoother (0.95–0.99)</div>
                 </div>
               </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="toggle">
+                    <input type="checkbox" id="full-target-loss-auto-stop">
+                    <span class="toggle__track"></span>
+                    Auto-stop at target <span class="help-icon" data-help="help-full-auto-stop">?</span>
+                  </label>
+                  <div id="help-full-auto-stop" class="help-panel">
+                    <p><strong>Simple:</strong> When enabled and target loss is set, training automatically saves the best checkpoint and terminates as soon as the MA5 smoothed loss drops below the target value.</p>
+                    <p><strong>Use case:</strong> Queued/autonomous training runs where you want to free the GPU as soon as the desired quality is reached instead of running the full epoch count.</p>
+                  </div>
+                  <div class="hint">Save best + terminate when MA5 &lt; target loss. For autonomous queues.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Loss milestone interval (0=off) <span class="help-icon" data-help="help-full-loss-milestone">?</span></label>
+                  <div id="help-full-loss-milestone" class="help-panel">
+                    <h4>Loss-Milestone Snapshots</h4>
+                    <p><strong>Simple:</strong> Saves an inference-ready adapter + audio preview each time the smoothed (MA5) loss first crosses a multiple of this value. With 0.1 you get snapshots at loss 0.9, 0.8, ... 0.1 in <code>milestones/loss_X.XX/</code>.</p>
+                    <p><strong>Use case:</strong> Find the highest loss where the adapter already sounds like the artist, then set Target loss there for faster future runs.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-loss-milestone-interval" value="0" step="0.05" data-default="0" data-validate="gte:0">
+                  <div class="field-error"></div>
+                  <div class="hint">0.1 = adapter + preview at each 0.1 of loss. 0=off.</div>
+                </div>
+              </div>
               <!-- Optimizer internals -->
               <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Optimizer Internals</div>
               <div class="form-row">
@@ -1274,6 +1422,41 @@
                 </div>
               </div>
 
+              <!-- Per-layer LR scaling -->
+              <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Per-Layer LR Scaling</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-group__label">Self-attention LR scale <span class="help-icon" data-help="help-full-lr-sa">?</span></label>
+                  <div id="help-full-lr-sa" class="help-panel">
+                    <p><strong>Simple:</strong> Multiplier applied to the base learning rate for self-attention LoRA parameters. Self-attention learns temporal structure — how audio frames relate to each other over time.</p>
+                    <p>1.0 = same as base LR (default). Lower values (0.3–0.5) slow down structural learning, which can prevent the "warping" artifacts some users see. 0 = freeze self-attention entirely.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-lr-scale-self-attn" value="1" step="0.1" data-default="1" data-validate="range:0:10">
+                  <div class="field-error"></div>
+                  <div class="hint">1.0 = full LR. Lower = slower structural learning.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Cross-attention LR scale <span class="help-icon" data-help="help-full-lr-ca">?</span></label>
+                  <div id="help-full-lr-ca" class="help-panel">
+                    <p><strong>Simple:</strong> Multiplier applied to the base learning rate for cross-attention LoRA parameters. Cross-attention controls how well the model follows text/lyric prompts.</p>
+                    <p>1.0 = same as base LR (default). Lower values (0.3–0.5) protect general prompt-following ability. Higher values make the model learn your specific prompt style faster but risk breaking general comprehension.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-lr-scale-cross-attn" value="1" step="0.1" data-default="1" data-validate="range:0:10">
+                  <div class="field-error"></div>
+                  <div class="hint">1.0 = full LR. Lower = protect prompt following.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">MLP/FFN LR scale <span class="help-icon" data-help="help-full-lr-mlp">?</span></label>
+                  <div id="help-full-lr-mlp" class="help-panel">
+                    <p><strong>Simple:</strong> Multiplier applied to the base learning rate for MLP/FFN LoRA parameters (gate_proj, up_proj, down_proj). The FFN layers carry timbre and tonal texture information.</p>
+                    <p>1.0 = same as base LR (default). Higher values let the model memorize your style's texture faster. Lower values slow texture adaptation.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-lr-scale-mlp" value="1" step="0.1" data-default="1" data-validate="range:0:10">
+                  <div class="field-error"></div>
+                  <div class="hint">1.0 = full LR. Higher = faster texture learning.</div>
+                </div>
+              </div>
+
               <!-- Experimental enhancements -->
               <div style="color: var(--primary); font-size: var(--font-size-sm); font-weight: bold; margin: var(--space-md) 0 var(--space-xs);">Experimental Enhancements</div>
               <div class="form-row">
@@ -1287,6 +1470,16 @@
                   <input class="input has-default" type="number" id="full-ema-decay" value="0" step="0.0001" data-default="0" data-validate="range:0:0.9999">
                   <div class="field-error"></div>
                   <div class="hint">Smoothed adapter weights. 0.9999=typical, 0.999=faster.</div>
+                </div>
+                <div class="form-group" id="ema-start-group">
+                  <label class="form-group__label">EMA start step <span class="help-icon" data-help="help-full-ema-start">?</span></label>
+                  <div id="help-full-ema-start" class="help-panel">
+                    <p>The optimizer step at which EMA tracking begins. Before this step, no shadow averaging occurs at all.</p>
+                    <p>At the start step, the shadow is initialised to the current weights and full-rate exponential averaging begins. This avoids polluting the shadow with early random weight noise.</p>
+                    <p>0 = start immediately. 2000 = recommended default.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-ema-start-step" value="2000" step="100" data-default="2000" data-validate="gte:0 int">
+                  <div class="field-error"></div>
                 </div>
                 <div class="form-group">
                   <label class="form-group__label">Validation split (0=off) <span class="help-icon" data-help="help-full-val">?</span></label>
@@ -1344,6 +1537,23 @@
                   <input class="input has-default" type="number" id="full-timestep-sigma" value="1.0" step="0.1" data-default="1.0" data-validate="gt:0">
                   <div class="field-error"></div>
                   <div class="field-warning" id="warn-timestep-sigma"></div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Timestep window min <span class="help-icon" data-help="help-full-ts-window-min">?</span></label>
+                  <div id="help-full-ts-window-min" class="help-panel">
+                    <p><strong>Simple:</strong> Train only on timesteps &ge; this value (0&ndash;1). Used for interval-expert / timestep-windowed adapters. 0 = no lower bound.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-timestep-window-min" value="0" step="0.05" data-default="0" data-validate="range:0:1">
+                  <div class="field-error"></div>
+                  <div class="hint">0&ndash;1. For timestep-windowed adapters.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-group__label">Timestep window max <span class="help-icon" data-help="help-full-ts-window-max">?</span></label>
+                  <div id="help-full-ts-window-max" class="help-panel">
+                    <p><strong>Simple:</strong> Train only on timesteps &le; this value (0&ndash;1). 1 = no upper bound.</p>
+                  </div>
+                  <input class="input has-default" type="number" id="full-timestep-window-max" value="1" step="0.05" data-default="1" data-validate="range:0:1">
+                  <div class="field-error"></div>
                 </div>
               </div>
 
@@ -1752,6 +1962,13 @@
                 <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Epoch time</span><span id="monitor-epoch-time">--</span></div>
                 <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">Elapsed</span><span id="monitor-elapsed">--</span></div>
                 <div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: var(--muted);">ETA</span><span style="color: var(--primary);" id="monitor-eta-right">--</span></div>
+              </div>
+            </div>
+
+            <div class="panel" id="monitor-conditioning-panel" style="margin-bottom: var(--space-md); display: none;">
+              <div class="panel__title">Conditioning</div>
+              <div style="font-size: var(--font-size-sm);" id="monitor-conditioning">
+                <div style="color: var(--muted); padding: 3px 0;">Waiting for data...</div>
               </div>
             </div>
 
@@ -2983,6 +3200,9 @@
                 <option value="adamw8bit">AdamW 8-bit</option>
                 <option value="adafactor">AdaFactor</option>
                 <option value="prodigy">Prodigy</option>
+                <option value="scao">SCAO</option>
+                <option value="rose">Rose</option>
+                <option value="automagic">Automagic</option>
               </select>
             </div>
             <div class="form-group" style="flex: 1;">

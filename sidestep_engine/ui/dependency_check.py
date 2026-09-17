@@ -47,6 +47,14 @@ _PRODIGYOPT = OptionalDependency(
     impact_if_missing="Training falls back to AdamW (no Prodigy adaptation).",
 )
 
+_SCAO = OptionalDependency(
+    key="scao",
+    module="scao",
+    install_spec="scao @ git+https://github.com/whispering3/scao.git",
+    reason="Optimizer `scao` was selected",
+    impact_if_missing="Training falls back to AdamW (no SCAO curvature-aware updates).",
+)
+
 _TENSORBOARD = OptionalDependency(
     key="tensorboard",
     module="torch.utils.tensorboard",
@@ -119,6 +127,8 @@ def required_training_optionals(train_cfg) -> list[OptionalDependency]:
         deps.append(_BITSANDBYTES)
     elif optimizer_type == "prodigy":
         deps.append(_PRODIGYOPT)
+    elif optimizer_type == "scao":
+        deps.append(_SCAO)
 
     log_every = int(getattr(train_cfg, "log_every", 0) or 0)
     log_heavy_every = int(getattr(train_cfg, "log_heavy_every", 0) or 0)

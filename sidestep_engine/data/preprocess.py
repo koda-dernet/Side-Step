@@ -31,7 +31,6 @@ from sidestep_engine.data.preprocess_discovery import (
     load_dataset_metadata as _load_dataset_metadata,
     load_sample_metadata as _load_sample_metadata,
     safe_output_stem as _safe_output_stem,
-    select_genre_indices as _select_genre_indices,
 )
 from sidestep_engine.data.preprocess_prompt import (
     build_simple_prompt as _build_simple_prompt,
@@ -101,6 +100,103 @@ def _write_preprocess_meta(
         meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except Exception as exc:
         logger.debug("Could not write preprocess_meta.json: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Channel statistics for flow matching fidelity balancing
+# ---------------------------------------------------------------------------
+
+def _compute_channel_stats(
+    out_path: Path,
+    checkpoint_dir: str,
+    variant: str,
+) -> None:
+    """Compute per-channel mean/std from all final .pt files and write channel_stats.json.
+
+    Also extracts per-channel L2 norms from the VAE decoder's first conv
+    layer (``decoder.conv1.weight_v``) for importance weighting.
+    """
+    stats_path = out_path / "channel_stats.json"
+
+    # Collect target_latents from all .pt files
+    pt_files = [f for f in out_path.glob("*.pt") if f.name != "manifest.json"]
+    if not pt_files:
+        logger.info("[Side-Step] No .pt files found -- skipping channel_stats")
+        return
+
+    running_sum = None
+    running_sq_sum = None
+    n_frames = 0
+
+    for pt_file in pt_files:
+        try:
+            data = torch.load(str(pt_file), weights_only=False, map_location="cpu")
+            latents = data.get("target_latents")
+            if latents is None:
+                continue
+            latents = latents.float()  # [T, C]
+            if running_sum is None:
+                running_sum = torch.zeros(latents.shape[-1], dtype=torch.float64)
+                running_sq_sum = torch.zeros(latents.shape[-1], dtype=torch.float64)
+            running_sum += latents.sum(dim=0).double()
+            running_sq_sum += (latents ** 2).sum(dim=0).double()
+            n_frames += latents.shape[0]
+        except Exception as exc:
+            logger.debug("channel_stats: skip %s: %s", pt_file.name, exc)
+
+    if n_frames == 0 or running_sum is None:
+        logger.warning("[Side-Step] No valid latents for channel_stats")
+        return
+
+    channel_mean = (running_sum / n_frames).float()
+    channel_var = (running_sq_sum / n_frames - channel_mean.double() ** 2).clamp(min=1e-10).float()
+    channel_std = channel_var.sqrt()
+
+    # VAE channel importance from decoder.conv1.weight_v norms
+    vae_norms = None
+    try:
+        from sidestep_engine.core.constants import VARIANT_DIR_MAP
+        mapped = VARIANT_DIR_MAP.get(variant, variant)
+        ckpt_root = Path(checkpoint_dir) / mapped
+        # Try loading just the VAE state dict keys we need
+        import glob
+        safetensor_files = list(ckpt_root.glob("*.safetensors"))
+        if safetensor_files:
+            try:
+                from safetensors.torch import load_file
+                for sf in safetensor_files:
+                    st = load_file(str(sf))
+                    for key in st:
+                        if "decoder.conv1.weight_v" in key or "vae" in key.lower() and "conv1.weight_v" in key:
+                            w = st[key].float()  # [out_ch, in_ch, kernel]
+                            vae_norms = w.norm(dim=(1, 2)).tolist()[:channel_mean.shape[0]]
+                            break
+                    if vae_norms is not None:
+                        break
+            except ImportError:
+                pass
+    except Exception as exc:
+        logger.debug("channel_stats: could not read VAE norms: %s", exc)
+
+    payload = {
+        "channel_mean": channel_mean.tolist(),
+        "channel_std": channel_std.tolist(),
+        "n_samples": len(pt_files),
+        "n_frames": n_frames,
+    }
+    if vae_norms is not None:
+        payload["vae_channel_norms"] = vae_norms
+
+    try:
+        stats_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        logger.info(
+            "[Side-Step] channel_stats.json written (%d samples, %d frames, "
+            "std range %.4f-%.4f)",
+            len(pt_files), n_frames,
+            float(channel_std.min()), float(channel_std.max()),
+        )
+    except Exception as exc:
+        logger.warning("[Side-Step] Could not write channel_stats.json: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +345,10 @@ def preprocess_audio_files(
     )
 
     failed = pass1_failed + pass2_failed
+
+    # Compute per-channel statistics for flow matching fidelity balancing
+    _compute_channel_stats(out_path, checkpoint_dir, variant)
+
     _write_preprocess_meta(
         out_path,
         audio_dir=audio_dir,
@@ -332,13 +432,6 @@ def _pass1_light(
 
     # Dataset-level prompt settings from ACE-Step's metadata block
     tag_position = ds_meta.get("tag_position", "prepend")
-    genre_ratio = ds_meta.get("genre_ratio", 0)
-    genre_indices = _select_genre_indices(total, genre_ratio)
-    if genre_indices:
-        logger.info(
-            "[Side-Step] genre_ratio=%d%% -- %d/%d samples will use genre as prompt",
-            genre_ratio, len(genre_indices), total,
-        )
     if tag_position != "prepend":
         logger.info("[Side-Step] tag_position=%s (from dataset metadata)", tag_position)
 
@@ -395,15 +488,14 @@ def _pass1_light(
                 caption = sm.get("caption", af.stem)
                 lyrics = sm.get("lyrics", "[Instrumental]")
 
-                # Build text prompt using dataset-level tag_position and genre_ratio
-                use_genre = i in genre_indices
-                text_prompt = _build_simple_prompt(sm, tag_position=tag_position, use_genre=use_genre)
+                # Build CAPTION text prompt (always encoded)
+                caption_prompt = _build_simple_prompt(sm, tag_position=tag_position, use_genre=False)
 
                 with torch.no_grad():
-                    text_hs, text_mask = encode_text(text_enc, tokenizer, text_prompt, device, dtype)
+                    text_hs, text_mask = encode_text(text_enc, tokenizer, caption_prompt, device, dtype)
                     lyric_hs, lyric_mask = encode_lyrics(text_enc, tokenizer, lyrics, device, dtype)
 
-                # Validate text encoder outputs
+                # Validate caption text encoder outputs
                 _bad_tensor = None
                 for _tname, _tens in [("text_hs", text_hs), ("lyric_hs", lyric_hs)]:
                     if torch.isnan(_tens).any() or torch.isinf(_tens).any():
@@ -419,9 +511,31 @@ def _pass1_light(
                     del lyric_hs, lyric_mask
                     continue
 
+                # Build GENRE text prompt (only when sample has genre text)
+                genre_text = sm.get("genre", "")
+                has_genre = bool(genre_text and genre_text.strip())
+                genre_text_hs = None
+                genre_text_mask = None
+                if has_genre:
+                    genre_prompt = _build_simple_prompt(sm, tag_position=tag_position, use_genre=True)
+                    with torch.no_grad():
+                        genre_text_hs, genre_text_mask = encode_text(
+                            text_enc, tokenizer, genre_prompt, device, dtype,
+                        )
+                    # Validate genre text encoder output
+                    if torch.isnan(genre_text_hs).any() or torch.isinf(genre_text_hs).any():
+                        logger.warning(
+                            "[Side-Step] Pass 1: genre text NaN/Inf for %s -- skipping genre variant",
+                            af.name,
+                        )
+                        del genre_text_hs, genre_text_mask
+                        genre_text_hs = None
+                        genre_text_mask = None
+                        has_genre = False
+
                 # 4. Save intermediate
                 tmp_path = out_path / f"{_stem}.tmp.pt"
-                torch.save({
+                save_dict = {
                     "target_latents": target_latents.squeeze(0).cpu(),
                     "attention_mask": attention_mask.squeeze(0).cpu(),
                     "text_hidden_states": text_hs.cpu(),
@@ -445,11 +559,18 @@ def _pass1_light(
                         "prompt_override": sm.get("prompt_override"),
                         "repeat": 1,  # Global dataset_repeats replaces per-sample repeat
                     },
-                }, tmp_path)
+                }
+                # Store genre text variant alongside caption variant
+                if has_genre and genre_text_hs is not None:
+                    save_dict["genre_text_hidden_states"] = genre_text_hs.cpu()
+                    save_dict["genre_text_attention_mask"] = genre_text_mask.cpu()
+                torch.save(save_dict, tmp_path)
 
                 # Free GPU tensors from this iteration before the next one
                 del target_latents, attention_mask, text_hs, text_mask
-                del lyric_hs, lyric_mask
+                del lyric_hs, lyric_mask, save_dict
+                if genre_text_hs is not None:
+                    del genre_text_hs, genre_text_mask
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 elif hasattr(torch, 'mps') and torch.mps.is_available():
@@ -458,7 +579,8 @@ def _pass1_light(
                     torch.xpu.empty_cache()
 
                 intermediates.append(tmp_path)
-                logger.debug("[Side-Step] Pass 1 OK: %s", af.name)
+                _genre_tag = " [+genre]" if has_genre else ""
+                logger.debug("[Side-Step] Pass 1 OK: %s%s", af.name, _genre_tag)
                 if progress_callback:
                     progress_callback(i + 1, total, f"[Pass 1] OK: {af.name}")
 
@@ -535,8 +657,7 @@ def _pass2_heavy(
                 silence_latent = data["silence_latent"].to(model_device, dtype=model_dtype)
                 latent_length = data["latent_length"]
 
-                # DIT encoder pass (adapter-agnostic: same tensors for
-                # LoRA and LoKR -- only the adapter injection differs).
+                # --- Caption variant (always encoded) --------------------------
                 encoder_hs, encoder_mask = run_encoder(
                     model,
                     text_hidden_states=text_hs,
@@ -547,8 +668,29 @@ def _pass2_heavy(
                     dtype=model_dtype,
                 )
 
-                # Free encoder inputs immediately after use
-                del text_hs, text_mask, lyric_hs, lyric_mask
+                # Free caption text inputs (lyrics are reused for genre variant)
+                del text_hs, text_mask
+
+                # --- Genre variant (only when intermediate has genre text) ------
+                has_genre = "genre_text_hidden_states" in data
+                genre_encoder_hs = None
+                genre_encoder_mask = None
+                if has_genre:
+                    genre_text_hs = data["genre_text_hidden_states"].to(model_device, dtype=model_dtype)
+                    genre_text_mask = data["genre_text_attention_mask"].to(model_device, dtype=model_dtype)
+                    genre_encoder_hs, genre_encoder_mask = run_encoder(
+                        model,
+                        text_hidden_states=genre_text_hs,
+                        text_attention_mask=genre_text_mask,
+                        lyric_hidden_states=lyric_hs,
+                        lyric_attention_mask=lyric_mask,
+                        device=str(model_device),
+                        dtype=model_dtype,
+                    )
+                    del genre_text_hs, genre_text_mask
+
+                # Free shared lyric tensors
+                del lyric_hs, lyric_mask
 
                 # Build context latents (silence-based, standard text2music)
                 if silence_latent.dim() == 2:
@@ -575,25 +717,45 @@ def _pass2_heavy(
                         _bad_tensor, tmp_path.stem,
                     )
                     del encoder_hs, encoder_mask, context_latents, data
+                    if genre_encoder_hs is not None:
+                        del genre_encoder_hs, genre_encoder_mask
                     continue
+
+                # Validate genre variant if present (non-fatal: drop genre only)
+                if genre_encoder_hs is not None:
+                    if torch.isnan(genre_encoder_hs).any() or torch.isinf(genre_encoder_hs).any():
+                        logger.warning(
+                            "[Side-Step] Pass 2: genre encoder NaN/Inf for %s -- dropping genre variant",
+                            tmp_path.stem,
+                        )
+                        del genre_encoder_hs, genre_encoder_mask
+                        genre_encoder_hs = None
+                        genre_encoder_mask = None
+                        has_genre = False
 
                 # Atomic write: save to staging path then os.replace to final
                 base_name = tmp_path.name.replace(".tmp.pt", ".pt")
                 final_path = out_path / base_name
                 staging_path = out_path / (base_name + ".__writing__")
                 meta = data["metadata"]
-                torch.save({
+                save_dict = {
                     "target_latents": data["target_latents"],
                     "attention_mask": data["attention_mask"],
                     "encoder_hidden_states": encoder_hs.squeeze(0).cpu(),
                     "encoder_attention_mask": encoder_mask.squeeze(0).cpu(),
                     "context_latents": context_latents.squeeze(0).cpu(),
                     "metadata": meta,
-                }, staging_path)
+                }
+                if has_genre and genre_encoder_hs is not None:
+                    save_dict["encoder_hidden_states_genre"] = genre_encoder_hs.squeeze(0).cpu()
+                    save_dict["encoder_attention_mask_genre"] = genre_encoder_mask.squeeze(0).cpu()
+                torch.save(save_dict, staging_path)
                 os.replace(staging_path, final_path)
 
                 # Free all GPU tensors and the loaded data dict before next iter
-                del encoder_hs, encoder_mask, context_latents, data
+                del encoder_hs, encoder_mask, context_latents, data, save_dict
+                if genre_encoder_hs is not None:
+                    del genre_encoder_hs, genre_encoder_mask
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 elif hasattr(torch, 'mps') and torch.mps.is_available():
@@ -605,7 +767,8 @@ def _pass2_heavy(
                 tmp_path.unlink(missing_ok=True)
 
                 processed += 1
-                logger.debug("[Side-Step] Pass 2 OK: %s", tmp_path.stem)
+                _genre_tag = " [+genre]" if has_genre else ""
+                logger.debug("[Side-Step] Pass 2 OK: %s%s", tmp_path.stem, _genre_tag)
                 if progress_callback:
                     progress_callback(i + 1, total, f"[Pass 2] OK: {tmp_path.stem}")
 
