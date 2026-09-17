@@ -451,6 +451,25 @@ const WorkspaceSetup = (() => {
         if (audioOpts.length) options.push(...audioOpts);
         BatchDOM.setOptions(sel, options, current);
       });
+      // Populate batch multi-select checkbox list (Advanced page)
+      const multiList = $("full-dataset-multi-list");
+      if (multiList) {
+        const allSets = [...tensorSets, ...audioSets];
+        if (allSets.length === 0) {
+          multiList.innerHTML = '<div style="color:var(--muted);font-size:var(--font-size-sm);">No datasets found</div>';
+        } else {
+          multiList.innerHTML = allSets.map(f => {
+            const val = f.type === "audio" ? ("audio:" + f.path) : f.path;
+            const icon = f.type === "audio" ? "\u266A" : "\u25A0";
+            const suffix = f.type === "audio" ? " [needs preprocessing]" : (f.pp_map ? " [PP++]" : "");
+            return '<label style="display:flex;align-items:center;gap:var(--space-xs);padding:3px 0;cursor:pointer;font-size:var(--font-size-sm);">' +
+              '<input type="checkbox" class="batch-dataset-cb" data-path="' + _e(val) + '" data-name="' + _e(f.name) + '">' +
+              icon + ' <span>' + _e(f.name) + '</span>' +
+              ' <span style="color:var(--muted);margin-left:auto;white-space:nowrap;">' + _e(f.files) + ' files, ' + _e(f.duration) + suffix + '</span>' +
+              '</label>';
+          }).join('');
+        }
+      }
     } catch (e) { console.error('[Setup] dataset scan failed:', e); }
 
     const gemKey = $("settings-gemini-key")?.value || "";

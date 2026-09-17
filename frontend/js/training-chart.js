@@ -135,10 +135,11 @@ const TrainingChart = (() => {
 
   /**
    * Render the loss/LR chart SVG.
-   * @param {Object} opts - { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight }
+   * @param {Object} opts - { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight, xOffset }
    */
   function render(opts) {
-    let { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight } = opts;
+    let { fullLoss, fullLr, viewXMin, viewXMax, smoothingWeight, xOffset } = opts;
+    const xOff = xOffset || 0;  // offset for resumed training X-axis labels
     if (fullLoss.length < 1) return;
     // SVG polyline with a single point is invisible. Duplicate so callers that
     // pass exactly one sample (e.g. first step before epoch completes) still
@@ -214,11 +215,11 @@ const TrainingChart = (() => {
       });
       // Vertical grid lines (TB X_GRID_COUNT = 10)
       const width = svg.getBoundingClientRect().width || 400;
-      const loTick = Math.max(0, startIdx);
-      const hiTick = Math.max(loTick + 1, endIdx - 1);
+      const loTick = Math.max(0, startIdx + xOff);
+      const hiTick = Math.max(loTick + 1, endIdx - 1 + xOff);
       const vTicks = _buildXTicks(loTick, hiTick, width);
       vTicks.forEach(tick => {
-        const frac = (tick - startIdx) / Math.max(1, endIdx - startIdx - 1);
+        const frac = (tick - startIdx - xOff) / Math.max(1, endIdx - startIdx - 1);
         if (frac < 0 || frac > 1) return;
         const x = (frac * vbW).toFixed(1);
         gridHTML += `<line x1="${x}" y1="0" x2="${x}" y2="${vbH}" stroke="rgba(255,255,255,0.08)" stroke-width="1" vector-effect="non-scaling-stroke" />`;
@@ -245,11 +246,11 @@ const TrainingChart = (() => {
       // TensorBoard-style axis behavior: choose tick count by available pixels,
       // then place each label at its true fractional position in view.
       const width = svg.getBoundingClientRect().width || 400;
-      const loTick = Math.max(0, startIdx);
-      const hiTick = Math.max(loTick + 1, endIdx - 1);
+      const loTick = Math.max(0, startIdx + xOff);
+      const hiTick = Math.max(loTick + 1, endIdx - 1 + xOff);
       const ticks = _buildXTicks(loTick, hiTick, width);
       xLabelsEl.innerHTML = ticks.map((tick) => {
-        const left = ((tick - startIdx) / Math.max(1, endIdx - startIdx - 1)) * 100;
+        const left = ((tick - startIdx - xOff) / Math.max(1, endIdx - startIdx - 1)) * 100;
         return `<span class="axis-label-row__tick" style="left:${left.toFixed(3)}%;">${tick.toLocaleString()}</span>`;
       }).join('');
     }

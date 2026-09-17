@@ -145,6 +145,12 @@ const API = (() => {
 
   async function startTraining(config) { return _post('/api/train/start', { config }); }
   async function stopTraining() { return _post('/api/train/stop', {}); }
+  async function pauseTraining() { return _post('/api/train/pause', {}); }
+
+  // ---- Persistent Training Queue ----------------------------------------
+
+  async function loadTrainingQueue() { return _get('/api/train/queue'); }
+  async function saveTrainingQueue(data) { return _post('/api/train/queue', data); }
 
   // ---- Dataset Scanning -------------------------------------------------
 
@@ -391,6 +397,9 @@ const API = (() => {
     deleteHistoryFolder,
     startTraining,
     stopTraining,
+    pauseTraining,
+    loadTrainingQueue,
+    saveTrainingQueue,
     browseDir,
     scanTensorsDir,
     scanAudioFolder,

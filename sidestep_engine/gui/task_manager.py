@@ -289,6 +289,39 @@ class TaskManager:
         threading.Thread(target=_escalate, daemon=True).start()
         return {"ok": True, "task_id": task.task_id}
 
+    def pause_training(self) -> Dict[str, Any]:
+        """Request a graceful pause by writing a signal file to the output dir.
+
+        The training subprocess checks for ``.pause_requested`` at each epoch
+        boundary.  When found it saves a full checkpoint to ``paused/``, deletes
+        the signal file, and exits with code 42.
+        """
+        with self._lock:
+            task = self._training_task
+        if not task or task.status != "running":
+            return {"error": "No training running"}
+        # Read the config that was used to launch this run
+        config_path = task.config_file
+        if not config_path or not os.path.exists(config_path):
+            return {"error": "Could not determine output directory"}
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                config = json.load(f)
+        except Exception as exc:
+            return {"error": f"Could not read config: {exc}"}
+        output_dir = str(config.get("output_dir", "")).strip()
+        if not output_dir:
+            return {"error": "No output_dir in training config"}
+        # Resolve relative to project root (same CWD as subprocess)
+        pause_file = (_PROJECT_ROOT / output_dir / ".pause_requested").resolve()
+        try:
+            pause_file.parent.mkdir(parents=True, exist_ok=True)
+            pause_file.write_text("pause", encoding="utf-8")
+        except Exception as exc:
+            return {"error": f"Could not write pause signal: {exc}"}
+        logger.info("[TaskManager] Pause requested -> %s", pause_file)
+        return {"ok": True, "task_id": task.task_id}
+
     async def get_training_update(self) -> Optional[Dict[str, Any]]:
         """Non-blocking fetch of the next training update."""
         try:
@@ -341,7 +374,12 @@ class TaskManager:
             pass  # pipe closed
         finally:
             rc = task.process.wait()
-            task.status = "done" if rc == 0 else "failed"
+            if rc == 0:
+                task.status = "done"
+            elif rc == 42:
+                task.status = "paused"
+            else:
+                task.status = "failed"
 
             reason = task.failure_reason
             if not reason and rc != 0:
