@@ -438,15 +438,20 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
         from sidestep_engine.gui.file_ops import scan_models
         return JSONResponse(scan_models(checkpoint_dir))
 
+    # NOTE: the dataset/audio scans below walk every file in the configured
+    # roots (duration probe per audio file).  They MUST run off the event
+    # loop via asyncio.to_thread — inline they froze the whole GUI for the
+    # length of a full library scan (~7 s for 2.5k files).
+
     @app.get("/api/datasets")
     async def list_datasets(tensors_dir: str = ""):
         from sidestep_engine.gui.file_ops import scan_tensors
-        return JSONResponse(scan_tensors(tensors_dir))
+        return JSONResponse(await asyncio.to_thread(scan_tensors, tensors_dir))
 
     @app.get("/api/datasets/all")
     async def list_all_datasets():
         from sidestep_engine.gui.file_ops import scan_all_datasets
-        return JSONResponse(scan_all_datasets())
+        return JSONResponse(await asyncio.to_thread(scan_all_datasets))
 
     @app.post("/api/datasets/link-audio")
     async def link_source_audio(body: LinkSourceAudioRequest):
@@ -461,7 +466,7 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
     @app.get("/api/dataset/scan")
     async def scan_audio(path: str = ""):
         from sidestep_engine.gui.file_ops import scan_audio_dir
-        return JSONResponse(scan_audio_dir(path))
+        return JSONResponse(await asyncio.to_thread(scan_audio_dir, path))
 
     @app.post("/api/dataset/mix")
     async def create_mix_dataset(body: MixDatasetRequest):

@@ -183,11 +183,14 @@ class FixedLoRATrainer:
             )
 
             # -- Data -------------------------------------------------------
-            # Windows uses spawn for multiprocessing; default to 0 workers there
             num_workers = cfg.num_workers
             if sys.platform == "win32" and num_workers > 0:
-                logger.info("[Side-Step] Windows detected -- setting num_workers=0 (spawn incompatible)")
-                num_workers = 0
+                # Windows uses 'spawn' for multiprocessing -- works but has
+                # higher per-worker overhead.  Cap at a sensible ceiling.
+                _win_cap = min(num_workers, 4)
+                if _win_cap != num_workers:
+                    logger.info("[Side-Step] Windows: capping num_workers=%d -> %d", num_workers, _win_cap)
+                    num_workers = _win_cap
 
             data_module = PreprocessedDataModule(
                 tensor_dir=cfg.dataset_dir,

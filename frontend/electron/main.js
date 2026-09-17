@@ -94,19 +94,28 @@ app.whenReady().then(() => {
   });
 
   // ── Prevent the renderer from navigating away (blank-page guard) ──
+  const _allowedPaths = new Set(["/", "/theme-editor"]);
   win.webContents.on("will-navigate", (e, url) => {
     const dest = new URL(url);
     const home = new URL(appURL);
-    const sameDocument =
-      dest.origin === home.origin &&
-      dest.pathname === home.pathname &&
-      dest.search === home.search;
-    if (!sameDocument) {
+    const allowed =
+      dest.origin === home.origin && _allowedPaths.has(dest.pathname);
+    if (!allowed) {
       console.error("[Side-Step] blocked will-navigate:", url);
       e.preventDefault();
     }
   });
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const dest = new URL(url);
+      const home = new URL(appURL);
+      if (dest.origin === home.origin && _allowedPaths.has(dest.pathname)) {
+        return { action: "allow" };
+      }
+    } catch (_) { /* malformed URL */ }
+    console.error("[Side-Step] blocked window.open:", url);
+    return { action: "deny" };
+  });
 
   // ── DevTools shortcut (F12 or Ctrl+Shift+I) ──
   win.webContents.on("before-input-event", (_e, input) => {

@@ -24,7 +24,8 @@ einops>=0.8.1
 torchvision
 
 # ── Audio loading & normalization ─────────────────────────────
-torchcodec>=0.9.1
+torchcodec>=0.9.1,<=0.10; sys_platform == 'linux'
+torchcodec>=0.5; sys_platform == 'darwin'
 soundfile>=0.13.1
 pyloudnorm>=0.1.0
 

@@ -20,24 +20,70 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 
+# Duration cache keyed by (path, size, mtime_ns).  GUI dataset scans probe
+# every file on every call; durations only change when the file does.
+_DURATION_CACHE: dict = {}
+
+# Formats where mutagen (pure-Python header read) is preferred: soundfile
+# routes these through its embedded mpg123, which is slower AND spams
+# stderr with "[...libmpg123\id3.c] error: No comment text..." lines for
+# every odd ID3 frame — that spam was flooding the GUI console.
+_MUTAGEN_FIRST_EXTS = {".mp3", ".m4a", ".aac"}
+
+
 def get_audio_duration(audio_path: str) -> int:
     """Return the duration of an audio file in whole seconds.
 
     Resolution chain:
-        1. ``soundfile.info`` (safe, all platforms, wav/flac/ogg).
-        2. ``torchcodec.decoders.AudioDecoder`` (all ffmpeg formats).
-        3. ``mutagen`` (pure-Python, mp3/m4a/aac/ogg/flac).
-        4. ``ffprobe`` subprocess (requires ffmpeg installed).
-        5. Returns ``0`` if all fail.
+        1. ``mutagen`` for mp3/m4a/aac (pure-Python header read — avoids
+           libsndfile's mpg123 stderr spam and full-header decode).
+        2. ``soundfile.info`` (safe, all platforms, wav/flac/ogg).
+        3. ``torchcodec.decoders.AudioDecoder`` (all ffmpeg formats).
+        4. ``mutagen`` (fallback for remaining formats).
+        5. ``ffprobe`` subprocess (requires ffmpeg installed).
+        6. Returns ``0`` if all fail.
 
-    soundfile is tried first because torchcodec can trigger a Windows
-    DLL error dialog on torch version mismatches before Python's
-    exception handler runs.
+    soundfile is tried before torchcodec because torchcodec can trigger
+    a Windows DLL error dialog on torch version mismatches before
+    Python's exception handler runs.
+
+    Results are cached per (path, size, mtime) so repeated GUI scans of
+    an unchanged library cost nothing.
 
     The result is truncated to ``int`` so callers never deal with
     sub-second float precision.
     """
-    # Primary: soundfile (safe, no DLL issues on Windows)
+    cache_key = None
+    try:
+        st = Path(audio_path).stat()
+        cache_key = (str(audio_path), st.st_size, st.st_mtime_ns)
+        cached = _DURATION_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+    except OSError:
+        pass
+
+    dur = _resolve_duration(audio_path)
+    if cache_key is not None and dur > 0:
+        _DURATION_CACHE[cache_key] = dur
+    return dur
+
+
+def _resolve_duration(audio_path: str) -> int:
+    """Uncached duration resolution (see :func:`get_audio_duration`)."""
+    # Compressed formats: mutagen first (no decoder, no mpg123 stderr spam)
+    if Path(audio_path).suffix.lower() in _MUTAGEN_FIRST_EXTS:
+        try:
+            import mutagen
+            mf = mutagen.File(audio_path)
+            if mf is not None and mf.info is not None and mf.info.length > 0:
+                return int(mf.info.length)
+        except ImportError:
+            logger.debug("mutagen not available for %s", audio_path)
+        except Exception as exc:
+            logger.debug("mutagen failed for %s: %s", audio_path, exc)
+
+    # soundfile (safe, no DLL issues on Windows)
     try:
         import soundfile as sf
         info = sf.info(audio_path)

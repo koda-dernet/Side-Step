@@ -26,7 +26,8 @@ dependencies = [
     "safetensors",
     "einops>=0.8.1",
     # ── Audio loading & normalization (needed for preprocessing) ────
-    "torchcodec>=0.9.1",
+    "torchcodec>=0.9.1,<=0.10; sys_platform == 'linux'",
+    "torchcodec>=0.5; sys_platform == 'darwin'",
     "soundfile>=0.13.1",
     "pyloudnorm>=0.1.0",
     # ── Model runtime (needed by the checkpoint's modeling.py) ────────

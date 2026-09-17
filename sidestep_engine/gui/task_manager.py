@@ -209,9 +209,12 @@ class TaskManager:
 
         logger.info("[TaskManager] Starting training: %s", " ".join(cmd))
 
-        # Force unbuffered output so log lines stream immediately
+        # Force unbuffered output so log lines stream immediately.
+        # PYTHONDONTWRITEBYTECODE prevents stale .pyc caches from
+        # silently running old code after source files are updated.
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
 
         try:
             # Hide the console window on Windows
