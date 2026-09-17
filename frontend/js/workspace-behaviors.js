@@ -288,16 +288,62 @@ const WorkspaceBehaviors = (() => {
     update();
   }
 
-  /* ---- Loss weighting ---- */
+  /* ---- Loss weighting & fidelity controls ---- */
   function initLossWeightingReactivity() {
-    const sel = $("full-loss-weighting");
+    const lossFnSel = $("full-loss-fn");
+    const lossWtSel = $("full-loss-weighting");
     const snrGroup = $("snr-gamma-group");
-    if (!sel || !snrGroup) return;
-    sel.addEventListener("change", () => {
-      snrGroup.style.display = sel.value === "min_snr" ? "" : "none";
-    });
+    const huberGroup = $("huber-delta-group");
+    const tBiasGroup = $("t-bias-group");
+    const chBalGroup = $("channel-balance-group");
+    const dynChBalGroup = $("dynamic-channel-balance-group");
+    const chBalCb = $("full-channel-balance");
+    const vaePriorGroup = $("vae-channel-prior-group");
+    const latNoiseGroup = $("latent-noise-group");
+    const legacyCb = $("full-legacy-loss");
+
+    function updateFidelityVisibility() {
+      const isLegacy = legacyCb && legacyCb.checked;
+      const lossWt = lossWtSel ? lossWtSel.value : "flow_snr";
+      const lossFn = lossFnSel ? lossFnSel.value : "huber";
+      const chBalOn = chBalCb && chBalCb.checked;
+
+      // SNR gamma visible when flow_snr or min_snr
+      if (snrGroup) snrGroup.style.display = (!isLegacy && (lossWt === "flow_snr" || lossWt === "min_snr")) ? "" : "none";
+      // Huber delta visible when loss_fn uses delta (huber, pseudo_huber, x0_pseudo_huber)
+      const needsDelta = lossFn === "huber" || lossFn === "pseudo_huber" || lossFn === "x0_pseudo_huber";
+      if (huberGroup) huberGroup.style.display = (!isLegacy && needsDelta) ? "" : "none";
+      // t_bias visible when flow_snr
+      if (tBiasGroup) tBiasGroup.style.display = (!isLegacy && lossWt === "flow_snr") ? "" : "none";
+      // Channel/VAE/noise hidden when legacy
+      if (chBalGroup) chBalGroup.style.display = isLegacy ? "none" : "";
+      if (dynChBalGroup) dynChBalGroup.style.display = (!isLegacy && chBalOn) ? "" : "none";
+      if (vaePriorGroup) vaePriorGroup.style.display = isLegacy ? "none" : "";
+      if (latNoiseGroup) latNoiseGroup.style.display = isLegacy ? "none" : "";
+      // Loss fn/weighting selectors hidden when legacy
+      if (lossFnSel) lossFnSel.closest(".form-group").style.display = isLegacy ? "none" : "";
+      if (lossWtSel) lossWtSel.closest(".form-group").style.display = isLegacy ? "none" : "";
+    }
+
+    if (lossFnSel) lossFnSel.addEventListener("change", updateFidelityVisibility);
+    if (lossWtSel) lossWtSel.addEventListener("change", updateFidelityVisibility);
+    if (legacyCb) legacyCb.addEventListener("change", updateFidelityVisibility);
+    if (chBalCb) chBalCb.addEventListener("change", updateFidelityVisibility);
+    updateFidelityVisibility();
   }
 
+
+  /* ---- EMA warmup visibility ---- */
+  function initEmaReactivity() {
+    const emaInput = $("full-ema-decay");
+    const warmupGroup = $("ema-start-group");
+    if (!emaInput || !warmupGroup) return;
+    const update = () => {
+      warmupGroup.style.display = parseFloat(emaInput.value) > 0 ? "" : "none";
+    };
+    emaInput.addEventListener("input", update);
+    update();
+  }
 
   /* ---- Crop mode ---- */
   function initCropModeReactivity() {
@@ -334,11 +380,17 @@ const WorkspaceBehaviors = (() => {
   function initOptimizerReactivity() {
     const optSel = $("full-optimizer");
     const lrHint = $("prodigy-lr-hint");
+    const roseLrHint = $("rose-lr-hint");
+    const automagicLrHint = $("automagic-lr-hint");
     const schedSel = $("full-scheduler");
     if (!optSel) return;
     const update = () => {
       const isProdigy = optSel.value === "prodigy";
+      const isRose = optSel.value === "rose";
+      const isAutomagic = optSel.value === "automagic";
       if (lrHint) lrHint.style.display = isProdigy ? "" : "none";
+      if (roseLrHint) roseLrHint.style.display = isRose ? "" : "none";
+      if (automagicLrHint) automagicLrHint.style.display = isAutomagic ? "" : "none";
       if (schedSel) {
         const customOpt = schedSel.querySelector('option[value="custom"]');
         if (customOpt) customOpt.disabled = isProdigy;
@@ -437,13 +489,29 @@ const WorkspaceBehaviors = (() => {
     if (optimizerSel && lrInput) {
       let prevLR = lrInput.value;
       optimizerSel.addEventListener("change", () => {
+        // Don't override LR during preset application — the preset
+        // specifies an exact LR that must not be clobbered.
+        if (window.__sidestep_preset_applying) {
+          prevLR = lrInput.value;
+          return;
+        }
         if (optimizerSel.value === "prodigy") {
           if (lrInput.value === prevLR || lrInput.value === "1e-4") {
             lrInput.value = "1.0";
             lrInput.dispatchEvent(new Event("input"));
           }
+        } else if (optimizerSel.value === "rose") {
+          if (lrInput.value === prevLR || lrInput.value === "1e-4" || lrInput.value === "1.0") {
+            lrInput.value = "0.01";
+            lrInput.dispatchEvent(new Event("input"));
+          }
+        } else if (optimizerSel.value === "automagic") {
+          if (lrInput.value === prevLR || lrInput.value === "1e-4" || lrInput.value === "1.0" || lrInput.value === "0.01") {
+            lrInput.value = "1e-6";
+            lrInput.dispatchEvent(new Event("input"));
+          }
         } else {
-          if (lrInput.value === "1.0") {
+          if (lrInput.value === "1.0" || lrInput.value === "0.01" || lrInput.value === "1e-6") {
             lrInput.value = prevLR || "1e-4";
             lrInput.dispatchEvent(new Event("input"));
           }
@@ -454,6 +522,7 @@ const WorkspaceBehaviors = (() => {
 
     $("full-dataset-dir")?.addEventListener("change", () => {
       setTimeout(() => {
+        if (window.__sidestep_preset_applying) return;
         const ppStatus = $("full-pp-status");
         if (!ppStatus) return;
         const hasPP = ppStatus.textContent.includes("detected");
@@ -478,6 +547,7 @@ const WorkspaceBehaviors = (() => {
     initModalUX();
     initModelDerivedDefaults();
     initLossWeightingReactivity();
+    initEmaReactivity();
     initCropModeReactivity();
     initSchedulerReactivity();
     initOptimizerReactivity();

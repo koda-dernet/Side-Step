@@ -36,8 +36,16 @@
   "full-shift":               "3.0",
   "full-inference-steps":     "8",
   "full-cfg-dropout":         "0.15",
-  "full-loss-weighting":      "none",
+  "full-loss-fn":             "mse",
+  "full-huber-delta":         "1.0",
+  "full-loss-weighting":      "flow_snr",
   "full-snr-gamma":           "5.0",
+  "full-t-bias":              "0.5",
+  "full-channel-balance":     true,
+  "full-dynamic-channel-balance": false,
+  "full-vae-channel-prior":   true,
+  "full-latent-noise":        "0.02",
+  "full-legacy-loss":         false,
   "full-timestep-mode":       "continuous",
 
   "full-offload-encoder":     true,
@@ -76,6 +84,7 @@
   "full-cosine-restarts":     "4",
 
   "full-ema-decay":           "0",
+  "full-ema-start-step":      "2000",
   "full-val-split":           "0",
   "full-adaptive-timestep":   "0",
 

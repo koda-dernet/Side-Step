@@ -25,7 +25,12 @@ from typing import Any, Dict, Generator, Optional, Tuple
 
 import torch
 import torch.nn as nn
-from sidestep_engine.core.optim import build_optimizer, build_scheduler
+from sidestep_engine.core.optim import (
+    build_layer_param_groups,
+    build_optimizer,
+    build_scheduler,
+    classify_trainable_params,
+)
 from sidestep_engine.vendor.data_module import PreprocessedDataModule
 
 _MAX_CONSECUTIVE_NAN = 10  # halt training after this many NaN/Inf losses in a row
@@ -182,6 +187,30 @@ class FixedLoRATrainer:
                 dtype=dtype,
             )
 
+            # -- Channel stats for fidelity balancing ----------------------
+            if not cfg.legacy_loss:
+                from sidestep_engine.vendor.data_module import PreprocessedTensorDataset
+                ch_stats = PreprocessedTensorDataset.load_channel_stats(cfg.dataset_dir)
+                if ch_stats is not None:
+                    ch_std = torch.tensor(ch_stats["channel_std"], dtype=torch.float32)
+                    # Build channel weights: inverse-std, optionally scaled by VAE importance
+                    inv_std = 1.0 / ch_std.clamp(min=1e-6)
+                    if cfg.vae_channel_prior and "vae_channel_norms" in ch_stats:
+                        vae_imp = torch.tensor(ch_stats["vae_channel_norms"], dtype=torch.float32)
+                        vae_imp = vae_imp / vae_imp.mean().clamp(min=1e-6)
+                        channel_weights = inv_std * vae_imp
+                    else:
+                        channel_weights = inv_std
+                    channel_weights = channel_weights / channel_weights.mean()  # normalize to mean=1
+                    self.module._channel_weights = channel_weights
+                    self.module._channel_std = ch_std
+                    logger.info(
+                        "[Side-Step] Channel balancing active: weight range %.3f-%.3f (mean=1)",
+                        float(channel_weights.min()), float(channel_weights.max()),
+                    )
+                else:
+                    logger.info("[Side-Step] No channel_stats found -- channel balancing disabled")
+
             # -- Data -------------------------------------------------------
             # Windows uses spawn for multiprocessing; default to 0 workers there
             num_workers = cfg.num_workers
@@ -202,6 +231,7 @@ class FixedLoRATrainer:
                 max_latent_length=getattr(cfg, "max_latent_length", None),
                 chunk_decay_every=getattr(cfg, "chunk_decay_every", 10),
                 dataset_repeats=getattr(cfg, "dataset_repeats", 1),
+                genre_ratio=getattr(cfg, "genre_ratio", -1),
             )
             data_module.setup("fit")
 
@@ -335,9 +365,22 @@ class FixedLoRATrainer:
 
         yield TrainingUpdate(0, 0.0, f"[INFO] Training {sum(p.numel() for p in trainable_params):,} parameters", kind="info")
 
+        # Classify params by layer type and build per-group LR scaling
+        classified = classify_trainable_params(
+            self.module.model,
+            getattr(self.module, "lycoris_net", None),
+        )
+        optimizer_params = build_layer_param_groups(
+            classified,
+            base_lr=cfg.learning_rate,
+            lr_scale_self_attn=getattr(cfg, "lr_scale_self_attn", 1.0),
+            lr_scale_cross_attn=getattr(cfg, "lr_scale_cross_attn", 1.0),
+            lr_scale_mlp=getattr(cfg, "lr_scale_mlp", 1.0),
+        )
+
         optimizer_type = getattr(cfg, "optimizer_type", "adamw")
         optimizer = build_optimizer(
-            trainable_params,
+            optimizer_params,
             optimizer_type=optimizer_type,
             lr=cfg.learning_rate,
             weight_decay=cfg.weight_decay,
@@ -371,10 +414,11 @@ class FixedLoRATrainer:
         _ema_decay = getattr(cfg, "ema_decay", 0.0)
         if _ema_decay > 0:
             from sidestep_engine.core.ema import AdapterEMA
-            _ema = AdapterEMA(trainable_params, decay=_ema_decay)
+            _ema_start = getattr(cfg, "ema_start_step", 2000)
+            _ema = AdapterEMA(trainable_params, decay=_ema_decay, start_step=_ema_start)
             yield TrainingUpdate(
                 0, 0.0,
-                f"[INFO] EMA enabled (decay={_ema_decay})",
+                f"[INFO] EMA enabled (decay={_ema_decay}, starts at step {_ema_start})",
                 kind="info",
             )
 
@@ -660,6 +704,7 @@ class FixedLoRATrainer:
             epoch_loss = 0.0
             num_updates = 0
             epoch_start = time.time()
+            _accum_cond_info: list = []
 
             for _batch_idx, batch in enumerate(train_loader):
                 # Stop signal
@@ -674,6 +719,12 @@ class FixedLoRATrainer:
                     yield TrainingUpdate(global_step, _stop_loss, "[INFO] Training stopped by user", kind="complete")
                     tb.close()
                     return
+
+                # Extract non-tensor keys before training_step
+                _batch_cond = batch.pop("conditioning_info", None)
+                batch.pop("metadata", None)
+                if _batch_cond:
+                    _accum_cond_info.extend(_batch_cond)
 
                 loss = self.module.training_step(batch)
 
@@ -766,13 +817,38 @@ class FixedLoRATrainer:
                             )
 
                     _lr = optimizer.param_groups[0]["lr"]
+                    _pw_extra = {}
+                    if _target_loss > 0 and global_step >= _CRUISE_MIN_STEPS:
+                        _pw_extra["target_loss_scale"] = _scale
+                        _pw_extra["target_loss_ema"] = _cruise_ema
+                    # Pipe fidelity metrics for real-time GUI mini-charts
+                    _latest_sm = self.module._step_metrics
+                    if _latest_sm:
+                        _pw_extra["fidelity"] = dict(_latest_sm)
+                    if _ema is not None:
+                        _pw_extra["ema_active"] = _ema._active
+                    if _accum_cond_info:
+                        _pw_extra["conditioning_info"] = _accum_cond_info
                     _pw.maybe_write(step=global_step, epoch=epoch + 1,
                                     max_epochs=cfg.max_epochs, loss=avg_loss, lr=_lr,
                                     best_loss=best_loss, best_epoch=best_epoch,
-                                    steps_per_epoch=steps_per_epoch)
+                                    steps_per_epoch=steps_per_epoch, **_pw_extra)
+                    _accum_cond_info = []
                     if global_step % cfg.log_every == 0:
                         tb.log_loss(avg_loss, global_step)
                         tb.log_lr(_lr, global_step)
+
+                        # Fidelity metrics from training_step
+                        _sm = self.module.drain_step_metrics()
+                        for _tag, _val in _sm.items():
+                            tb.log_scalar(_tag, _val, global_step)
+
+                        # EMA status
+                        if _ema is not None:
+                            tb.log_scalar("ema/active", 1.0 if _ema._active else 0.0, global_step)
+                            tb.log_scalar("ema/step_count", float(_ema._step_count), global_step)
+                            tb.log_scalar("ema/effective_decay", _ema.effective_decay, global_step)
+
                         yield TrainingUpdate(
                             step=global_step, loss=avg_loss,
                             msg=f"Epoch {epoch + 1}/{cfg.max_epochs}, Step {global_step}, Loss: {avg_loss:.4f}",
@@ -804,8 +880,9 @@ class FixedLoRATrainer:
                         tb.flush()
 
                     timestep_every = max(0, int(getattr(cfg, "log_timestep_every", cfg.log_every)))
+                    _has_weighting = getattr(cfg, "loss_weighting", "none") in ("min_snr", "flow_snr")
                     if (
-                        getattr(cfg, "loss_weighting", "none") == "min_snr"
+                        _has_weighting
                         and timestep_every > 0
                         and global_step % timestep_every == 0
                     ):
