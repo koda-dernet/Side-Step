@@ -292,12 +292,39 @@ class TrainingConfigV2(TrainingConfig):
     data_proportion: float = 0.5
     """Data proportion for sample_t_r (from model config)."""
 
-    loss_weighting: str = "none"
-    """Loss weighting strategy: 'none' (flat MSE) or 'min_snr'.
-    min-SNR can yield better results on SFT and base models."""
+    loss_weighting: str = "flow_snr"
+    """Loss weighting strategy: 'flow_snr' (correct for rectified flow),
+    'min_snr' (DDPM formula, legacy), or 'none' (flat)."""
 
     snr_gamma: float = 5.0
-    """Gamma clamp for min-SNR weighting. Only used when loss_weighting='min_snr'."""
+    """Gamma clamp for flow_snr/min_snr weighting."""
+
+    loss_fn: str = "mse"
+    """Loss function: 'mse', 'huber', 'pseudo_huber', 'x0_mse', or 'x0_pseudo_huber'.
+    x0_ prefix computes loss on reconstructed x₀ (implicit t² weighting)."""
+
+    huber_delta: float = 1.0
+    """Delta threshold for huber/pseudo_huber loss variants."""
+
+    channel_balance: bool = True
+    """Per-channel fidelity balancing using inverse-std weights."""
+
+    dynamic_channel_balance: bool = False
+    """Dynamically rebalance channel weights based on running per-channel loss.
+    Blends 50/50 with the static VAE prior so hard channels get more gradient."""
+
+    vae_channel_prior: bool = True
+    """Incorporate VAE decoder channel importance into channel weights."""
+
+    latent_noise: float = 0.02
+    """Per-channel latent noise regularisation scale. 0 = disabled."""
+
+    t_bias: float = 0.5
+    """Asymmetric timestep emphasis toward low-t (detail). 0 = symmetric."""
+
+    legacy_loss: bool = False
+    """Revert all loss math to pre-flow-SNR behavior (flat MSE, no channel
+    balancing, no latent noise, no attention masking in loss)."""
 
     # --- Adapter selection ----------------------------------------------------
     adapter_type: str = "lora"
@@ -446,6 +473,12 @@ class TrainingConfigV2(TrainingConfig):
     times per epoch.  1 = no repetition (default).  Higher values effectively
     multiply dataset size without modifying ``.pt`` files."""
 
+    genre_ratio: int = -1
+    """Percentage (0-100) of training steps that use genre conditioning
+    instead of caption.  ``-1`` = auto-detect from ``preprocess_meta.json``
+    (default).  ``0`` = always use caption.  Both variants are stored in
+    the ``.pt`` files; this controls the per-step random selection."""
+
     max_steps: int = 0
     """Maximum optimizer steps.  0 = disabled (use max_epochs only).
     When > 0, training stops at this step count regardless of epoch."""
@@ -461,6 +494,12 @@ class TrainingConfigV2(TrainingConfig):
     """EMA decay rate for adapter weights.  0.0 = disabled (default).
     Typical value: 0.9999.  Maintains a smoothed shadow copy of trainable
     params on CPU; the EMA weights are used for best-model saves."""
+
+    ema_start_step: int = 2000
+    """Optimizer step at which EMA tracking begins.  Before this step
+    no shadow averaging occurs.  At the start step the shadow is
+    re-initialised to current weights and full-rate averaging begins.
+    0 = start immediately (no delay)."""
 
     val_split: float = 0.0
     """Fraction of dataset held out for validation.  0.0 = disabled.
@@ -515,6 +554,8 @@ class TrainingConfigV2(TrainingConfig):
             )
         if not (0.0 <= self.ema_decay < 1.0):
             errors.append(f"ema_decay must be >= 0 and < 1 (got {self.ema_decay})")
+        if self.ema_start_step < 0:
+            errors.append(f"ema_start_step must be >= 0 (got {self.ema_start_step})")
         if not (0.0 <= self.val_split <= 0.5):
             errors.append(f"val_split must be >= 0 and <= 0.5 (got {self.val_split})")
         if not (0.0 <= self.adaptive_timestep_ratio <= 1.0):
@@ -522,6 +563,17 @@ class TrainingConfigV2(TrainingConfig):
                 f"adaptive_timestep_ratio must be >= 0 and <= 1 "
                 f"(got {self.adaptive_timestep_ratio})"
             )
+        _valid_loss_fns = ("mse", "huber", "pseudo_huber", "x0_mse", "x0_pseudo_huber")
+        if self.loss_fn not in _valid_loss_fns:
+            errors.append(f"loss_fn must be one of {_valid_loss_fns} (got {self.loss_fn!r})")
+        if self.huber_delta <= 0:
+            errors.append(f"huber_delta must be > 0 (got {self.huber_delta})")
+        if self.latent_noise < 0:
+            errors.append(f"latent_noise must be >= 0 (got {self.latent_noise})")
+        if not (0.0 <= self.t_bias <= 2.0):
+            errors.append(f"t_bias must be >= 0 and <= 2 (got {self.t_bias})")
+        if self.loss_weighting not in ("none", "min_snr", "flow_snr"):
+            errors.append(f"loss_weighting must be 'none', 'min_snr', or 'flow_snr' (got {self.loss_weighting!r})")
         if not (0.0 < self.warmup_start_factor <= 1.0):
             errors.append(
                 f"warmup_start_factor must be > 0 and <= 1 "
@@ -640,6 +692,13 @@ class TrainingConfigV2(TrainingConfig):
                 "data_proportion": self.data_proportion,
                 "loss_weighting": self.loss_weighting,
                 "snr_gamma": self.snr_gamma,
+                "loss_fn": self.loss_fn,
+                "huber_delta": self.huber_delta,
+                "channel_balance": self.channel_balance,
+                "vae_channel_prior": self.vae_channel_prior,
+                "latent_noise": self.latent_noise,
+                "t_bias": self.t_bias,
+                "legacy_loss": self.legacy_loss,
                 "is_turbo": self.is_turbo,
                 "model_variant": self.model_variant,
                 "checkpoint_dir": self.checkpoint_dir,
@@ -680,6 +739,7 @@ class TrainingConfigV2(TrainingConfig):
                 "rank_max": self.rank_max,
                 "ignore_fisher_map": self.ignore_fisher_map,
                 "ema_decay": self.ema_decay,
+                "ema_start_step": self.ema_start_step,
                 "val_split": self.val_split,
                 "adaptive_timestep_ratio": self.adaptive_timestep_ratio,
                 "warmup_start_factor": self.warmup_start_factor,

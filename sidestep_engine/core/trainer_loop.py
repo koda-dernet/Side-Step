@@ -45,6 +45,7 @@ def _flush_accumulated(
     global_step: int,
     steps_per_epoch: int,
     pre_scheduler_lr: float = None,
+    ema=None,
 ) -> Tuple[int, float, List[TrainingUpdate]]:
     """Clip gradients, step optimizer/scheduler, log, then zero grads.
 
@@ -73,6 +74,18 @@ def _flush_accumulated(
     if global_step % cfg.log_every == 0:
         tb.log_loss(avg_loss, global_step)
         tb.log_lr(_lr, global_step)
+
+        # Fidelity metrics from training_step
+        _sm = module.drain_step_metrics()
+        for _tag, _val in _sm.items():
+            tb.log_scalar(_tag, _val, global_step)
+
+        # EMA status
+        if ema is not None:
+            tb.log_scalar("ema/active", 1.0 if ema._active else 0.0, global_step)
+            tb.log_scalar("ema/step_count", float(ema._step_count), global_step)
+            tb.log_scalar("ema/effective_decay", ema.effective_decay, global_step)
+
         updates.append(TrainingUpdate(
             step=global_step, loss=avg_loss,
             msg=f"Epoch {epoch + 1}, Step {global_step}, Loss: {avg_loss:.4f}",
@@ -85,8 +98,9 @@ def _flush_accumulated(
         tb.flush()
 
     timestep_every = max(0, int(getattr(cfg, "log_timestep_every", cfg.log_every)))
+    _has_weighting = getattr(cfg, "loss_weighting", "none") in ("min_snr", "flow_snr")
     if (
-        getattr(cfg, "loss_weighting", "none") == "min_snr"
+        _has_weighting
         and timestep_every > 0
         and global_step % timestep_every == 0
     ):
@@ -176,8 +190,9 @@ def run_basic_training_loop(
     _ema_decay = getattr(cfg, "ema_decay", 0.0)
     if _ema_decay > 0:
         from sidestep_engine.core.ema import AdapterEMA
-        _ema = AdapterEMA(trainable_params, decay=_ema_decay)
-        yield TrainingUpdate(0, 0.0, f"[INFO] EMA enabled (decay={_ema_decay})", kind="info")
+        _ema_start = getattr(cfg, "ema_start_step", 2000)
+        _ema = AdapterEMA(trainable_params, decay=_ema_decay, start_step=_ema_start)
+        yield TrainingUpdate(0, 0.0, f"[INFO] EMA enabled (decay={_ema_decay}, starts at step {_ema_start})", kind="info")
 
     _val_loader = None
     _val_split = getattr(cfg, "val_split", 0.0)
@@ -417,6 +432,8 @@ def run_basic_training_loop(
         num_updates = 0
         epoch_start = time.time()
 
+        _accum_cond_info: list = []
+
         for batch in train_loader:
             if training_state and training_state.get("should_stop", False):
                 _stop_loss = (
@@ -429,6 +446,12 @@ def run_basic_training_loop(
                 yield TrainingUpdate(global_step, _stop_loss, "[INFO] Training stopped", kind="complete")
                 tb.close()
                 return
+
+            # Extract non-tensor keys before training_step
+            _batch_cond = batch.pop("conditioning_info", None)
+            batch.pop("metadata", None)
+            if _batch_cond:
+                _accum_cond_info.extend(_batch_cond)
 
             loss = module.training_step(batch)
 
@@ -468,6 +491,7 @@ def run_basic_training_loop(
                     accumulated_loss, accumulation_step, cfg, tb, module,
                     epoch, global_step, steps_per_epoch,
                     pre_scheduler_lr=_scheduler_lr,
+                    ema=_ema,
                 )
                 if _ema is not None:
                     _ema.update()
@@ -519,6 +543,14 @@ def run_basic_training_loop(
                 if _target_loss > 0 and global_step >= _CRUISE_MIN_STEPS:
                     _pw_extra["target_loss_scale"] = _scale
                     _pw_extra["target_loss_ema"] = _cruise_ema
+                # Pipe fidelity metrics for real-time GUI mini-charts
+                _latest_sm = module._step_metrics
+                if _latest_sm:
+                    _pw_extra["fidelity"] = dict(_latest_sm)
+                if _ema is not None:
+                    _pw_extra["ema_active"] = _ema._active
+                if _accum_cond_info:
+                    _pw_extra["conditioning_info"] = _accum_cond_info
                 _pw.maybe_write(step=global_step, epoch=epoch + 1,
                                 max_epochs=cfg.max_epochs, loss=avg_loss, lr=_lr,
                                 best_loss=best_loss, best_epoch=best_epoch,
@@ -527,6 +559,7 @@ def run_basic_training_loop(
                 num_updates += 1
                 accumulated_loss = 0.0
                 accumulation_step = 0
+                _accum_cond_info = []
 
                 # Step-level best-model tracking
                 if _step_best_every > 0 and cfg.save_best and best_tracking_active:
@@ -586,6 +619,7 @@ def run_basic_training_loop(
                 accumulated_loss, accumulation_step, cfg, tb, module,
                 epoch, global_step, steps_per_epoch,
                 pre_scheduler_lr=_scheduler_lr,
+                ema=_ema,
             )
             _scheduler_lr = scheduler.get_last_lr()[0]
             if _ema is not None:

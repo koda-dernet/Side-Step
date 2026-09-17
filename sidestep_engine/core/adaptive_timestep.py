@@ -126,7 +126,7 @@ class AdaptiveTimestepSampler:
             bin_hi = (bin_indices.float() + 1.0) / self.n_bins
             t_adaptive = (
                 bin_lo + (bin_hi - bin_lo) * torch.rand(n_adaptive)
-            ).to(device=device, dtype=dtype)
+            ).clamp(min=1e-5, max=1.0 - 1e-5).to(device=device, dtype=dtype)
             # r = t (same as use_meanflow=False)
             parts_t.append(t_adaptive)
             parts_r.append(t_adaptive.clone())

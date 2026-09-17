@@ -157,12 +157,20 @@ def step_training(a: dict) -> None:
 
 
 def step_cfg(a: dict) -> None:
-    """CFG dropout and loss weighting (fixed mode only)."""
+    """CFG dropout, loss function, and loss weighting (fixed mode only)."""
     section("Corrected Training Settings (press Enter for defaults)")
     a["cfg_ratio"] = ask("CFG dropout ratio", default=a.get("cfg_ratio", 0.15), type_fn=float, allow_back=True)
-    a["loss_weighting"] = ask(
-        "Loss weighting (none / min_snr -- min_snr can yield better results on SFT and base models)",
-        default=a.get("loss_weighting", "none"), allow_back=True,
+    a["loss_fn"] = ask(
+        "Loss function (x0_ prefix = paper's t² weighting, pseudo_huber = smooth Huber)",
+        default=a.get("loss_fn", "mse"),
+        choices=["mse", "huber", "pseudo_huber", "x0_mse", "x0_pseudo_huber"], allow_back=True,
     )
-    if a["loss_weighting"] == "min_snr":
+    if a["loss_fn"] in ("huber", "pseudo_huber", "x0_pseudo_huber"):
+        a["huber_delta"] = ask("Huber/Pseudo-Huber delta", default=a.get("huber_delta", 1.0), type_fn=float, allow_back=True)
+    a["loss_weighting"] = ask(
+        "Loss weighting (flow_snr = correct for flow matching, min_snr = DDPM legacy, none = flat)",
+        default=a.get("loss_weighting", "flow_snr"),
+        choices=["flow_snr", "min_snr", "none"], allow_back=True,
+    )
+    if a["loss_weighting"] in ("flow_snr", "min_snr"):
         a["snr_gamma"] = ask("SNR gamma", default=a.get("snr_gamma", 5.0), type_fn=float, allow_back=True)

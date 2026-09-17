@@ -75,8 +75,18 @@ const APICli = (() => {
     addNonDefault('--num-inference-steps', config.num_inference_steps, '8');
     addNonDefault('--timestep-mode', config.timestep_mode, 'continuous');
     addNonDefault('--cfg-ratio', config.cfg_ratio, '0.15');
-    addNonDefault('--loss-weighting', config.loss_weighting, 'none');
-    if (config.loss_weighting === 'min_snr') addNonDefault('--snr-gamma', config.snr_gamma, '5.0');
+    // Always emit: the backend default is 'flow_snr', so omitting the flag
+    // when the form says 'none' would train with flow_snr instead.
+    add('--loss-weighting', config.loss_weighting);
+    if (config.loss_weighting === 'min_snr' || config.loss_weighting === 'flow_snr') addNonDefault('--snr-gamma', config.snr_gamma, '5.0');
+    addNonDefault('--loss-fn', config.loss_fn, 'mse');
+    if (config.loss_fn === 'huber') addNonDefault('--huber-delta', config.huber_delta, '1.0');
+    addNonDefault('--t-bias', config.t_bias, '0.5');
+    addNonDefault('--latent-noise', config.latent_noise, '0.02');
+    addNoBool('--channel-balance', config.channel_balance);
+    addBool('--dynamic-channel-balance', config.dynamic_channel_balance);
+    addNoBool('--vae-channel-prior', config.vae_channel_prior);
+    addBool('--legacy-loss', config.legacy_loss);
 
     add('--optimizer-type', config.optimizer_type); add('--scheduler-type', config.scheduler);
     if (config.scheduler === 'custom' && config.scheduler_formula) add('--scheduler-formula', config.scheduler_formula);
@@ -118,7 +128,10 @@ const APICli = (() => {
     addNonDefault('--warmup-start-factor', config.warmup_start_factor, '0.1');
     addNonDefault('--cosine-eta-min-ratio', config.cosine_eta_min_ratio, '0.01');
     addNonDefault('--cosine-restarts-count', config.cosine_restarts_count, '4');
-    if (config.ema_decay && config.ema_decay !== '0') add('--ema-decay', config.ema_decay);
+    if (config.ema_decay && config.ema_decay !== '0') {
+      add('--ema-decay', config.ema_decay);
+      addNonDefault('--ema-start-step', config.ema_start_step, '2000');
+    }
     if (config.val_split && config.val_split !== '0') add('--val-split', config.val_split);
     if (config.adaptive_timestep_ratio && config.adaptive_timestep_ratio !== '0') add('--adaptive-timestep-ratio', config.adaptive_timestep_ratio);
     if (config.save_best_every_n_steps && config.save_best_every_n_steps !== '0') add('--save-best-every-n-steps', config.save_best_every_n_steps);
