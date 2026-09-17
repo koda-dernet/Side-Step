@@ -155,7 +155,8 @@ const WorkspaceLab = (() => {
         : item.status === "running" ? '<span class="u-text-primary">[...]</span>'
         : '<span class="u-text-muted">[--]</span>';
       const name = _pathBasename(item.audioDir);
-      return `<div style="padding:2px 0;">${icon} ${_e(name)} <span class="u-text-muted">${_e(item.status)}</span></div>`;
+      const tag = item.triggerTag ? ` <span class="u-text-muted">[${_e(item.triggerTag)}]</span>` : '';
+      return `<div style="padding:2px 0;">${icon} ${_e(name)}${tag} <span class="u-text-muted">${_e(item.status)}</span></div>`;
     }).join("");
   }
 
@@ -186,6 +187,9 @@ const WorkspaceLab = (() => {
     const ppOut = $("pp-output-dir");
     if (ppAudio) { ppAudio.value = next.audioDir; ppAudio.dispatchEvent(new Event("change")); }
     if (ppOut && ppOut.readOnly) ppOut.value = next.outputDir;
+    // Auto-populate trigger tag from per-item data
+    const triggerField = $("pp-trigger-tag");
+    if (triggerField && next.triggerTag != null) triggerField.value = next.triggerTag;
 
     const normMethod = $("pp-normalize")?.value || "none";
     const config = {
@@ -194,6 +198,7 @@ const WorkspaceLab = (() => {
       normalize: normMethod, trigger_tag: $("pp-trigger-tag")?.value, tag_position: $("pp-tag-position")?.value,
       target_db: normMethod === "peak" ? parseFloat($("pp-peak-target")?.value) || -1.0 : -1.0,
       target_lufs: normMethod === "lufs" ? parseFloat($("pp-lufs-target")?.value) || -14.0 : -14.0,
+      genre_ratio: parseInt($("pp-genre-ratio")?.value) || 0,
     };
 
     const prog = $("pp-progress-panel"); if (prog) prog.style.display = "block";
@@ -236,10 +241,14 @@ const WorkspaceLab = (() => {
 
   function queuePreprocess(folderPaths) {
     const tensorsDir = $("settings-tensors-dir")?.value || Defaults.get("settings-tensors-dir") || "preprocessed_tensors";
-    folderPaths.forEach(audioDir => {
+    folderPaths.forEach(item => {
+      const isObj = typeof item === 'object' && item !== null;
+      const audioDir = isObj ? item.path : item;
+      const triggerTag = isObj ? (item.triggerTag || '') : '';
       _ppQueue.push({
         audioDir,
         outputDir: _joinPath(tensorsDir, _pathBasename(audioDir) || "tensors"),
+        triggerTag,
         status: "pending",
       });
     });
@@ -821,6 +830,7 @@ const WorkspaceLab = (() => {
   /* ---- Trigger Tag Bulk Modal ---- */
   function initTriggerTagBulk() {
     $("btn-add-trigger")?.addEventListener("click", () => {
+      _updateTriggerModalScope();
       $("trigger-tag-modal")?.classList.add("open");
     });
     $("trigger-tag-close")?.addEventListener("click", () => {
@@ -838,11 +848,29 @@ const WorkspaceLab = (() => {
       const position = $("bulk-trigger-position")?.value;
       const dsPath = $("lab-dataset-path")?.value;
       if (!tag) { showToast("Enter a trigger tag", "warn"); return; }
-      const result = await API.bulkWriteTriggerTag(dsPath, tag, position);
+      // Use selected files when available, otherwise apply to all
+      const selected = (typeof Dataset !== "undefined" && Dataset.hasSelection && Dataset.hasSelection())
+        ? Dataset.getSelectedAudioPaths()
+        : null;
+      const result = await API.bulkWriteTriggerTag(dsPath, tag, position, selected);
       $("trigger-tag-modal")?.classList.remove("open");
-      showToast(`Trigger tag written to ${result.updated} sidecars`, "ok");
+      const scope = selected && selected.length ? `${result.updated} selected` : `${result.updated}`;
+      showToast(`Trigger tag written to ${scope} sidecars`, "ok");
       if (typeof Dataset !== "undefined") Dataset.scan(dsPath);
     });
+  }
+
+  function _updateTriggerModalScope() {
+    const hasSel = typeof Dataset !== 'undefined' && Dataset.hasSelection && Dataset.hasSelection();
+    const count = hasSel ? Dataset.getSelectedAudioPaths().length : 0;
+    const titleEl = document.querySelector('#trigger-tag-modal .modal__title');
+    const applyBtn = $('btn-bulk-trigger-apply');
+    const descEl = document.querySelector('#trigger-tag-modal .modal__body > p');
+    if (titleEl) titleEl.textContent = hasSel ? `Add Trigger Tag to ${count} Selected File${count !== 1 ? 's' : ''}` : 'Add Trigger Tag to All Files';
+    if (applyBtn) applyBtn.textContent = hasSel ? `Apply to ${count} Selected` : 'Apply to All Files';
+    if (descEl) descEl.innerHTML = hasSel
+      ? `This writes the trigger tag into the <strong>${count}</strong> selected sidecar${count !== 1 ? 's' : ''}. Existing tags will be overwritten.`
+      : 'This writes the trigger tag into every .txt sidecar in the dataset folder. Existing tags will be overwritten. Files without sidecars will get a new .txt file.';
   }
 
   function _updateTriggerPreview() {
@@ -928,5 +956,5 @@ const WorkspaceLab = (() => {
     _updateAnalyzeButtonStates();
   }
 
-  return { init, queuePreprocess };
+  return { init, queuePreprocess, _updateTriggerModalScope };
 })();

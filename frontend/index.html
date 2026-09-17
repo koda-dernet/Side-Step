@@ -1942,10 +1942,15 @@
         <div class="data-table-header">
           <div class="section-header">Audio Library</div>
           <div class="data-table-header__actions">
+            <label class="form-group__label" style="margin: 0; display: inline-flex; align-items: center; gap: 4px; font-weight: normal; text-transform: none;">
+              <input type="checkbox" id="dataset-auto-folder-trigger">
+              Use folder name as Trigger Tag
+            </label>
             <button class="btn btn--sm btn--refresh" id="btn-refresh-audio-library" title="Refresh audio library">R</button>
             <button class="btn btn--sm btn--accent" id="btn-analyze-audio" disabled>Analyze Audio</button>
             <button class="btn btn--sm btn--primary" id="btn-gen-captions" disabled>Generate AI Captions</button>
             <button class="btn btn--sm" id="btn-add-trigger">Add Trigger Tag to All</button>
+            <button class="btn btn--sm btn--primary" id="btn-preprocess-all" disabled>Preprocess All</button>
           </div>
         </div>
         <p style="color: var(--muted); font-size: var(--font-size-sm); margin-bottom: var(--space-md);">
@@ -3022,11 +3027,10 @@
           <input class="input" type="text" id="bulk-trigger-tag" placeholder="e.g. suno_v4">
         </div>
         <div class="form-group">
-          <label class="form-group__label">Position</label>
+          <label class="form-group__label">Position in Prompt</label>
           <select class="select" id="bulk-trigger-position">
             <option value="prepend" selected>Prepend (tag before caption)</option>
             <option value="append">Append (tag after caption)</option>
-            <option value="replace">Replace (tag replaces caption)</option>
           </select>
         </div>
         <div style="font-size: var(--font-size-sm); color: var(--muted);" id="bulk-trigger-preview">

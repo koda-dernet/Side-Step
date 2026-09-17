@@ -230,11 +230,17 @@ const API = (() => {
 
   // ---- Trigger Tag Bulk -------------------------------------------------
 
-  async function bulkWriteTriggerTag(datasetDir, tag, position) {
-    // Scan for ALL audio files (not just those with existing sidecars)
-    const scan = await scanDataset(datasetDir).catch(() => ({ files: [] }));
-    const paths = (scan.files || [])
-      .map(f => f.sidecar_path || f.path.replace(/\.[^.]+$/, '.txt'));
+  async function bulkWriteTriggerTag(datasetDir, tag, position, selectedPaths) {
+    let paths;
+    if (selectedPaths && selectedPaths.length) {
+      // Only apply to selected files — derive sidecar paths
+      paths = selectedPaths.map(p => p.replace(/\.[^.]+$/, '.txt'));
+    } else {
+      // No selection: scan for ALL audio files
+      const scan = await scanDataset(datasetDir).catch(() => ({ files: [] }));
+      paths = (scan.files || [])
+        .map(f => f.sidecar_path || f.path.replace(/\.[^.]+$/, '.txt'));
+    }
     return _post('/api/trigger-tag/bulk', { paths, tag, position });
   }
 
@@ -258,8 +264,8 @@ const API = (() => {
       normalize_alpha: !!normalizeAlpha,
     });
   }
-  async function createMixDataset(sourceRoot, destRoot, mixName, files) {
-    return _post('/api/dataset/mix', { source_root: sourceRoot, destination_root: destRoot, mix_name: mixName, files });
+  async function createMixDataset(sourceRoot, destRoot, mixName, files, sidecarMode) {
+    return _post('/api/dataset/mix', { source_root: sourceRoot, destination_root: destRoot, mix_name: mixName, files, sidecar_mode: sidecarMode || 'copy' });
   }
 
   // ---- File Browser -----------------------------------------------------

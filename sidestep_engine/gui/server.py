@@ -104,6 +104,7 @@ class MixDatasetRequest(BaseModel):
     destination_root: str
     mix_name: str
     files: List[str]
+    sidecar_mode: str = "copy"
 
 
 class LinkSourceAudioRequest(BaseModel):
@@ -471,6 +472,7 @@ def create_app(token: str | None = None, port: int = 8770) -> FastAPI:
             destination_root=body.destination_root,
             mix_name=body.mix_name,
             files=body.files,
+            sidecar_mode=body.sidecar_mode,
         ))
 
     @app.post("/api/open-folder")
