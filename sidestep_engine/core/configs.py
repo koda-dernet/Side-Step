@@ -446,6 +446,12 @@ class TrainingConfigV2(TrainingConfig):
     times per epoch.  1 = no repetition (default).  Higher values effectively
     multiply dataset size without modifying ``.pt`` files."""
 
+    genre_ratio: int = -1
+    """Percentage (0-100) of training steps that use genre conditioning
+    instead of caption.  ``-1`` = auto-detect from ``preprocess_meta.json``
+    (default).  ``0`` = always use caption.  Both variants are stored in
+    the ``.pt`` files; this controls the per-step random selection."""
+
     max_steps: int = 0
     """Maximum optimizer steps.  0 = disabled (use max_epochs only).
     When > 0, training stops at this step count regardless of epoch."""
