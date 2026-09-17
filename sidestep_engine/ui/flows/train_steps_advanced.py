@@ -57,6 +57,9 @@ def step_advanced_optimizer(a: dict) -> None:
             ("adamw8bit", "AdamW 8-bit (saves ~30% optimizer VRAM, needs bitsandbytes)"),
             ("adafactor", "Adafactor (minimal state memory)"),
             ("prodigy", "Prodigy (auto-tunes LR -- start around 0.1, needs prodigyopt)"),
+            ("scao", "SCAO (second-order, near-AdamW cost, needs scao)"),
+            ("rose", "Rose (stateless, zero optimizer VRAM)"),
+            ("automagic", "Automagic (per-element adaptive LR, self-manages LR)"),
         ],
         default=1,
         allow_back=True,
@@ -65,6 +68,18 @@ def step_advanced_optimizer(a: dict) -> None:
         a["learning_rate"] = ask(
             "Learning rate (Prodigy: start around 0.1, lower if unstable)",
             default=0.1,
+            type_fn=float,
+            allow_back=True,
+        )
+    elif a["optimizer_type"] == "rose":
+        print_message(
+            "Rose is stateless -- tune LR independently from AdamW.\n"
+            "  Typical range: 0.01 - 0.1.  Start with 0.01.",
+            kind="dim",
+        )
+        a["learning_rate"] = ask(
+            "Learning rate (Rose: try 0.01-0.1, not Adam defaults)",
+            default=0.01,
             type_fn=float,
             allow_back=True,
         )

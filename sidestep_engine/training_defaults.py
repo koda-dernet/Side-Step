@@ -107,6 +107,7 @@ DEFAULT_SAVE_BEST_AFTER: int = 200
 DEFAULT_EARLY_STOP_PATIENCE: int = 0
 DEFAULT_STRICT_RESUME: bool = True
 DEFAULT_TARGET_LOSS: float = 0.0
+DEFAULT_TARGET_LOSS_AUTO_STOP: bool = False
 DEFAULT_TARGET_LOSS_FLOOR: float = 0.01
 DEFAULT_TARGET_LOSS_WARMUP: int = 50
 DEFAULT_TARGET_LOSS_SMOOTHING: float = 0.98
@@ -123,8 +124,16 @@ DEFAULT_LOG_HEAVY_EVERY: int = 50
 # ---------------------------------------------------------------------------
 
 DEFAULT_CFG_RATIO: float = 0.15
-DEFAULT_LOSS_WEIGHTING: str = "none"
+DEFAULT_LOSS_WEIGHTING: str = "flow_snr"
 DEFAULT_SNR_GAMMA: float = 5.0
+DEFAULT_LOSS_FN: str = "mse"
+DEFAULT_HUBER_DELTA: float = 1.0
+DEFAULT_CHANNEL_BALANCE: bool = True
+DEFAULT_DYNAMIC_CHANNEL_BALANCE: bool = False
+DEFAULT_VAE_CHANNEL_PRIOR: bool = True
+DEFAULT_LATENT_NOISE: float = 0.02
+DEFAULT_T_BIAS: float = 0.5
+DEFAULT_LEGACY_LOSS: bool = False
 DEFAULT_TIMESTEP_MODE: str = "continuous"
 
 # ---------------------------------------------------------------------------
@@ -148,12 +157,17 @@ DEFAULT_PERSISTENT_WORKERS: bool = sys.platform != "win32"
 # ---------------------------------------------------------------------------
 
 DEFAULT_EMA_DECAY: float = 0.0
+DEFAULT_EMA_START_STEP: int = 2000
 DEFAULT_VAL_SPLIT: float = 0.0
 DEFAULT_ADAPTIVE_TIMESTEP_RATIO: float = 0.0
 DEFAULT_WARMUP_START_FACTOR: float = 0.1
 DEFAULT_COSINE_ETA_MIN_RATIO: float = 0.01
 DEFAULT_COSINE_RESTARTS_COUNT: int = 4
 DEFAULT_SAVE_BEST_EVERY_N_STEPS: int = 0
+
+DEFAULT_LR_SCALE_SELF_ATTN: float = 1.0
+DEFAULT_LR_SCALE_CROSS_ATTN: float = 1.0
+DEFAULT_LR_SCALE_MLP: float = 1.0
 
 # ---------------------------------------------------------------------------
 # Model / device
@@ -226,6 +240,7 @@ TRAINING_DEFAULTS: dict = {
     "early_stop_patience": DEFAULT_EARLY_STOP_PATIENCE,
     "strict_resume": DEFAULT_STRICT_RESUME,
     "target_loss": DEFAULT_TARGET_LOSS,
+    "target_loss_auto_stop": DEFAULT_TARGET_LOSS_AUTO_STOP,
     "target_loss_floor": DEFAULT_TARGET_LOSS_FLOOR,
     "target_loss_warmup": DEFAULT_TARGET_LOSS_WARMUP,
     "target_loss_smoothing": DEFAULT_TARGET_LOSS_SMOOTHING,
@@ -236,6 +251,13 @@ TRAINING_DEFAULTS: dict = {
     "cfg_ratio": DEFAULT_CFG_RATIO,
     "loss_weighting": DEFAULT_LOSS_WEIGHTING,
     "snr_gamma": DEFAULT_SNR_GAMMA,
+    "loss_fn": DEFAULT_LOSS_FN,
+    "huber_delta": DEFAULT_HUBER_DELTA,
+    "channel_balance": DEFAULT_CHANNEL_BALANCE,
+    "vae_channel_prior": DEFAULT_VAE_CHANNEL_PRIOR,
+    "latent_noise": DEFAULT_LATENT_NOISE,
+    "t_bias": DEFAULT_T_BIAS,
+    "legacy_loss": DEFAULT_LEGACY_LOSS,
     "timestep_mode": DEFAULT_TIMESTEP_MODE,
     # Chunking
     "max_latent_length": DEFAULT_MAX_LATENT_LENGTH,
@@ -247,12 +269,17 @@ TRAINING_DEFAULTS: dict = {
     "persistent_workers": DEFAULT_PERSISTENT_WORKERS,
     # All the Levers
     "ema_decay": DEFAULT_EMA_DECAY,
+    "ema_start_step": DEFAULT_EMA_START_STEP,
     "val_split": DEFAULT_VAL_SPLIT,
     "adaptive_timestep_ratio": DEFAULT_ADAPTIVE_TIMESTEP_RATIO,
     "warmup_start_factor": DEFAULT_WARMUP_START_FACTOR,
     "cosine_eta_min_ratio": DEFAULT_COSINE_ETA_MIN_RATIO,
     "cosine_restarts_count": DEFAULT_COSINE_RESTARTS_COUNT,
     "save_best_every_n_steps": DEFAULT_SAVE_BEST_EVERY_N_STEPS,
+    # Per-layer-type LR scales
+    "lr_scale_self_attn": DEFAULT_LR_SCALE_SELF_ATTN,
+    "lr_scale_cross_attn": DEFAULT_LR_SCALE_CROSS_ATTN,
+    "lr_scale_mlp": DEFAULT_LR_SCALE_MLP,
 }
 
 # ---------------------------------------------------------------------------
@@ -270,6 +297,7 @@ GUI_KEY_MAP: dict = {
     "scheduler": "scheduler_type",
     "early_stop": "early_stop_patience",
     "target-loss": "target_loss",
+    "target-loss-auto-stop": "target_loss_auto_stop",
     "target-loss-floor": "target_loss_floor",
     "target-loss-warmup": "target_loss_warmup",
     "target-loss-smoothing": "target_loss_smoothing",
@@ -309,6 +337,13 @@ GUI_FIELD_MAP: dict = {
     "cfg_ratio": "full-cfg-dropout",
     "loss_weighting": "full-loss-weighting",
     "snr_gamma": "full-snr-gamma",
+    "loss_fn": "full-loss-fn",
+    "huber_delta": "full-huber-delta",
+    "channel_balance": "full-channel-balance",
+    "vae_channel_prior": "full-vae-channel-prior",
+    "latent_noise": "full-latent-noise",
+    "t_bias": "full-t-bias",
+    "legacy_loss": "full-legacy-loss",
     "offload_encoder": "full-offload-encoder",
     "gradient_checkpointing_ratio": "full-grad-ckpt-ratio",
     "chunk_decay_every": "full-chunk-decay-every",
@@ -325,6 +360,7 @@ GUI_FIELD_MAP: dict = {
     "save_best_after": "full-save-best-after",
     "early_stop_patience": "full-early-stop",
     "target_loss": "full-target-loss",
+    "target_loss_auto_stop": "full-target-loss-auto-stop",
     "target_loss_floor": "full-target-loss-floor",
     "target_loss_warmup": "full-target-loss-warmup",
     "target_loss_smoothing": "full-target-loss-smoothing",
@@ -337,10 +373,14 @@ GUI_FIELD_MAP: dict = {
     "cosine_eta_min_ratio": "full-cosine-eta-min",
     "cosine_restarts_count": "full-cosine-restarts",
     "ema_decay": "full-ema-decay",
+    "ema_start_step": "full-ema-start-step",
     "val_split": "full-val-split",
     "timestep_mode": "full-timestep-mode",
     "adaptive_timestep_ratio": "full-adaptive-timestep",
     "save_best_every_n_steps": "full-save-best-every-n-steps",
+    "lr_scale_self_attn": "full-lr-scale-self-attn",
+    "lr_scale_cross_attn": "full-lr-scale-cross-attn",
+    "lr_scale_mlp": "full-lr-scale-mlp",
     "num_workers": "full-num-workers",
     "prefetch_factor": "full-prefetch-factor",
     "pin_memory": "full-pin-memory",

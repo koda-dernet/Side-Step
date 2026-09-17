@@ -115,6 +115,10 @@ def sample_timesteps(
         torch.randn((batch_size,), device=device, dtype=dtype) * timestep_sigma + timestep_mu
     )
 
+    # Clamp endpoints: bf16 sigmoid saturates to exact 0/1 → NaN in loss
+    t = t.clamp(min=1e-5, max=1.0 - 1e-5)
+    r = r.clamp(min=1e-5, max=1.0 - 1e-5)
+
     # Assign t = max, r = min for each pair
     t, r = torch.maximum(t, r), torch.minimum(t, r)
 

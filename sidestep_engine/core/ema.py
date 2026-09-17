@@ -29,10 +29,12 @@ class AdapterEMA:
             Typical: 0.9999 (slow), 0.999 (faster tracking).
     """
 
-    def __init__(self, params: Iterable[torch.nn.Parameter], decay: float) -> None:
+    def __init__(self, params: Iterable[torch.nn.Parameter], decay: float, start_step: int = 2000) -> None:
         if not (0.0 <= decay < 1.0):
             raise ValueError(f"EMA decay must be >= 0 and < 1 (got {decay})")
         self.decay = decay
+        self._start_step = max(0, start_step)
+        self._active = (start_step == 0)
         # Deep-clone to CPU in float32 so we don't consume GPU VRAM
         # and accumulate in full precision regardless of mixed-precision dtype.
         self._params: List[torch.nn.Parameter] = list(params)
@@ -49,19 +51,35 @@ class AdapterEMA:
 
     @torch.no_grad()
     def update(self) -> None:
-        """Update shadow params: ``shadow = decay * shadow + (1-decay) * param``."""
+        """Update shadow params: ``shadow = decay * shadow + (1-decay) * param``.
+
+        When ``start_step > 0``, EMA tracking is completely skipped until
+        that step is reached.  At the start step the shadow is re-
+        initialised to the current weights, then normal exponential
+        averaging begins at the full target decay rate.
+        """
+        self._step_count += 1
+        if not self._active:
+            if self._step_count >= self._start_step:
+                # Snapshot current weights as the EMA starting point.
+                for i, param in enumerate(self._params):
+                    self._shadow[i].copy_(param.data.detach().float().cpu())
+                self._active = True
+            return
         d = self.decay
         for shadow, param in zip(self._shadow, self._params):
             # Cast to float32 to match shadow dtype (params may be bf16/fp16).
             shadow.lerp_(param.data.detach().float().cpu(), 1.0 - d)
-        self._step_count += 1
 
     @torch.no_grad()
     def apply(self) -> None:
         """Copy EMA shadow weights into the model (for eval / save).
 
         Call :meth:`restore` afterwards to resume training with raw weights.
+        If EMA tracking hasn't started yet, this is a no-op.
         """
+        if not self._active:
+            return
         if self._backup:
             raise RuntimeError(
                 "apply() called while a previous apply() is still active — "
@@ -75,11 +93,16 @@ class AdapterEMA:
     def restore(self) -> None:
         """Restore raw training weights after an :meth:`apply` call."""
         if not self._backup:
-            logger.warning("[EMA] restore() called without a prior apply()")
+            logger.debug("[EMA] restore() called without a prior apply() (normal before EMA activates)")
             return
         for backup, param in zip(self._backup, self._params):
             param.data.copy_(backup)
         self._backup = []
+
+    @property
+    def effective_decay(self) -> float:
+        """Return 0.0 when inactive, target decay when active."""
+        return self.decay if self._active else 0.0
 
     # ------------------------------------------------------------------
     # Checkpoint support

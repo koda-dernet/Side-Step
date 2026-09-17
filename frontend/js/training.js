@@ -195,6 +195,23 @@ const Training = (() => {
     'val_loss':           { label: 'Val Loss',       color: 'var(--success)' },
     'target_loss_scale':  { label: 'Loss Scale',     color: 'var(--warning)' },
     'target_loss_ema':    { label: 'Loss EMA',       color: 'var(--changed)' },
+    // Fidelity metrics
+    'fidelity/raw_loss':        { label: 'Raw Loss',          color: 'hsl(200,70%,55%)' },
+    'fidelity/weighted_loss':   { label: 'Weighted Loss',     color: 'hsl(160,65%,50%)' },
+    'fidelity/snr_weight_mean': { label: 'SNR Weight (mean)', color: 'hsl(45,80%,55%)' },
+    'fidelity/snr_weight_max':  { label: 'SNR Weight (max)',  color: 'hsl(30,75%,55%)' },
+    'fidelity/timestep_mean':   { label: 'Timestep Mean',     color: 'hsl(270,55%,60%)' },
+    'fidelity/ch_loss_ratio':   { label: 'Ch Loss Ratio',     color: 'hsl(330,60%,55%)' },
+    'fidelity/ch_loss_max':     { label: 'Ch Loss Max',       color: 'hsl(0,60%,55%)' },
+    'fidelity/ch_loss_min':     { label: 'Ch Loss Min',       color: 'hsl(120,50%,50%)' },
+    'fidelity/snr_weight_spread':       { label: 'SNR Weight Spread',  color: 'hsl(15,70%,55%)' },
+    'fidelity/ch_dynamic_blend_range':  { label: 'Dynamic Blend Range', color: 'hsl(290,55%,55%)' },
+    'fidelity/arrangement_loss':        { label: 'Arrangement Loss',   color: 'hsl(25,80%,55%)' },
+    'fidelity/detail_loss':             { label: 'Detail Loss',        color: 'hsl(185,70%,50%)' },
+    // EMA tracking
+    'ema/active':           { label: 'EMA Active',     color: 'hsl(180,60%,55%)' },
+    'ema/step_count':       { label: 'EMA Step Count', color: 'hsl(210,55%,55%)' },
+    'ema/effective_decay':  { label: 'EMA Decay',      color: 'hsl(195,60%,50%)' },
   };
   // Auto-color palette for unknown tags (HSL hues)
   const _AUTO_COLORS = [
@@ -1264,6 +1281,29 @@ const Training = (() => {
     return { totalLen: len, startIdx: _viewXMin ?? 0, endIdx: _viewXMax ?? len };
   }
 
+  function _renderConditioningPanel(info) {
+    const panel = $('monitor-conditioning-panel');
+    const container = $('monitor-conditioning');
+    if (!panel || !container) return;
+    panel.style.display = '';
+    container.innerHTML = '';
+    for (const item of info) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;padding:2px 0;';
+      const nameSpan = document.createElement('span');
+      nameSpan.style.cssText = 'color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;';
+      nameSpan.textContent = item.name || '?';
+      nameSpan.title = item.name || '?';
+      const typeSpan = document.createElement('span');
+      const isGenre = item.type === 'genre';
+      typeSpan.style.cssText = 'font-weight:bold;color:' + (isGenre ? 'var(--accent)' : 'var(--secondary)') + ';';
+      typeSpan.textContent = item.type || 'caption';
+      row.appendChild(nameSpan);
+      row.appendChild(typeSpan);
+      container.appendChild(row);
+    }
+  }
+
   function _addLog(msg, kind) {
     const log = $('monitor-log');
     if (!log) return;
@@ -1441,6 +1481,25 @@ const Training = (() => {
         if (msg.target_loss_ema != null) {
           if (!_tbScalars['target_loss_ema']) _tbScalars['target_loss_ema'] = [];
           _tbScalars['target_loss_ema'].push({ step: _step, value: msg.target_loss_ema, wall_time: wt });
+        }
+
+        // Fidelity metrics (piped through progress writer as dict)
+        if (msg.fidelity && typeof msg.fidelity === 'object') {
+          for (const [ftag, fval] of Object.entries(msg.fidelity)) {
+            if (fval == null) continue;
+            if (!_tbScalars[ftag]) _tbScalars[ftag] = [];
+            _tbScalars[ftag].push({ step: _step, value: fval, wall_time: wt });
+          }
+        }
+        // EMA active status
+        if (msg.ema_active != null) {
+          if (!_tbScalars['ema/active']) _tbScalars['ema/active'] = [];
+          _tbScalars['ema/active'].push({ step: _step, value: msg.ema_active ? 1.0 : 0.0, wall_time: wt });
+        }
+
+        // Conditioning info: per-sample genre/caption selection
+        if (msg.conditioning_info && Array.isArray(msg.conditioning_info)) {
+          _renderConditioningPanel(msg.conditioning_info);
         }
       }
 
@@ -1738,6 +1797,10 @@ const Training = (() => {
     _el('monitor-run-name', _config.run_name || 'training');
     _el('monitor-output-dir', 'Output: ' + (_config.output_dir || ''));
     const log = $('monitor-log'); if (log) log.innerHTML = '';
+    const condPanel = $('monitor-conditioning-panel');
+    if (condPanel) { condPanel.style.display = 'none'; }
+    const condContent = $('monitor-conditioning');
+    if (condContent) { condContent.innerHTML = '<div style="color:var(--muted);padding:3px 0;">Waiting for data...</div>'; }
     _fillConfigSummary();
     _addLog('[info]  Starting training...', 'info');
     document.querySelector('[data-mode="monitor"]')?.classList.add('training');
